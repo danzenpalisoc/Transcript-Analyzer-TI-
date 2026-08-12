@@ -1,0 +1,645 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>NH Call Analyzer — Dashboard</title>
+<script src="https://www.gstatic.com/charts/loader.js"></script>
+<style>
+:root {
+  --tp: #4B286D; --tg: #2B8000; --tr: #C12335;
+  --ta: #8C4A00; --bg: #F4F4F7; --bd: #D8D8D8;
+  --tx: #1A1A2E; --sub: #54565A;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;background:var(--bg);color:var(--tx)}
+
+/* Header */
+.hdr{background:var(--tp);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.hdr h1{font-size:16px;font-weight:700;color:#fff}
+.hdr p{font-size:11px;color:rgba(255,255,255,.7);margin-top:2px}
+.hdr-back{color:rgba(255,255,255,.85);font-size:12px;font-weight:600;text-decoration:none;border:1px solid rgba(255,255,255,.4);border-radius:4px;padding:7px 14px}
+.hdr-back:hover{background:rgba(255,255,255,.12)}
+
+/* Tabs */
+.tab-bar{background:#fff;border-bottom:2px solid var(--bd);display:flex;padding:0 24px;gap:0}
+.tab-btn{padding:12px 20px;font-size:13px;font-weight:600;color:var(--sub);border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;font-family:inherit}
+.tab-btn.active{color:var(--tp);border-bottom-color:var(--tp)}
+.tab-btn:hover{color:var(--tp)}
+
+/* Page layout */
+.page{max-width:1280px;margin:0 auto;padding:20px 20px}
+
+/* Filter panel */
+.filter-card{background:#fff;border:1px solid var(--bd);border-radius:6px;padding:16px 20px;margin-bottom:18px}
+.filter-title{font-size:11px;font-weight:700;color:var(--tp);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px}
+.filter-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.filter-group{display:flex;flex-direction:column;gap:4px}
+.filter-group label{font-size:10px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.4px}
+.filter-select{border:1px solid var(--bd);border-radius:4px;padding:7px 8px;font-size:12px;font-family:inherit;color:var(--tx);background:#fff;width:100%;height:90px}
+.filter-select:focus{outline:none;border-color:var(--tp);box-shadow:0 0 0 2px rgba(75,40,109,.12)}
+.filter-hint{font-size:10px;color:var(--sub);margin-top:2px}
+.filter-actions{display:flex;gap:8px;margin-top:12px;align-items:center}
+.btn-apply{background:var(--tp);color:#fff;border:none;border-radius:4px;padding:8px 18px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer}
+.btn-apply:hover{background:#3a1f57}
+.btn-clear{background:#fff;border:1px solid var(--bd);color:var(--sub);border-radius:4px;padding:8px 14px;font-size:12px;font-family:inherit;cursor:pointer}
+.btn-clear:hover{background:var(--bg)}
+.filter-count{font-size:11px;color:var(--sub);margin-left:4px}
+
+/* Stats row */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:18px}
+.stat-card{background:#fff;border:1px solid var(--bd);border-radius:6px;padding:14px 16px;text-align:center}
+.stat-val{font-size:26px;font-weight:700;color:var(--tp);line-height:1}
+.stat-label{font-size:11px;color:var(--sub);margin-top:5px;text-transform:uppercase;letter-spacing:.3px}
+
+/* Chart row */
+.chart-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+.chart-card{background:#fff;border:1px solid var(--bd);border-radius:6px;padding:16px}
+.chart-card h3{font-size:12px;font-weight:700;color:var(--tp);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+.chart-container{width:100%;height:260px}
+
+/* Table */
+.table-card{background:#fff;border:1px solid var(--bd);border-radius:6px;margin-bottom:20px;overflow:hidden}
+.table-toolbar{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--bd);flex-wrap:wrap;gap:8px}
+.table-toolbar h3{font-size:12px;font-weight:700;color:var(--tp);text-transform:uppercase;letter-spacing:.5px}
+.export-btns{display:flex;gap:8px}
+.btn-export{background:#fff;border:1px solid var(--bd);color:var(--sub);border-radius:4px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn-export:hover{background:var(--bg);color:var(--tx)}
+.btn-export.primary{background:var(--tp);color:#fff;border-color:var(--tp)}
+.btn-export.primary:hover{background:#3a1f57}
+.tbl-wrap{overflow-x:auto}
+table.dtbl{width:100%;border-collapse:collapse;font-size:12px}
+table.dtbl thead tr{background:var(--tp)}
+table.dtbl th{padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:#fff;white-space:nowrap}
+table.dtbl td{padding:9px 12px;border-bottom:1px solid #EBEBEB;vertical-align:top;line-height:1.5}
+table.dtbl tbody tr:nth-child(even) td{background:#FAFAFA}
+table.dtbl tbody tr:hover td{background:#F5F0FF}
+table.dtbl td.td-trunc{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge-pending{background:#F0F0F0;color:var(--sub);border-radius:3px;padding:2px 8px;font-size:10px;font-weight:700}
+.badge-sent{background:#EDF7E6;color:var(--tg);border-radius:3px;padding:2px 8px;font-size:10px;font-weight:700}
+.badge-repeats{background:#F5F0FF;color:var(--tp);border-radius:3px;padding:2px 7px;font-size:10px;font-weight:700}
+.badge-sales{background:#EDF7E6;color:var(--tg);border-radius:3px;padding:2px 7px;font-size:10px;font-weight:700}
+
+/* Tab panels */
+.tab-panel{display:none}.tab-panel.active{display:block}
+
+/* Loading */
+.loading{text-align:center;padding:40px;color:var(--sub);font-size:13px}
+.loading .spin{width:32px;height:32px;border:3px solid #E8DFF5;border-top-color:var(--tp);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Empty state */
+.empty{text-align:center;padding:48px;color:var(--sub)}
+.empty-icon{font-size:36px;margin-bottom:10px}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div>
+    <h1>NH Call Analyzer — Dashboard</h1>
+    <p>Quality Analyst Team</p>
+  </div>
+  <a class="hdr-back" href="javascript:history.back()">&#8592; Back to Analyzer</a>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('repeats',this)">&#128222; Repeats and Transfer Analyzer — Agent</button>
+  <button class="tab-btn"        onclick="switchTab('sales',this)">&#128200; Sales Analyzer — Agent</button>
+</div>
+
+<div class="page">
+  <!-- Loading state -->
+  <div id="loading-state" class="loading">
+    <div class="spin"></div>
+    Loading dashboard data…
+  </div>
+
+  <!-- Repeats Tab -->
+  <div class="tab-panel active" id="tab-repeats" style="display:none">
+    <div class="filter-card">
+      <div class="filter-title">&#128269; Filters <span class="filter-count" id="r-filter-count"></span></div>
+      <div class="filter-grid">
+        <div class="filter-group">
+          <label>Date Range</label>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <input type="date" id="r-date-from" style="border:1px solid var(--bd);border-radius:4px;padding:6px 8px;font-size:12px;font-family:inherit"/>
+            <input type="date" id="r-date-to"   style="border:1px solid var(--bd);border-radius:4px;padding:6px 8px;font-size:12px;font-family:inherit"/>
+          </div>
+        </div>
+        <div class="filter-group">
+          <label>Team Member</label>
+          <select id="r-f-member" class="filter-select" multiple onchange="onMemberChange('r')">
+            <option value="">All</option>
+          </select>
+          <span class="filter-hint">Hold Ctrl/Cmd to multi-select</span>
+        </div>
+        <div class="filter-group">
+          <label>Team Leader</label>
+          <select id="r-f-leader" class="filter-select" multiple>
+            <option value="">All</option>
+          </select>
+          <span class="filter-hint">Hold Ctrl/Cmd to multi-select</span>
+        </div>
+        <div class="filter-group">
+          <label>Operations Manager</label>
+          <select id="r-f-ops" class="filter-select" multiple>
+            <option value="">All</option>
+          </select>
+          <span class="filter-hint">Hold Ctrl/Cmd to multi-select</span>
+        </div>
+        <div class="filter-group">
+          <label>Line of Business</label>
+          <select id="r-f-lob" class="filter-select" multiple>
+            <option value="">All</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Locale (Site)</label>
+          <select id="r-f-locale" class="filter-select" multiple>
+            <option value="">All</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn-apply" onclick="applyFilters('r')">Apply Filters</button>
+        <button class="btn-clear" onclick="clearFilters('r')">Clear All</button>
+        <span class="filter-count" id="r-row-count"></span>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-row" id="r-stats"></div>
+
+    <!-- Charts -->
+    <div class="chart-row">
+      <div class="chart-card">
+        <h3>Top 5 Call Drivers</h3>
+        <div class="chart-container" id="r-chart-drivers"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Top 5 Opportunities</h3>
+        <div class="chart-container" id="r-chart-opps"></div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-card">
+      <div class="table-toolbar">
+        <h3>Critical Flag Details</h3>
+        <div class="export-btns">
+          <button class="btn-export" onclick="flagRecords('r')">&#128681; Flag Records</button>
+          <button class="btn-export" onclick="exportAll('r')">&#11015; Export All Records</button>
+          <button class="btn-export primary" onclick="exportFiltered('r')">&#11015; Export Filtered View</button>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table class="dtbl" id="r-table">
+          <thead><tr>
+            <th>Timestamp</th><th>Interaction ID</th><th>Team Member</th>
+            <th>Department</th><th>LOB</th><th>Locale</th>
+            <th>Analysis Type</th><th class="td-trunc">Call Summary</th>
+            <th class="td-trunc">Overall Opportunities</th>
+            <th class="td-trunc">Recommendations</th>
+            <th class="td-trunc">Critical Flags</th>
+            <th>Repeat %</th><th>Issue Resolved</th>
+            <th>Transfer</th><th>PDF / Email</th>
+          </tr></thead>
+          <tbody id="r-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sales Tab -->
+  <div class="tab-panel" id="tab-sales" style="display:none">
+    <div class="filter-card">
+      <div class="filter-title">&#128269; Filters <span class="filter-count" id="s-filter-count"></span></div>
+      <div class="filter-grid">
+        <div class="filter-group">
+          <label>Date Range</label>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <input type="date" id="s-date-from" style="border:1px solid var(--bd);border-radius:4px;padding:6px 8px;font-size:12px;font-family:inherit"/>
+            <input type="date" id="s-date-to"   style="border:1px solid var(--bd);border-radius:4px;padding:6px 8px;font-size:12px;font-family:inherit"/>
+          </div>
+        </div>
+        <div class="filter-group">
+          <label>Team Member</label>
+          <select id="s-f-member" class="filter-select" multiple onchange="onMemberChange('s')">
+            <option value="">All</option>
+          </select>
+          <span class="filter-hint">Hold Ctrl/Cmd to multi-select</span>
+        </div>
+        <div class="filter-group">
+          <label>Team Leader</label>
+          <select id="s-f-leader" class="filter-select" multiple>
+            <option value="">All</option>
+          </select>
+          <span class="filter-hint">Hold Ctrl/Cmd to multi-select</span>
+        </div>
+        <div class="filter-group">
+          <label>Operations Manager</label>
+          <select id="s-f-ops" class="filter-select" multiple>
+            <option value="">All</option>
+          </select>
+          <span class="filter-hint">Hold Ctrl/Cmd to multi-select</span>
+        </div>
+        <div class="filter-group">
+          <label>Line of Business</label>
+          <select id="s-f-lob" class="filter-select" multiple>
+            <option value="">All</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Locale (Site)</label>
+          <select id="s-f-locale" class="filter-select" multiple>
+            <option value="">All</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn-apply" onclick="applyFilters('s')">Apply Filters</button>
+        <button class="btn-clear" onclick="clearFilters('s')">Clear All</button>
+        <span class="filter-count" id="s-row-count"></span>
+      </div>
+    </div>
+
+    <div class="stats-row" id="s-stats"></div>
+
+    <div class="chart-row">
+      <div class="chart-card">
+        <h3>Top 5 Call Drivers</h3>
+        <div class="chart-container" id="s-chart-drivers"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Top 5 Opportunities</h3>
+        <div class="chart-container" id="s-chart-opps"></div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-toolbar">
+        <h3>Critical Flag Details</h3>
+        <div class="export-btns">
+          <button class="btn-export" onclick="flagRecords('s')">&#128681; Flag Records</button>
+          <button class="btn-export" onclick="exportAll('s')">&#11015; Export All Records</button>
+          <button class="btn-export primary" onclick="exportFiltered('s')">&#11015; Export Filtered View</button>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table class="dtbl" id="s-table">
+          <thead><tr>
+            <th>Timestamp</th><th>Interaction ID</th><th>Team Member</th>
+            <th>Department</th><th>LOB</th><th>Locale</th>
+            <th>Analysis Type</th><th class="td-trunc">Call Summary</th>
+            <th class="td-trunc">Overall Opportunities</th>
+            <th class="td-trunc">Recommendations</th>
+            <th class="td-trunc">Critical Flags</th>
+            <th>Repeat %</th><th>Issue Resolved</th>
+            <th>Transfer</th><th>PDF / Email</th>
+          </tr></thead>
+          <tbody id="s-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+google.charts.load('current', { packages: ['corechart', 'bar'] });
+
+var _allData      = [];
+var _rosterData   = [];
+var _rFiltered    = [];
+var _sFiltered    = [];
+var _chartsLoaded = false;
+var _currentTab   = 'repeats';
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+google.charts.setOnLoadCallback(function() {
+  _chartsLoaded = true;
+  loadData();
+});
+
+function loadData() {
+  google.script.run
+    .withSuccessHandler(function(rows) {
+      _allData = rows || [];
+      google.script.run
+        .withSuccessHandler(function(roster) {
+          _rosterData = roster || [];
+          document.getElementById('loading-state').style.display = 'none';
+          document.getElementById('tab-repeats').style.display   = 'block';
+          populateFilters('r');
+          populateFilters('s');
+          applyFilters('r');
+          applyFilters('s');
+        })
+        .withFailureHandler(function() {
+          document.getElementById('loading-state').style.display = 'none';
+          document.getElementById('tab-repeats').style.display   = 'block';
+          populateFilters('r');
+          populateFilters('s');
+          applyFilters('r');
+          applyFilters('s');
+        })
+        .getRosterAll();
+    })
+    .withFailureHandler(function(e) {
+      document.getElementById('loading-state').innerHTML =
+        '<p style="color:#C12335">Failed to load data: ' + (e.message || e) + '</p>';
+    })
+    .getDashboardData();
+}
+
+// ── Tab switch ────────────────────────────────────────────────────────────────
+function switchTab(tab, btn) {
+  _currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  document.getElementById('tab-repeats').style.display = tab === 'repeats' ? 'block' : 'none';
+  document.getElementById('tab-sales').style.display   = tab === 'sales'   ? 'block' : 'none';
+}
+
+// ── Populate filter dropdowns ─────────────────────────────────────────────────
+function populateFilters(pfx) {
+  var type = pfx === 'r' ? 'Repeats & Transfer Analyzer' : 'Sales Analyzer';
+  var rows = _allData.filter(function(r) {
+    return (r['Analysis Type'] || '').indexOf(type === 'Repeats & Transfer Analyzer' ? 'Repeats' : 'Sales') !== -1;
+  });
+
+  var members  = uniq(rows.map(function(r) { return r['Team Member']; }));
+  var leaders  = uniq(rows.map(function(r) { return r['Team Leader']; }));
+  var ops      = uniq(rows.map(function(r) { return r['Operations Manager']; }));
+  var lobs     = uniq(rows.map(function(r) { return r['Line of Business']; }));
+  var locales  = uniq(rows.map(function(r) { return r['Locale']; }));
+
+  fillSelect(pfx + '-f-member', members);
+  fillSelect(pfx + '-f-leader', leaders);
+  fillSelect(pfx + '-f-ops',    ops);
+  fillSelect(pfx + '-f-lob',    lobs);
+  fillSelect(pfx + '-f-locale', locales);
+}
+
+function fillSelect(id, values) {
+  var sel = document.getElementById(id);
+  sel.innerHTML = '';
+  values.filter(Boolean).sort().forEach(function(v) {
+    var opt = document.createElement('option');
+    opt.value = v; opt.textContent = v;
+    sel.appendChild(opt);
+  });
+}
+
+// ── When Team Member selected — prefill Leader, Ops, LOB from roster ──────────
+function onMemberChange(pfx) {
+  var selected = getMultiSelect(pfx + '-f-member');
+  if (!selected.length) return;
+  var name = selected[0];
+  var row  = _rosterData.find(function(r) { return r.participant === name; });
+  if (!row) return;
+  prefillSingle(pfx + '-f-leader', row.teamLeader);
+  prefillSingle(pfx + '-f-ops',    row.opsManager);
+  prefillSingle(pfx + '-f-lob',    row.lineOfBusiness);
+  prefillSingle(pfx + '-f-locale', row.locale);
+}
+
+function prefillSingle(id, val) {
+  if (!val) return;
+  var sel = document.getElementById(id);
+  // Ensure option exists
+  var found = false;
+  for (var i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].value === val) { sel.options[i].selected = true; found = true; }
+    else sel.options[i].selected = false;
+  }
+  if (!found) {
+    var opt = document.createElement('option');
+    opt.value = val; opt.textContent = val; opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+// ── Apply filters ─────────────────────────────────────────────────────────────
+function applyFilters(pfx) {
+  var typeKey = pfx === 'r' ? 'Repeats' : 'Sales';
+  var dateFrom = document.getElementById(pfx + '-date-from').value;
+  var dateTo   = document.getElementById(pfx + '-date-to').value;
+  var members  = getMultiSelect(pfx + '-f-member');
+  var leaders  = getMultiSelect(pfx + '-f-leader');
+  var ops      = getMultiSelect(pfx + '-f-ops');
+  var lobs     = getMultiSelect(pfx + '-f-lob');
+  var locales  = getMultiSelect(pfx + '-f-locale');
+
+  var filtered = _allData.filter(function(r) {
+    if ((r['Analysis Type'] || '').indexOf(typeKey) === -1) return false;
+    if (dateFrom) {
+      var ts = new Date(r['Timestamp']); if (isNaN(ts)) return true;
+      if (ts < new Date(dateFrom)) return false;
+    }
+    if (dateTo) {
+      var ts2 = new Date(r['Timestamp']); if (isNaN(ts2)) return true;
+      if (ts2 > new Date(dateTo + 'T23:59:59')) return false;
+    }
+    if (members.length && members.indexOf(r['Team Member']) === -1) return false;
+    if (leaders.length && leaders.indexOf(r['Team Leader']) === -1) return false;
+    if (ops.length    && ops.indexOf(r['Operations Manager']) === -1) return false;
+    if (lobs.length   && lobs.indexOf(r['Line of Business']) === -1) return false;
+    if (locales.length && locales.indexOf(r['Locale']) === -1) return false;
+    return true;
+  });
+
+  if (pfx === 'r') _rFiltered = filtered;
+  else              _sFiltered = filtered;
+
+  renderStats(pfx, filtered);
+  renderCharts(pfx, filtered);
+  renderTable(pfx, filtered);
+
+  var fc = document.getElementById(pfx + '-filter-count');
+  if (fc) fc.textContent = '';
+  var rc = document.getElementById(pfx + '-row-count');
+  if (rc) rc.textContent = filtered.length + ' record' + (filtered.length !== 1 ? 's' : '') + ' shown';
+}
+
+function clearFilters(pfx) {
+  document.getElementById(pfx + '-date-from').value = '';
+  document.getElementById(pfx + '-date-to').value   = '';
+  ['member','leader','ops','lob','locale'].forEach(function(k) {
+    var sel = document.getElementById(pfx + '-f-' + k);
+    for (var i = 0; i < sel.options.length; i++) sel.options[i].selected = false;
+  });
+  applyFilters(pfx);
+}
+
+function getMultiSelect(id) {
+  var sel = document.getElementById(id);
+  if (!sel) return [];
+  var vals = [];
+  for (var i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].selected && sel.options[i].value) vals.push(sel.options[i].value);
+  }
+  return vals;
+}
+
+// ── Stats row ─────────────────────────────────────────────────────────────────
+function renderStats(pfx, rows) {
+  var total    = rows.length;
+  var resolved = rows.filter(function(r) { return (r['Issue Resolved'] || '').toLowerCase().indexOf('yes') !== -1; }).length;
+  var withEmail = rows.filter(function(r) { return r['Email Status'] === 'Sent'; }).length;
+  var avgRepeat = 0;
+  var repRows = rows.filter(function(r) { return r['Repeat Projection %']; });
+  if (repRows.length) {
+    avgRepeat = Math.round(repRows.reduce(function(s, r) {
+      return s + (parseFloat(r['Repeat Projection %']) || 0);
+    }, 0) / repRows.length);
+  }
+
+  var el = document.getElementById(pfx + '-stats');
+  el.innerHTML = stat(total, 'Total Interactions') +
+    stat(resolved, 'Issues Resolved') +
+    stat(total - resolved, 'Unresolved') +
+    stat(avgRepeat + '%', 'Avg Repeat Risk') +
+    stat(withEmail, 'Audits Emailed');
+}
+
+function stat(val, label) {
+  return '<div class="stat-card"><div class="stat-val">' + val + '</div>' +
+    '<div class="stat-label">' + label + '</div></div>';
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+function renderCharts(pfx, rows) {
+  if (!_chartsLoaded) return;
+
+  var drivers = countField(rows, 'Call Reason', 5);
+  var opps    = countField(rows, 'Overall Opportunities', 5);
+
+  drawBarChart(pfx + '-chart-drivers', 'Call Driver', drivers);
+  drawBarChart(pfx + '-chart-opps',    'Opportunity', opps);
+}
+
+function countField(rows, field, top) {
+  var counts = {};
+  rows.forEach(function(r) {
+    var val = (r[field] || '').trim().substring(0, 60);
+    if (!val) return;
+    counts[val] = (counts[val] || 0) + 1;
+  });
+  return Object.keys(counts)
+    .sort(function(a, b) { return counts[b] - counts[a]; })
+    .slice(0, top)
+    .map(function(k) { return [k, counts[k]]; });
+}
+
+function drawBarChart(containerId, labelName, data) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  if (!data || !data.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">&#128202;</div>No data yet</div>';
+    return;
+  }
+  var gData = new google.visualization.DataTable();
+  gData.addColumn('string', labelName);
+  gData.addColumn('number', 'Count');
+  gData.addColumn({type:'string', role:'style'});
+  data.forEach(function(row) {
+    gData.addRow([row[0], row[1], 'color:#4B286D;opacity:0.85']);
+  });
+  var options = {
+    legend: { position: 'none' },
+    chartArea: { left: 160, top: 10, width: '60%', height: '88%' },
+    bar: { groupWidth: '60%' },
+    hAxis: { minValue: 0, textStyle: { fontSize: 11 }, format: '#' },
+    vAxis: { textStyle: { fontSize: 11 } },
+    backgroundColor: 'transparent',
+    tooltip: { isHtml: true }
+  };
+  var chart = new google.visualization.BarChart(el);
+  chart.draw(gData, options);
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+function renderTable(pfx, rows) {
+  var tbody = document.getElementById(pfx + '-tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;padding:32px;color:var(--sub)">No records found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(function(r) {
+    var ts = r['Timestamp'] ? new Date(r['Timestamp']).toLocaleDateString() : '';
+    var atype = (r['Analysis Type'] || '').indexOf('Sales') !== -1
+      ? '<span class="badge-sales">Sales</span>'
+      : '<span class="badge-repeats">Repeats</span>';
+    var pdf = r['Email Status'] === 'Sent'
+      ? '<span class="badge-sent">&#10003; Sent</span>'
+      : '<span class="badge-pending">Pending</span>';
+    return '<tr>' +
+      '<td style="white-space:nowrap">' + ts + '</td>' +
+      '<td style="font-size:11px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r['Interaction ID']) + '">' + esc(r['Interaction ID']) + '</td>' +
+      '<td>' + esc(r['Team Member']) + '</td>' +
+      '<td>' + esc(r['Department']) + '</td>' +
+      '<td>' + esc(r['Line of Business']) + '</td>' +
+      '<td>' + esc(r['Locale']) + '</td>' +
+      '<td>' + atype + '</td>' +
+      '<td class="td-trunc" title="' + esc(r['Call Summary']) + '">' + esc(r['Call Summary']) + '</td>' +
+      '<td class="td-trunc" title="' + esc(r['Overall Opportunities']) + '">' + esc(r['Overall Opportunities']) + '</td>' +
+      '<td class="td-trunc" title="' + esc(r['Recommendations']) + '">' + esc(r['Recommendations']) + '</td>' +
+      '<td class="td-trunc" title="' + esc(r['Critical Flags']) + '">' + esc(r['Critical Flags']) + '</td>' +
+      '<td style="text-align:center">' + esc(r['Repeat Projection %']) + '</td>' +
+      '<td>' + esc(r['Issue Resolved']) + '</td>' +
+      '<td>' + esc(r['Transfer Occurred']) + '</td>' +
+      '<td>' + pdf + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ── Flag Records ──────────────────────────────────────────────────────────────
+function flagRecords(pfx) {
+  var rows = pfx === 'r' ? _rFiltered : _sFiltered;
+  var flagged = rows.filter(function(r) { return r['Critical Flags'] && r['Critical Flags'].trim(); });
+  alert('Flagged records: ' + flagged.length + ' of ' + rows.length + ' have critical flags.');
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+function exportAll(pfx) {
+  var type = pfx === 'r' ? 'Repeats' : 'Sales';
+  var rows = _allData.filter(function(r) { return (r['Analysis Type'] || '').indexOf(type) !== -1; });
+  downloadCSV(rows, 'all_records_' + type.toLowerCase() + '.csv');
+}
+function exportFiltered(pfx) {
+  var rows = pfx === 'r' ? _rFiltered : _sFiltered;
+  downloadCSV(rows, 'filtered_view.csv');
+}
+
+function downloadCSV(rows, filename) {
+  if (!rows.length) { alert('No records to export.'); return; }
+  var headers = Object.keys(rows[0]);
+  var csv = headers.map(csvCell).join(',') + '\n' +
+    rows.map(function(r) {
+      return headers.map(function(h) { return csvCell(r[h] || ''); }).join(',');
+    }).join('\n');
+  var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function csvCell(val) {
+  var s = String(val).replace(/"/g, '""');
+  return /[,"\n]/.test(s) ? '"' + s + '"' : s;
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function uniq(arr) {
+  var seen = {};
+  return arr.filter(function(v) { if (!v || seen[v]) return false; seen[v] = 1; return true; });
+}
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

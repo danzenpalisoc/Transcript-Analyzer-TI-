@@ -1,0 +1,4501 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>NH FCR, Transfer or Sales Call Analyzer</title>
+<script src="https://www.gstatic.com/charts/loader.js"></script>
+<script>
+  google.charts.load('current', { packages: ['corechart'] });
+  google.charts.setOnLoadCallback(function() {});
+</script>
+<style>
+/* ── TELUS Design Tokens ── */
+:root {
+  --telus-purple:  #4B286D;
+  --telus-green:   #2B8000;
+  --telus-white:   #FFFFFF;
+  --telus-grey-bg: #F4F4F7;
+  --telus-grey-bd: #D8D8D8;
+  --telus-text:    #1A1A2E;
+  --telus-subtext: #54565A;
+  --telus-red:     #C12335;
+  --telus-amber:   #8C4A00;
+}
+
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  background: var(--telus-grey-bg);
+  color: var(--telus-text);
+  min-height: 100vh;
+}
+
+/* ── App header ── */
+.app-header {
+  background: var(--telus-purple);
+  padding: 14px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,.28);
+}
+.app-header h1 { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: .2px; }
+.app-header p  { font-size: 11px; color: rgba(255,255,255,.72); margin-top: 2px; }
+
+.btn-process {
+  background: #fff;
+  color: var(--telus-purple);
+  border: none;
+  border-radius: 4px;
+  padding: 10px 22px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  letter-spacing: .3px;
+  transition: background .15s;
+}
+.btn-process:hover    { background: #ede6f6; }
+.btn-process:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ── Page ── */
+.page { max-width: 1080px; margin: 24px auto; padding: 0 18px; }
+
+/* ── Form cards ── */
+.card {
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid var(--telus-grey-bd);
+  margin-bottom: 16px;
+}
+.card-header {
+  padding: 11px 20px;
+  border-bottom: 1px solid var(--telus-grey-bd);
+  background: #FAFAFA;
+}
+.card-header h2 {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--telus-purple);
+  text-transform: uppercase;
+  letter-spacing: .8px;
+}
+.card-body { padding: 18px 20px; }
+
+.form-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px,1fr)); gap: 14px; }
+.form-group { display: flex; flex-direction: column; }
+.form-group label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--telus-subtext);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.form-group label .req { color: var(--telus-red); margin-left: 2px; }
+.form-group input,
+.form-group select,
+.form-group textarea {
+  border: 1px solid var(--telus-grey-bd);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--telus-text);
+  background: #fff;
+  transition: border-color .15s, box-shadow .15s;
+  width: 100%;
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--telus-purple);
+  box-shadow: 0 0 0 3px rgba(75,40,109,.14);
+}
+
+/* ── Analysis type radios ── */
+.analysis-options { display: flex; gap: 12px; flex-wrap: wrap; }
+.analysis-option  { display: none; }
+.analysis-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 2px solid var(--telus-grey-bd);
+  border-radius: 6px;
+  padding: 12px 16px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 220px;
+  transition: border-color .15s, background .15s;
+}
+.analysis-option:checked + .analysis-label {
+  border-color: var(--telus-purple);
+  background: #F5F0FF;
+}
+.option-icon   { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+.option-title  { font-weight: 700; font-size: 13px; color: var(--telus-text); }
+.option-desc   { font-size: 11px; color: var(--telus-subtext); margin-top: 2px; line-height: 1.4; }
+
+/* ── Transcript textarea ── */
+.transcript-area {
+  width: 100%;
+  min-height: 260px;
+  resize: vertical;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.transcript-hint { font-size: 11px; color: var(--telus-subtext); margin-top: 5px; }
+
+/* ── Overview Tab ── */
+.ov-section {
+  background: #fff; border: 1px solid #D8D8D8; border-radius: 8px;
+  padding: 16px 18px; margin-bottom: 14px;
+}
+.ov-section-title {
+  font-size: 13px; font-weight: 700; color: var(--telus-purple);
+  margin-bottom: 12px; display: flex; align-items: center; gap: 6px;
+}
+.ov-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.ov-hl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.ov-hl-box  { border-radius: 6px; padding: 14px 16px; }
+.ov-hl-high { background: #F0FFF4; border: 1px solid #B3DFA0; }
+.ov-hl-low  { background: #FFF5F5; border: 1px solid #F5AAAA; }
+.ov-hl-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+.ov-hl-high .ov-hl-title { color: var(--telus-green); }
+.ov-hl-low  .ov-hl-title { color: var(--telus-red); }
+.ov-hl-box ul { padding-left: 18px; font-size: 13px; line-height: 1.9; margin: 0; }
+.ov-empty { color: #aaa; font-style: italic; list-style: none; margin-left: -18px; }
+.ov-legend { font-size: 11px; color: #54565A; }
+.ov-tm-table {
+  width: 100%; border-collapse: collapse; font-size: 12px; min-width: 700px;
+}
+.ov-tm-table thead tr { background: var(--telus-purple); }
+.ov-tm-table th { padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap; }
+.ov-tm-table td { padding: 9px 12px; border-bottom: 1px solid #EBEBEB; vertical-align: top; font-size: 12px; }
+.ov-tm-table tbody tr:nth-child(even) td { background: #FAFAFA; }
+.ov-tm-table tbody tr:hover td { background: #F5F0FF; }
+.ov-risk-high  { color: var(--telus-red);   font-weight: 700; }
+.ov-risk-mid   { color: var(--telus-amber); font-weight: 600; }
+.ov-risk-low   { color: var(--telus-green); font-weight: 600; }
+.ov-trend-up   { color: var(--telus-red);   font-size: 16px; }
+.ov-trend-down { color: var(--telus-green); font-size: 16px; }
+.ov-trend-flat { color: #888; font-size: 16px; }
+.ov-badge { display: inline-block; border-radius: 3px; padding: 2px 7px; font-size: 10px; font-weight: 700; color: #fff; }
+.ov-badge-red    { background: var(--telus-red); }
+.ov-badge-amber  { background: var(--telus-amber); }
+.ov-badge-green  { background: var(--telus-green); }
+.ov-badge-purple { background: var(--telus-purple); }
+
+/* ── AI Analytics Panel ── */
+#analytics-panel {
+  display: none; position: fixed; inset: 0; z-index: 4000;
+  background: rgba(0,0,0,.55); align-items: flex-start; justify-content: center;
+  padding: 20px 16px; overflow-y: auto;
+}
+#analytics-panel.visible { display: flex; }
+.an-box {
+  background: #fff; border-radius: 10px; width: 100%; max-width: 860px;
+  box-shadow: 0 14px 60px rgba(0,0,0,.3); display: flex; flex-direction: column;
+  max-height: 92vh; overflow: hidden;
+}
+.an-panel-hdr {
+  background: #4B286D; color: #fff; padding: 16px 22px;
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+.an-panel-hdr h2 { font-size: 16px; font-weight: 700; margin: 0; }
+.an-panel-hdr .an-close { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; }
+.an-panel-body { overflow-y: auto; flex: 1; }
+.an-panel-ftr {
+  padding: 12px 20px; border-top: 1px solid #E0E0E0; display: flex;
+  gap: 10px; align-items: center; flex-shrink: 0; flex-wrap: wrap; background: #FAFAFA;
+}
+.an-email-input {
+  flex: 1; min-width: 200px; border: 1px solid #D8D8D8; border-radius: 4px;
+  padding: 8px 12px; font-size: 13px; font-family: inherit;
+}
+.an-email-input:focus { outline: none; border-color: var(--telus-purple); }
+.btn-an-send {
+  background: var(--telus-green); color: #fff; border: none; border-radius: 4px;
+  padding: 8px 18px; font-size: 13px; font-weight: 700; font-family: inherit; cursor: pointer;
+}
+.btn-an-send:hover { background: #236600; }
+.btn-an-send:disabled { opacity: .5; cursor: not-allowed; }
+.btn-an-gen {
+  background: var(--telus-purple); color: #fff; border: none; border-radius: 4px;
+  padding: 7px 16px; font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+}
+.btn-an-gen:hover { background: #3a1f57; }
+.btn-an-gen:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Analytics HTML content styles */
+.analytics-body { padding: 20px; font-family: 'Helvetica Neue',Helvetica,Arial,sans-serif; }
+.an-exec-header {
+  background: #4B286D; color: #fff; border-radius: 8px; padding: 18px 22px; margin-bottom: 16px;
+}
+.an-exec-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: rgba(255,255,255,.7); display: block; margin-bottom: 4px; }
+.an-exec-title { font-size: 20px; font-weight: 800; margin-bottom: 3px; }
+.an-exec-sub   { font-size: 12px; color: rgba(255,255,255,.75); margin-bottom: 2px; }
+.an-exec-filter{ font-size: 11px; color: rgba(255,255,255,.55); margin-top: 6px; }
+.an-kpi-row { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.an-kpi {
+  flex: 1; min-width: 140px; background: #fff; border: 1px solid #E0E0E0;
+  border-radius: 8px; padding: 14px 16px; text-align: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.an-kpi-lbl { font-size: 9px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+.an-kpi-val { font-size: 28px; font-weight: 800; color: #4B286D; line-height: 1; }
+.an-hl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.an-hl-box { border-radius: 8px; padding: 14px 16px; }
+.an-hl-high { background: #F0FFF4; border: 1px solid #B3DFA0; }
+.an-hl-low  { background: #FFF5F5; border: 1px solid #F5AAAA; }
+.an-hl-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+.an-hl-high .an-hl-title { color: #2B8000; }
+.an-hl-low  .an-hl-title { color: #C12335; }
+.an-hl-box ul { padding-left: 18px; font-size: 13px; line-height: 1.9; margin: 0; }
+.an-section { margin-bottom: 16px; background: #FAFAFA; border: 1px solid #E8E8E8; border-radius: 8px; padding: 14px 16px; }
+.an-section-title { font-size: 13px; font-weight: 700; color: #4B286D; margin-bottom: 10px; }
+.an-rec-cat {
+  display: inline-block; background: #4B286D; color: #fff;
+  border-radius: 12px; padding: 2px 10px; font-size: 10px; font-weight: 700;
+  margin-bottom: 6px; letter-spacing: .5px;
+}
+.an-section ul { padding-left: 18px; font-size: 13px; line-height: 1.9; margin: 0 0 8px; }
+.an-bottom-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.an-bottom-card { background: #fff; border: 1px solid #E0E0E0; border-radius: 8px; padding: 14px; }
+.an-bottom-title { font-size: 12px; font-weight: 700; color: #4B286D; margin-bottom: 10px; }
+.an-pillar-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #F0F0F0; font-size: 12px; }
+.an-pillar-score { font-weight: 700; color: #4B286D; }
+.an-pillar-insight { font-size: 11px; color: #666; margin: 4px 0 8px; font-style: italic; line-height: 1.5; }
+.an-flag-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #F0F0F0; font-size: 12px; }
+.an-flag-count { font-weight: 700; }
+.an-top-performer { background: linear-gradient(135deg, #F5F0FF 0%, #EDF7E6 100%); border-color: #4B286D; text-align: center; }
+.an-tp-name { font-size: 18px; font-weight: 800; color: #4B286D; margin: 8px 0 6px; }
+.an-tp-insight { font-size: 12px; color: #54565A; line-height: 1.5; }
+.an-coaching-bar {
+  background: #FFF8E1; border: 1px solid #FFE082; border-radius: 8px;
+  padding: 12px 16px; font-size: 13px; line-height: 1.6; color: #5D4037;
+}
+.an-filter-pill {
+  display: flex; align-items: center; gap: 5px;
+  border: 1.5px solid #D1B8E8; border-radius: 16px; padding: 4px 10px;
+  font-size: 11px; font-family: inherit; background: #fff; cursor: pointer;
+  user-select: none; white-space: nowrap; transition: border-color .15s;
+}
+.an-filter-pill:hover { border-color: #4B286D; background: #FAF7FF; }
+.an-filter-pill.an-active { border-color: #4B286D; background: #F5F0FF; }
+.an-pill-lbl { font-weight: 700; color: #4B286D; font-size: 10px; text-transform: uppercase; letter-spacing: .3px; }
+.an-pill-val { color: #1A1A2E; font-size: 11px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+.an-pill-drop {
+  display: none; position: fixed; z-index: 5500;
+  background: #fff; border: 1px solid #D8D8D8; border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.16); min-width: 200px; max-width: 260px; overflow: hidden;
+}
+.an-pill-drop.open { display: block; }
+.an-drop-search {
+  border: none; border-bottom: 1px solid #EBEBEB; padding: 8px 12px;
+  font-size: 12px; font-family: inherit; width: 100%; outline: none; background: #FAFAFA;
+}
+.an-drop-list { max-height: 180px; overflow-y: auto; }
+.an-drop-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 12px;
+  font-size: 12px; cursor: pointer; color: #1A1A2E;
+}
+.an-drop-item:hover { background: #F5F0FF; }
+.an-drop-item input[type=checkbox] { accent-color: #4B286D; }
+.an-drop-footer {
+  border-top: 1px solid #EBEBEB; padding: 6px 12px; background: #FAFAFA;
+  display: flex; justify-content: space-between; font-size: 11px;
+}
+.an-drop-clear { color: #4B286D; cursor: pointer; font-weight: 600; background: none; border: none; font-family: inherit; }
+.an-loading { text-align: center; padding: 60px 20px; color: #4B286D; }
+.an-loading .an-spin { width: 44px; height: 44px; border: 4px solid #E8DFF5; border-top-color: #4B286D; border-radius: 50%; animation: spin .85s linear infinite; margin: 0 auto 16px; }
+.an-cache-badge { font-size: 10px; color: rgba(255,255,255,.6); margin-top: 2px; }
+
+/* ── Dashboard overlay panel ── */
+#dashboard-panel {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  flex-direction: column;
+  background: #F4F4F7;
+  overflow-y: auto;
+}
+#dashboard-panel.visible { display: flex; }
+#db-topbar {
+  background: var(--telus-purple);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 2px 6px rgba(0,0,0,.25);
+}
+#db-topbar .db-back {
+  background: rgba(255,255,255,.15);
+  border: 1px solid rgba(255,255,255,.35);
+  color: #fff;
+  border-radius: 4px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+#db-topbar .db-back:hover { background: rgba(255,255,255,.28); }
+#db-topbar span { color: #fff; font-size: 15px; font-weight: 700; }
+
+/* Dashboard tabs */
+.db-tab-bar {
+  background: #fff;
+  border-bottom: 2px solid #D8D8D8;
+  display: flex;
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+.db-tab-btn {
+  padding: 12px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #54565A;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.db-tab-btn.db-active { color: var(--telus-purple); border-bottom-color: var(--telus-purple); }
+.db-tab-btn:hover { color: var(--telus-purple); }
+
+/* Dashboard body */
+.db-body { flex: 1; padding: 10px 24px; max-width: 1280px; width: 100%; margin: 0 auto; }
+.db-tab-panel { display: none; }
+.db-tab-panel.db-active { display: block; }
+
+/* ── Looker Studio-style filter bar ── */
+.db-filter-card {
+  background: #fff;
+  border: 1px solid #D8D8D8;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+}
+.db-filter-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--telus-purple);
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+/* Pill row */
+.db-filter-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+/* Date range pills */
+.db-date-pill-group { display: flex; gap: 6px; align-items: center; }
+.db-date-pill-group input[type=date] {
+  border: 1.5px solid #D8D8D8;
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #1A1A2E;
+  background: #fff;
+  cursor: pointer;
+  outline: none;
+  transition: border-color .15s;
+}
+.db-date-pill-group input[type=date]:focus { border-color: var(--telus-purple); }
+.db-date-pill-group span { font-size: 11px; color: #888; }
+
+/* Dropdown pill button */
+.db-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1.5px solid #D8D8D8;
+  border-radius: 20px;
+  padding: 5px 10px 5px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #1A1A2E;
+  background: #fff;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color .15s, background .15s;
+  white-space: nowrap;
+  max-width: 220px;
+}
+.db-pill:hover { border-color: var(--telus-purple); background: #faf7ff; }
+.db-pill.db-pill-active {
+  border-color: var(--telus-purple);
+  background: #F5F0FF;
+  color: var(--telus-purple);
+  font-weight: 600;
+}
+.db-pill-label { font-size: 10px; font-weight: 700; color: #54565A; text-transform: uppercase; letter-spacing: .3px; margin-right: 2px; }
+.db-pill-active .db-pill-label { color: var(--telus-purple); }
+.db-pill-value { flex: 1; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.db-pill-count {
+  background: var(--telus-purple);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  margin-left: 2px;
+}
+.db-pill-arrow { font-size: 9px; color: #888; margin-left: 2px; transition: transform .15s; flex-shrink: 0; }
+.db-pill.db-pill-open .db-pill-arrow { transform: rotate(180deg); }
+.db-pill-clear {
+  font-size: 14px;
+  color: #aaa;
+  line-height: 1;
+  margin-left: 2px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.db-pill-clear:hover { color: var(--telus-red); }
+
+/* Floating dropdown panel */
+.db-pill-panel {
+  display: none;
+  position: fixed;
+  z-index: 5000;
+  background: #fff;
+  border: 1px solid #D8D8D8;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.16);
+  min-width: 220px;
+  max-width: 300px;
+  overflow: hidden;
+}
+.db-pill-panel.db-pill-panel-open { display: block; }
+.db-pill-panel-search {
+  border: none;
+  border-bottom: 1px solid #EBEBEB;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  width: 100%;
+  outline: none;
+  background: #FAFAFA;
+}
+.db-pill-panel-search::placeholder { color: #aaa; }
+.db-pill-panel-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.db-pill-panel-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #1A1A2E;
+  transition: background .1s;
+}
+.db-pill-panel-item:hover { background: #F5F0FF; }
+.db-pill-panel-item:hover .pill-only-btn { opacity: 1 !important; }
+.db-pill-panel-item input[type=checkbox] { accent-color: var(--telus-purple); width: 14px; height: 14px; flex-shrink: 0; }
+.db-pill-panel-footer {
+  border-top: 1px solid #EBEBEB;
+  padding: 7px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #FAFAFA;
+}
+.db-pill-panel-count { font-size: 11px; color: #888; }
+.db-pill-panel-clear-btn {
+  font-size: 11px;
+  color: var(--telus-purple);
+  cursor: pointer;
+  font-weight: 600;
+  background: none;
+  border: none;
+  font-family: inherit;
+  padding: 0;
+}
+.db-pill-panel-clear-btn:hover { text-decoration: underline; }
+
+/* SAP text search pill */
+.db-sap-pill-input {
+  border: 1.5px solid #D8D8D8;
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  width: 130px;
+  transition: border-color .15s, width .2s;
+  background: #fff;
+}
+.db-sap-pill-input:focus { border-color: var(--telus-purple); width: 170px; }
+
+/* Filter actions */
+.db-filter-actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+.db-btn-apply {
+  background: var(--telus-purple);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 18px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+.db-btn-apply:hover { background: #3a1f57; }
+.db-btn-clear:hover { background: #236600; }
+.db-btn-clear {
+  background: var(--telus-green);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.db-row-count { font-size: 11px; color: #54565A; margin-left: 4px; }
+
+/* Stats */
+.db-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  margin-top: 6px;
+}
+/* ── Redesigned KPI stat cards (Looker-style) ── */
+.db-stat {
+  flex: 0 0 155px;
+  background: #fff;
+  border: 1px solid #E0E0E0;
+  border-top: 3px solid var(--telus-purple);
+  border-radius: 8px;
+  padding: 14px 14px 12px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+  transition: box-shadow .15s;
+  position: relative;
+}
+.db-stat:hover { box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+.db-stat-icon { font-size: 22px; margin-bottom: 6px; display: block; }
+.db-stat-val {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--telus-purple);
+  line-height: 1;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  letter-spacing: -.5px;
+}
+.db-stat-lbl {
+  font-size: 9px;
+  color: #54565A;
+  margin-top: 5px;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  font-weight: 700;
+}
+.db-stat-sub {
+  font-size: 10px;
+  margin-top: 5px;
+  color: #888;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+.db-stat-sub.up   { color: var(--telus-green); }
+.db-stat-sub.down { color: var(--telus-red); }
+/* colour variants for border-top accent */
+.db-stat.green  { border-top-color: var(--telus-green); }
+.db-stat.green .db-stat-val { color: var(--telus-green); }
+.db-stat.red    { border-top-color: var(--telus-red); }
+.db-stat.red .db-stat-val   { color: var(--telus-red); }
+.db-stat.amber  { border-top-color: var(--telus-amber); }
+.db-stat.amber .db-stat-val { color: var(--telus-amber); }
+
+/* Charts */
+.db-chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+.db-chart-card { background: #fff; border: 1px solid #D8D8D8; border-radius: 6px; padding: 16px; }
+.db-chart-card h3 {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--telus-purple);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: 10px;
+}
+.db-chart-box { width: 100%; height: 240px; }
+
+/* Table */
+.db-table-card { background: #fff; border: 1px solid #D8D8D8; border-radius: 6px; overflow: hidden; }
+.db-tbl-toolbar {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #D8D8D8;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.db-tbl-toolbar h3 {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--telus-purple);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.db-export-btns { display: flex; gap: 8px; }
+.db-btn-exp {
+  background: #fff;
+  border: 1px solid #D8D8D8;
+  color: #54565A;
+  border-radius: 4px;
+  padding: 6px 11px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.db-btn-exp:hover { background: #F4F4F7; }
+.db-btn-exp.primary { background: var(--telus-purple); color: #fff; border-color: var(--telus-purple); }
+.db-btn-exp.primary:hover { background: #3a1f57; }
+.db-tbl-wrap { overflow-x: auto; }
+.db-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.db-tbl thead tr { background: var(--telus-purple); }
+.db-tbl th { padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap; }
+.db-tbl td { padding: 9px 12px; border-bottom: 1px solid #EBEBEB; vertical-align: top; line-height: 1.5; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-tbl td:hover { white-space: normal; overflow: visible; max-width: none; }
+.db-tbl tbody tr:nth-child(even) td { background: #FAFAFA; }
+.db-tbl tbody tr:hover td { background: #F5F0FF; white-space: normal; overflow: visible; max-width: none; }
+.db-badge-pending { background: #F0F0F0; color: #54565A; border-radius: 3px; padding: 2px 7px; font-size: 10px; font-weight: 700; }
+.db-badge-sent    { background: #EDF7E6; color: #2B8000;  border-radius: 3px; padding: 2px 7px; font-size: 10px; font-weight: 700; }
+.db-empty { text-align: center; padding: 40px; color: #54565A; font-size: 13px; }
+.db-loading { text-align: center; padding: 40px; color: var(--telus-purple); font-size: 13px; }
+.db-spin { width: 36px; height: 36px; border: 4px solid #E8DFF5; border-top-color: var(--telus-purple); border-radius: 50%; animation: spin .85s linear infinite; margin: 0 auto 12px; }
+
+/* ── Alerts ── */
+.alert-error {
+  background: #FFF0F0;
+  border: 1px solid #F5AAAA;
+  border-left: 4px solid var(--telus-red);
+  border-radius: 4px;
+  padding: 11px 16px;
+  color: var(--telus-red);
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 14px;
+  display: none;
+}
+.alert-error.visible { display: block; }
+
+.alert-cache {
+  background: #EDF7E6;
+  border: 1px solid #B3DFA0;
+  border-left: 4px solid var(--telus-green);
+  border-radius: 4px;
+  padding: 11px 16px;
+  color: #1A5E00;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 14px;
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+.alert-cache.visible { display: flex; }
+
+.alert-success {
+  background: #EDF7E6;
+  border: 1px solid #B3DFA0;
+  border-left: 4px solid var(--telus-green);
+  border-radius: 4px;
+  padding: 11px 16px;
+  color: #1A5E00;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 14px;
+  display: none;
+}
+.alert-success.visible { display: block; }
+
+/* ── Submit / email button ── */
+.btn-submit {
+  background: var(--telus-green);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 10px 22px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .15s;
+  display: none;
+}
+.btn-submit.visible { display: inline-block; }
+.btn-submit:hover    { background: #236600; }
+.btn-submit:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ── Email sending overlay ── */
+#email-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 1001;
+  align-items: center;
+  justify-content: center;
+}
+#email-overlay.visible { display: flex; }
+.email-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 36px 44px;
+  text-align: center;
+  box-shadow: 0 10px 50px rgba(0,0,0,.28);
+  max-width: 360px;
+  width: 90%;
+}
+.email-card .spinner {
+  width: 44px; height: 44px;
+  border: 4px solid #E8DFF5;
+  border-top-color: var(--telus-green);
+  border-radius: 50%;
+  animation: spin .85s linear infinite;
+  margin: 0 auto 16px;
+}
+.email-card h3 { font-size: 16px; font-weight: 700; color: var(--telus-green); margin-bottom:6px; }
+.email-card p  { font-size: 13px; color: var(--telus-subtext); line-height: 1.5; }
+
+/* ── Processing overlay ── */
+#processing-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.58);
+  z-index: 999;
+  align-items: center;
+  justify-content: center;
+}
+#processing-overlay.visible { display: flex; }
+.processing-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 44px 52px;
+  text-align: center;
+  box-shadow: 0 10px 50px rgba(0,0,0,.3);
+  max-width: 380px;
+  width: 90%;
+}
+.processing-card .spinner {
+  width: 52px; height: 52px;
+  border: 5px solid #E8DFF5;
+  border-top-color: var(--telus-purple);
+  border-radius: 50%;
+  animation: spin .85s linear infinite;
+  margin: 0 auto 20px;
+}
+.processing-card h3 { font-size: 17px; font-weight: 700; color: var(--telus-purple); margin-bottom: 8px; }
+.processing-card p  { font-size: 13px; color: var(--telus-subtext); line-height: 1.6; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Analysis modal ── */
+#analysis-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 1000;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px 16px;
+  overflow-y: auto;
+}
+#analysis-modal.visible { display: flex; }
+.modal-box {
+  background: #fff;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 960px;
+  box-shadow: 0 14px 60px rgba(0,0,0,.3);
+  display: flex;
+  flex-direction: column;
+  max-height: 92vh;
+}
+.modal-hdr {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--telus-grey-bd);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.modal-hdr h2  { font-size: 16px; font-weight: 700; color: var(--telus-text); }
+.modal-close   { background: none; border: none; font-size: 22px; color: var(--telus-subtext); cursor: pointer; line-height: 1; }
+.modal-close:hover { color: var(--telus-text); }
+.modal-body    { padding: 0 24px 16px; overflow-y: auto; flex: 1; }
+.modal-ftr     {
+  padding: 14px 24px;
+  border-top: 1px solid var(--telus-grey-bd);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.btn-cancel {
+  background: #fff;
+  border: 1px solid #aaa;
+  color: #444;
+  border-radius: 4px;
+  padding: 9px 22px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.btn-cancel:hover { background: #f4f4f6; }
+.btn-apply {
+  background: var(--telus-purple);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 9px 22px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+.btn-apply:hover { background: #3a1f57; }
+
+/* ── Script preview in modal ── */
+.modal-script-label { font-size: 12px; font-weight: 700; color: var(--telus-subtext); margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .4px; }
+.modal-script-box {
+  background: #F8F8F8;
+  border: 1px solid var(--telus-grey-bd);
+  border-radius: 4px;
+  padding: 10px 12px;
+  max-height: 150px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  margin-bottom: 20px;
+}
+.modal-divider { border: none; border-top: 1px solid var(--telus-grey-bd); margin: 4px 0 18px; }
+.modal-results-label { font-size: 12px; font-weight: 700; color: var(--telus-subtext); margin-bottom: 12px; text-transform: uppercase; letter-spacing: .4px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   RESULT COMPONENTS  (used both in modal and applied view)
+═══════════════════════════════════════════════════════════════ */
+
+/* Section wrapper */
+.r-section { margin-bottom: 24px; }
+.r-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--telus-purple);
+  padding: 8px 12px;
+  background: #F5F0FF;
+  border-left: 4px solid var(--telus-purple);
+  border-radius: 0 4px 4px 0;
+  margin-bottom: 12px;
+  letter-spacing: .2px;
+}
+
+/* Call block divider */
+.r-call-block {
+  border: 1px solid var(--telus-grey-bd);
+  border-radius: 6px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  background: #fff;
+}
+.r-call-badge {
+  display: inline-block;
+  background: var(--telus-purple);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 12px;
+  border-radius: 12px;
+  margin-bottom: 14px;
+  letter-spacing: .5px;
+}
+
+/* Summary box */
+.r-summary-box {
+  background: #F9F9F9;
+  border: 1px solid var(--telus-grey-bd);
+  border-radius: 4px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.75;
+  min-height: 72px;
+}
+.r-summary-box:focus { outline: 1px solid var(--telus-purple); background: #FFFDE7; }
+
+/* Info bar chips */
+.r-info-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; }
+.r-info-chip {
+  display: flex;
+  flex-direction: column;
+  background: #F4F4F7;
+  border: 1px solid var(--telus-grey-bd);
+  border-radius: 4px;
+  padding: 7px 12px;
+  min-width: 110px;
+}
+.r-info-label { font-size: 10px; font-weight: 700; color: var(--telus-subtext); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 2px; }
+.r-info-val   { font-size: 13px; font-weight: 600; color: var(--telus-text); }
+
+/* Analysis table */
+.r-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.r-table thead tr { background: var(--telus-purple); }
+.r-table th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: .3px;
+}
+.r-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #EBEBEB;
+  vertical-align: top;
+  line-height: 1.6;
+}
+.r-table tbody tr:last-child td { border-bottom: none; }
+.r-table tbody tr:nth-child(even) td { background: #FAFAFA; }
+.r-table-label {
+  font-weight: 600;
+  color: var(--telus-text);
+  width: 22%;
+  white-space: nowrap;
+}
+.r-table td[contenteditable=true]:focus { background: #FFFDE7; outline: 1px solid var(--telus-purple); }
+.r-table td[contenteditable=true] { white-space: pre-wrap; }
+
+/* Score panel */
+.r-score-panel {
+  background: #F5F0FF;
+  border: 1px solid #D1B8E8;
+  border-radius: 6px;
+  padding: 14px 18px;
+}
+.r-score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #E4D8F5;
+  font-size: 13px;
+}
+.r-score-row:last-child { border-bottom: none; }
+.r-score-total { font-weight: 700; padding-top: 10px; }
+.r-badge {
+  display: inline-block;
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  min-width: 44px;
+  text-align: center;
+}
+.r-badge-good { background: var(--telus-green); }   /* 3-5   */
+.r-badge-mid  { background: var(--telus-amber); }   /* 2-2.9 */
+.r-badge-bad  { background: var(--telus-red); }     /* 1-1.9 */
+.r-badge-zero { background: #767676; }              /* 0     */
+
+/* Perfect sales moment note */
+.r-perfect-moment {
+  margin-top: 12px;
+  background: #EDF7E6;
+  border: 1px solid #B3DFA0;
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Critical / Positioning cards */
+.r-pos-card {
+  background: #FFF5F5;
+  border: 1px solid #F5AAAA;
+  border-left: 4px solid var(--telus-red);
+  border-radius: 4px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.r-pos-param       { font-weight: 700; color: var(--telus-red); font-size: 13px; margin-bottom: 6px; }
+.r-pos-detail      { font-size: 12px; color: #444; line-height: 1.65; margin-bottom: 8px; }
+.r-pos-stmt-label  { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--telus-green); letter-spacing: .5px; margin-bottom: 5px; }
+.r-pos-stmt {
+  background: #EDF7E6;
+  border: 1px solid #B3DFA0;
+  border-radius: 4px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: #1A5E00;
+  font-style: italic;
+  line-height: 1.6;
+}
+.r-pos-stmt:focus { outline: 1px solid var(--telus-green); background: #FFFDE7; }
+
+/* Highlights / Lowlights */
+.r-hl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.r-hl-box  { border-radius: 6px; padding: 14px 16px; }
+.r-hl-high { background: #EDF7E6; border: 1px solid #B3DFA0; }
+.r-hl-low  { background: #FFF5F5; border: 1px solid #F5AAAA; }
+.r-hl-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+.r-hl-high .r-hl-title { color: var(--telus-green); }
+.r-hl-low  .r-hl-title { color: var(--telus-red); }
+.r-hl-box ul { padding-left: 16px; font-size: 13px; line-height: 2; }
+.r-hl-box li[contenteditable=true]:focus { background: #FFFDE7; outline: 1px solid var(--telus-purple); }
+
+/* Coaching takeaways */
+.r-coaching-list {
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--telus-text);
+}
+.r-coaching-list li { margin-bottom: 4px; }
+.r-coaching-list li[contenteditable=true]:focus { background: #FFFDE7; outline: none; }
+
+/* Systemic issues */
+.r-systemic { font-size: 13px; line-height: 1.7; padding: 10px; border: 1px solid var(--telus-grey-bd); border-radius: 4px; }
+.r-systemic:focus { background: #FFFDE7; outline: 1px solid var(--telus-purple); }
+
+/* Callback warning */
+.r-callback-warning {
+  background: #FFF0F0;
+  border: 1px solid #F5AAAA;
+  border-left: 4px solid var(--telus-red);
+  border-radius: 4px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--telus-red);
+  margin-top: 8px;
+}
+
+/* Fallback */
+.r-fallback { font-size: 13px; line-height: 1.7; color: var(--telus-text); }
+
+/* ── Applied "Call Evaluation Details" view ── */
+#applied-section { display: none; }
+#applied-section.visible { display: block; }
+.eval-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.eval-toolbar h2 { font-size: 18px; font-weight: 700; color: var(--telus-purple); }
+.eval-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.btn-secondary {
+  background: #fff;
+  border: 1.5px solid var(--telus-purple);
+  color: var(--telus-purple);
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.btn-secondary:hover { background: var(--telus-purple); color: #fff; }
+.sheet-link { font-size: 13px; color: var(--telus-purple); text-decoration: none; font-weight: 600; }
+.sheet-link:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="app-header">
+  <div>
+    <h1>NH FCR, Transfer or Sales Call Analyzer</h1>
+    <p>Quality Analyst Team</p>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <button onclick="openDashboard()"
+       style="background:transparent;color:rgba(255,255,255,.85);font-size:12px;font-weight:600;
+              border:1px solid rgba(255,255,255,.4);border-radius:4px;padding:8px 14px;
+              cursor:pointer;font-family:inherit">
+      &#128200; Dashboard
+    </button>
+    <button class="btn-process" id="btn-process" onclick="handleSubmit()">Process Script</button>
+  </div>
+</header>
+
+<div class="page">
+  <div class="alert-error"   id="alert-error"></div>
+  <div class="alert-cache"   id="alert-cache">&#9889; <span id="cache-msg">Loaded from cache — no AI processing needed.</span></div>
+  <div class="alert-success" id="alert-success"></div>
+
+  <!-- Team Member Details -->
+  <div class="card">
+    <div class="card-header"><h2>Team Member Details</h2></div>
+    <div class="card-body">
+      <!-- Audit meta bar -->
+      <div style="display:flex;gap:16px;flex-wrap:nowrap;margin-bottom:14px;padding:10px 16px;
+                  background:#F5F0FF;border:1px solid #D1B8E8;border-radius:6px;align-items:center;
+                  overflow:visible;min-width:0">
+        <div style="display:flex;flex-direction:column;flex-shrink:0">
+          <span style="font-size:10px;font-weight:700;color:#54565A;text-transform:uppercase;letter-spacing:.4px">Audit Reference</span>
+          <span id="audit-ref-display" style="font-size:14px;font-weight:700;color:#4B286D;
+                white-space:nowrap;letter-spacing:.5px;font-family:'Courier New',monospace">Generating…</span>
+        </div>
+        <div style="width:1px;background:#D1B8E8;align-self:stretch;flex-shrink:0"></div>
+        <div style="display:flex;flex-direction:column;flex-shrink:0">
+          <span style="font-size:10px;font-weight:700;color:#54565A;text-transform:uppercase;letter-spacing:.4px">Observer</span>
+          <span id="observer-display" style="font-size:13px;font-weight:600;color:#1A1A2E;white-space:nowrap">Loading…</span>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <button onclick="saveAsDraft(this)"
+            style="background:#fff;border:1.5px solid var(--telus-purple);color:var(--telus-purple);
+                   border-radius:4px;padding:6px 14px;font-size:11px;font-weight:600;
+                   font-family:inherit;cursor:pointer"
+            title="Save current form data as a draft to resume later">
+            &#128190; Save as Draft
+          </button>
+          <button onclick="clearAllFields()"
+            style="background:var(--telus-green);border:none;color:#fff;border-radius:4px;
+                   padding:6px 14px;font-size:11px;font-weight:600;font-family:inherit;cursor:pointer"
+            title="Clear all fields and start a new evaluation">
+            &#10005; Clear All
+          </button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>SAP ID <span class="req">*</span></label>
+          <input type="text" id="sapId" placeholder="Enter 4 to 7-digit SAP ID" maxlength="7" oninput="debounceSapLookup()"/>
+        </div>
+        <div class="form-group">
+          <label>Team Member</label>
+          <input type="text" id="participant" placeholder="Auto-filled from transcript..." oninput="debounceLookupSap()"/>
+        </div>
+        <div class="form-group">
+          <label>Team Leader</label>
+          <input type="text" id="teamLeader" placeholder="Enter Team Leader..."/>
+        </div>
+        <div class="form-group">
+          <label>Operations Manager</label>
+          <input type="text" id="opsManager" placeholder="Enter Operations Manager..."/>
+        </div>
+        <div class="form-group">
+          <label>Line of Business</label>
+          <input type="text" id="lineOfBusiness" placeholder="Auto-filled from SAP ID..."/>
+        </div>
+        <div class="form-group">
+          <label>Locale (Site)</label>
+          <input type="text" id="locale" placeholder="Auto-filled from SAP ID..."/>
+        </div>
+        <div class="form-group">
+          <label>VTID</label>
+          <input type="text" id="vtid" placeholder="Auto-filled from AT Data GCP..."/>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Call Details -->
+  <div class="card">
+    <div class="card-header"><h2>Call Details</h2></div>
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Transcript Start Time</label>
+          <input type="text" id="startTime" placeholder="Auto-filled from transcript..."/>
+        </div>
+        <div class="form-group">
+          <label>Customer's BAN</label>
+          <input type="text" id="customerBAN" placeholder="Auto-filled from transcript..."/>
+        </div>
+        <div class="form-group">
+          <label>Interaction ID</label>
+          <input type="text" id="interactionId" placeholder="Auto-filled from transcript..."/>
+        </div>
+        <div class="form-group">
+          <label>Direction</label>
+          <select id="direction">
+            <option value="">Auto-filled or select...</option>
+            <option>Inbound</option>
+            <option>Outbound</option>
+            <option>Chat</option>
+            <option>Email</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Transcript Duration</label>
+          <input type="text" id="duration" placeholder="Auto-filled from transcript..."/>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Analysis Type -->
+  <div class="card">
+    <div class="card-header"><h2>Analysis Type</h2></div>
+    <div class="card-body">
+      <div class="analysis-options">
+        <input type="radio" name="analysisType" id="opt-repeats" class="analysis-option" value="repeats" checked/>
+        <label class="analysis-label" for="opt-repeats">
+          <span class="option-icon">&#128222;</span>
+          <div>
+            <div class="option-title">Repeats and Transfer Analyzer &mdash; Agent</div>
+            <div class="option-desc">Analyze FCR, repeat call rate, transfer validity, and agent ownership</div>
+          </div>
+        </label>
+        <input type="radio" name="analysisType" id="opt-sales" class="analysis-option" value="sales"/>
+        <label class="analysis-label" for="opt-sales">
+          <span class="option-icon">&#128200;</span>
+          <div>
+            <div class="option-title">Sales Analyzer &mdash; Agent</div>
+            <div class="option-desc">Evaluate sales framework: rapport, needs, presentation, objections, closing</div>
+          </div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Transcript -->
+  <div class="card">
+    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+      <h2>Paste Call Script Here</h2>
+      <button onclick="clearTranscript()"
+        style="background:var(--telus-green);border:none;color:#fff;
+               border-radius:4px;padding:5px 12px;font-size:11px;font-weight:600;
+               font-family:inherit;cursor:pointer"
+        title="Clear transcript and reset auto-filled fields">
+        &#10005; Clear
+      </button>
+    </div>
+    <div class="card-body">
+      <div class="form-group">
+        <textarea class="transcript-area" id="transcript"
+          placeholder="Paste transcript here. Fields above will auto-fill when transcript metadata is detected.&#10;&#10;Separate multiple calls with --- on its own line."
+          oninput="scheduleAutofill()"></textarea>
+        <p class="transcript-hint">Auto-fills: Interaction ID &bull; Start Time &bull; Duration &bull; Direction &bull; Participant(s) &bull; Customer BAN</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Applied / Call Evaluation Details -->
+  <div id="applied-section">
+    <div class="eval-toolbar">
+      <h2>Call Evaluation Details</h2>
+      <div class="eval-actions">
+        <a href="#" id="sheet-link" class="sheet-link" target="_blank">&#128202; View in Sheets</a>
+        <button class="btn-secondary" onclick="copyApplied(this)">&#128203; Copy</button>
+        <button class="btn-secondary" onclick="reOpenModal()">&#128269; Full Analysis</button>
+        <button class="btn-secondary" onclick="downloadAuditPDF()">&#128196; Download Evaluation</button>
+        <button class="btn-submit visible" id="btn-submit" onclick="handleSubmitEmail()">&#128140; Submit &amp; Email Audit</button>
+      </div>
+    </div>
+    <div id="applied-output"></div>
+  </div>
+</div>
+
+<!-- ── AI Analytics Panel ── -->
+<div id="analytics-panel">
+  <div class="an-box">
+    <div class="an-panel-hdr">
+      <div style="flex:1">
+        <h2 id="an-panel-title">&#129302; AI Performance Analytics</h2>
+        <div class="an-cache-badge" id="an-cache-badge"></div>
+      </div>
+      <button class="an-close" onclick="closeAnalyticsPanel()">&#10005;</button>
+    </div>
+
+    <!-- Inline filter bar -->
+    <div id="an-filter-bar" style="background:#F5F0FF;border-bottom:1px solid #D1B8E8;padding:10px 16px;flex-shrink:0">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+
+        <!-- Date range -->
+        <div style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#4B286D">
+          <span>Date:</span>
+          <input type="date" id="an-date-from" style="border:1px solid #D1B8E8;border-radius:4px;padding:4px 7px;font-size:11px;font-family:inherit;background:#fff" onchange="anApplyFilters()"/>
+          <span style="color:#888">→</span>
+          <input type="date" id="an-date-to"   style="border:1px solid #D1B8E8;border-radius:4px;padding:4px 7px;font-size:11px;font-family:inherit;background:#fff" onchange="anApplyFilters()"/>
+        </div>
+
+        <!-- Team Member -->
+        <div style="position:relative">
+          <select id="an-sel-member" multiple style="display:none" onchange="anApplyFilters()"></select>
+          <div class="an-filter-pill" id="an-pill-member" onclick="anTogglePill('member')">
+            <span class="an-pill-lbl">Team Member</span>
+            <span id="an-pill-member-val" class="an-pill-val">All</span>
+            <span>▼</span>
+          </div>
+          <div class="an-pill-drop" id="an-drop-member"></div>
+        </div>
+
+        <!-- Team Leader -->
+        <div style="position:relative">
+          <div class="an-filter-pill" id="an-pill-leader" onclick="anTogglePill('leader')">
+            <span class="an-pill-lbl">Team Leader</span>
+            <span id="an-pill-leader-val" class="an-pill-val">All</span>
+            <span>▼</span>
+          </div>
+          <div class="an-pill-drop" id="an-drop-leader"></div>
+        </div>
+
+        <!-- LOB -->
+        <div style="position:relative">
+          <div class="an-filter-pill" id="an-pill-lob" onclick="anTogglePill('lob')">
+            <span class="an-pill-lbl">LOB</span>
+            <span id="an-pill-lob-val" class="an-pill-val">All</span>
+            <span>▼</span>
+          </div>
+          <div class="an-pill-drop" id="an-drop-lob"></div>
+        </div>
+
+        <!-- Locale -->
+        <div style="position:relative">
+          <div class="an-filter-pill" id="an-pill-locale" onclick="anTogglePill('locale')">
+            <span class="an-pill-lbl">Locale</span>
+            <span id="an-pill-locale-val" class="an-pill-val">All</span>
+            <span>▼</span>
+          </div>
+          <div class="an-pill-drop" id="an-drop-locale"></div>
+        </div>
+
+        <!-- SAP ID search -->
+        <input type="text" id="an-sap-q" placeholder="&#128269; SAP ID…"
+          style="border:1px solid #D1B8E8;border-radius:16px;padding:4px 12px;font-size:11px;font-family:inherit;background:#fff;width:110px"
+          oninput="anApplyFilters()"/>
+
+        <button onclick="anClearFilters()"
+          style="background:var(--telus-green);color:#fff;border:none;border-radius:4px;
+                 padding:5px 12px;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;margin-left:4px">
+          Clear
+        </button>
+        <button onclick="anRunAnalytics()"
+          style="background:#4B286D;color:#fff;border:none;border-radius:4px;
+                 padding:5px 14px;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer">
+          &#129302; Run
+        </button>
+      </div>
+    </div>
+
+    <div class="an-panel-body" id="an-panel-body">
+      <div class="an-loading"><div class="an-spin"></div><p>Generating intelligence report…</p></div>
+    </div>
+    <div class="an-panel-ftr">
+      <span style="font-size:12px;color:#666;font-weight:600">&#128140; Email briefing to:</span>
+      <input type="email" class="an-email-input" id="an-email-input" placeholder="Enter email address…"/>
+      <button class="btn-an-send" id="an-send-btn" onclick="sendAnalyticsBriefingFromUI()">Send Briefing</button>
+      <button class="db-btn-clear" onclick="regenerateAnalytics()" style="margin-left:auto">&#8635; Regenerate</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     DASHBOARD PANEL — fully embedded, no iframe
+═══════════════════════════════════════════════════════ -->
+<div id="dashboard-panel">
+
+  <!-- Top bar -->
+  <div id="db-topbar">
+    <button class="db-back" onclick="closeDashboard()">&#8592; Back to Analyzer</button>
+    <span>&#128200; NH Call Analyzer — Dashboard</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+      <span id="db-cache-status" style="font-size:11px;color:rgba(255,255,255,.7)"></span>
+      <button id="db-refresh-btn" onclick="dbForceRefresh()"
+        style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);
+               color:#fff;border-radius:4px;padding:6px 13px;font-size:11px;font-weight:600;
+               font-family:inherit;cursor:pointer">
+        &#8635; Refresh
+      </button>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="db-tab-bar">
+    <button class="db-tab-btn db-active" onclick="dbSwitchTab('overview',this)">&#127760; Overview</button>
+    <button class="db-tab-btn"           onclick="dbSwitchTab('repeats',this)">&#128222; Repeats and Transfer Analyzer — Agent</button>
+    <button class="db-tab-btn"           onclick="dbSwitchTab('sales',this)">&#128200; Sales Analyzer — Agent</button>
+    <button class="db-tab-btn"           onclick="dbSwitchTab('auditlog',this)">&#128196; Audit Log</button>
+  </div>
+
+  <!-- Loading -->
+  <div id="db-loading" class="db-loading" style="padding:60px">
+    <div class="db-spin"></div>Loading dashboard data…
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       SHARED FILTER PANEL — applies to ALL tabs simultaneously
+  ══════════════════════════════════════════════════════════ -->
+  <div class="db-body" style="padding-bottom:0">
+  <div class="db-filter-card">
+    <div class="db-filter-title">
+      <span>&#128269; Filters
+        <span id="db-active-filter-badge" style="display:none;background:#4B286D;color:#fff;border-radius:10px;padding:1px 8px;font-size:10px;margin-left:6px"></span>
+      </span>
+      <span style="font-size:10px;color:#888;font-weight:400">Filters apply across all tabs</span>
+    </div>
+
+    <!-- Pill filter row -->
+    <div class="db-filter-pills">
+
+      <!-- Date Range -->
+      <div class="db-date-pill-group">
+        <input type="date" id="sh-date-from" title="From date" onchange="dbApplyAll()"/>
+        <span>→</span>
+        <input type="date" id="sh-date-to"   title="To date"   onchange="dbApplyAll()"/>
+      </div>
+
+      <!-- Team Member pill -->
+      <div class="db-pill" id="pill-member" onclick="dbTogglePill('member',this)">
+        <span class="db-pill-label">Team Member</span>
+        <span class="db-pill-value" id="pill-member-val">All</span>
+        <span class="db-pill-arrow">▼</span>
+        <span class="db-pill-clear" id="pill-member-clr" style="display:none" onclick="event.stopPropagation();dbClearPill('member')">✕</span>
+      </div>
+
+      <!-- Team Leader pill -->
+      <div class="db-pill" id="pill-leader" onclick="dbTogglePill('leader',this)">
+        <span class="db-pill-label">Team Leader</span>
+        <span class="db-pill-value" id="pill-leader-val">All</span>
+        <span class="db-pill-arrow">▼</span>
+        <span class="db-pill-clear" id="pill-leader-clr" style="display:none" onclick="event.stopPropagation();dbClearPill('leader')">✕</span>
+      </div>
+
+      <!-- Ops Manager pill -->
+      <div class="db-pill" id="pill-ops" onclick="dbTogglePill('ops',this)">
+        <span class="db-pill-label">Ops Manager</span>
+        <span class="db-pill-value" id="pill-ops-val">All</span>
+        <span class="db-pill-arrow">▼</span>
+        <span class="db-pill-clear" id="pill-ops-clr" style="display:none" onclick="event.stopPropagation();dbClearPill('ops')">✕</span>
+      </div>
+
+      <!-- LOB pill -->
+      <div class="db-pill" id="pill-lob" onclick="dbTogglePill('lob',this)">
+        <span class="db-pill-label">LOB</span>
+        <span class="db-pill-value" id="pill-lob-val">All</span>
+        <span class="db-pill-arrow">▼</span>
+        <span class="db-pill-clear" id="pill-lob-clr" style="display:none" onclick="event.stopPropagation();dbClearPill('lob')">✕</span>
+      </div>
+
+      <!-- Locale pill -->
+      <div class="db-pill" id="pill-locale" onclick="dbTogglePill('locale',this)">
+        <span class="db-pill-label">Locale</span>
+        <span class="db-pill-value" id="pill-locale-val">All</span>
+        <span class="db-pill-arrow">▼</span>
+        <span class="db-pill-clear" id="pill-locale-clr" style="display:none" onclick="event.stopPropagation();dbClearPill('locale')">✕</span>
+      </div>
+
+      <!-- VTID pill -->
+      <div class="db-pill" id="pill-vtid" onclick="dbTogglePill('vtid',this)">
+        <span class="db-pill-label">VTID</span>
+        <span class="db-pill-value" id="pill-vtid-val">All</span>
+        <span class="db-pill-arrow">▼</span>
+        <span class="db-pill-clear" id="pill-vtid-clr" style="display:none" onclick="event.stopPropagation();dbClearPill('vtid')">✕</span>
+      </div>
+
+      <!-- Analysis Type pill -->
+      <div class="db-pill" id="pill-atype" onclick="dbTogglePill('atype',this)">
+        <span class="db-pill-label">Analysis Type</span>
+        <span class="db-pill-value" id="pill-atype-val">All</span>
+        <span class="db-pill-arrow">▼</span>
+        <span class="db-pill-clear" id="pill-atype-clr" style="display:none" onclick="event.stopPropagation();dbClearPill('atype')">✕</span>
+      </div>
+
+      <!-- Audit Ref pill -->
+      <div class="db-pill" id="pill-ref" onclick="dbTogglePill('ref',this)">
+        <span class="db-pill-label">Audit Ref</span>
+        <span class="db-pill-value" id="pill-ref-val">All</span>
+        <span class="db-pill-arrow">▼</span>
+        <span class="db-pill-clear" id="pill-ref-clr" style="display:none" onclick="event.stopPropagation();dbClearPill('ref')">✕</span>
+      </div>
+
+      <!-- SAP ID text search -->
+      <input type="text" class="db-sap-pill-input" id="sh-sap-search" placeholder="&#128269; SAP ID…" oninput="dbApplyAll()"/>
+
+    </div>
+
+    <div class="db-filter-actions" style="margin-top:8px">
+      <button class="db-btn-clear" onclick="dbClearAll()">Clear All</button>
+      <span class="db-row-count" id="sh-row-count"></span>
+    </div>
+  </div>
+  </div>
+
+  <!-- Hidden checkbox stores — populated by JS, never shown -->
+  <div style="display:none">
+    <div id="sh-ms-member"></div>
+    <div id="sh-ms-leader"></div>
+    <div id="sh-ms-ops"></div>
+    <div id="sh-ms-lob"></div>
+    <div id="sh-ms-locale"></div>
+    <div id="sh-ms-vtid"></div>
+    <div id="sh-ms-atype"></div>
+    <div id="sh-ms-ref"></div>
+  </div>
+
+  <!-- Floating dropdown panels (one per pill) -->
+  <div class="db-pill-panel" id="panel-member"></div>
+  <div class="db-pill-panel" id="panel-leader"></div>
+  <div class="db-pill-panel" id="panel-ops"></div>
+  <div class="db-pill-panel" id="panel-lob"></div>
+  <div class="db-pill-panel" id="panel-locale"></div>
+  <div class="db-pill-panel" id="panel-vtid"></div>
+  <div class="db-pill-panel" id="panel-atype"></div>
+  <div class="db-pill-panel" id="panel-ref"></div>
+
+  <!-- Shared stats row — shows for whichever tab is active -->
+  <div style="max-width:900px;margin:10px auto 0;padding:0 24px">
+    <div class="db-stats-row" id="ov-stats" style="display:flex;justify-content:center"></div>
+    <div class="db-stats-row" id="r-stats"  style="display:none;justify-content:center"></div>
+    <div class="db-stats-row" id="s-stats"  style="display:none;justify-content:center"></div>
+    <div class="db-stats-row" id="al-stats" style="display:none;justify-content:center"></div>
+  </div>
+
+  <!-- ── OVERVIEW TAB ── -->
+  <div class="db-body">
+  <div class="db-tab-panel db-active" id="db-tab-overview">
+
+    <!-- Row 1: Combined Highlights & Lowlights -->
+    <div class="ov-section">
+      <div class="ov-section-title">&#9733; Highlights &amp; Lowlights — All Analyzers</div>
+      <div class="ov-hl-grid" id="ov-hl-grid">
+        <div class="ov-hl-box ov-hl-high">
+          <div class="ov-hl-title">&#10003; Highlights</div>
+          <ul id="ov-highlights"><li class="ov-empty">Load data to see highlights</li></ul>
+        </div>
+        <div class="ov-hl-box ov-hl-low">
+          <div class="ov-hl-title">&#10007; Lowlights</div>
+          <ul id="ov-lowlights"><li class="ov-empty">Load data to see lowlights</li></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 2: Combined Call Drivers + Critical Flags side by side -->
+    <div class="ov-two-col">
+      <div class="ov-section">
+        <div class="ov-section-title">&#128222; Top Call Drivers — All Types Combined</div>
+        <div class="db-chart-box" id="ov-chart-drivers" style="height:280px"></div>
+      </div>
+      <div class="ov-section">
+        <div class="ov-section-title">&#128681; Top Critical Flags — All Agents</div>
+        <div class="db-chart-box" id="ov-chart-flags" style="height:280px"></div>
+      </div>
+    </div>
+
+    <!-- Row 3: RCA Category breakdown donut -->
+    <div class="ov-two-col">
+      <div class="ov-section">
+        <div class="ov-section-title">&#128203; RCA Category Breakdown</div>
+        <div id="ov-chart-rca" style="height:260px"></div>
+      </div>
+      <div class="ov-section">
+        <div class="ov-section-title">&#128200; Repeats vs Sales Distribution</div>
+        <div id="ov-chart-type" style="height:260px"></div>
+      </div>
+    </div>
+
+    <!-- Row 4: Team Member Progression / Repeat Offenders table -->
+    <div class="ov-section">
+      <div class="ov-section-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>&#128100; Team Member Trends &amp; Repeat Offenders</span>
+        <span class="ov-legend">
+          <span style="color:#C12335;font-weight:700">&#9679;</span> High flags
+          <span style="color:#8C4A00;font-weight:700;margin-left:10px">&#9679;</span> Moderate
+          <span style="color:#2B8000;font-weight:700;margin-left:10px">&#9679;</span> Low
+        </span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="ov-tm-table">
+          <thead>
+            <tr>
+              <th>Team Member</th>
+              <th>Evaluations</th>
+              <th>Avg Repeat Risk</th>
+              <th>Total Flags</th>
+              <th>Top Violation</th>
+              <th>RCA Category</th>
+              <th>Team Leader</th>
+              <th>Trend</th>
+            </tr>
+          </thead>
+          <tbody id="ov-tm-tbody">
+            <tr><td colspan="8" style="text-align:center;padding:24px;color:#888">Load data to see team member trends</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Row 5: Flag frequency table -->
+    <div class="ov-section">
+      <div class="ov-section-title">&#128681; Critical Flag Detail — Frequency &amp; Impact</div>
+      <div style="overflow-x:auto">
+        <table class="ov-tm-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Flag / Violation</th><th>Occurrences</th>
+              <th>% of All Flags</th><th>Top Agent</th><th>RCA Category</th><th>Priority</th>
+            </tr>
+          </thead>
+          <tbody id="ov-flag-tbody">
+            <tr><td colspan="7" style="text-align:center;padding:24px;color:#888">Load data to see flags</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+  </div>
+
+  <!-- ── REPEATS TAB ── -->
+  <div class="db-body">
+  <div class="db-tab-panel" id="db-tab-repeats">
+    <div class="db-chart-row">
+      <div class="db-chart-card"><h3>Top 5 Call Drivers</h3><div class="db-chart-box" id="r-chart-drivers"></div></div>
+      <div class="db-chart-card"><h3>Top 5 Opportunities</h3><div class="db-chart-box" id="r-chart-opps"></div></div>
+    </div>
+    <div class="db-table-card">
+      <div class="db-tbl-toolbar">
+        <h3>&#128681; Critical Flag Details</h3>
+        <div class="db-export-btns">
+          <span class="db-row-count" id="r-row-count" style="margin-right:8px"></span>
+          <button class="btn-an-gen" onclick="openAnalyticsPanel('r')">&#129302; AI Analytics</button>
+          <button class="db-btn-exp" onclick="dbFlagOnly('r')">&#128681; Flag Records</button>
+          <button class="db-btn-exp" onclick="dbExportAll('r')">&#11015; Export All</button>
+          <button class="db-btn-exp primary" onclick="dbExportFiltered('r')">&#11015; Export Filtered</button>
+        </div>
+      </div>
+      <div class="db-tbl-wrap">
+        <table class="db-tbl"><thead><tr>
+          <th>Date</th><th>Audit Ref</th><th>Team Member</th><th>LOB</th>
+          <th>Locale</th><th>Analysis Type</th>
+          <th>Call Driver</th><th>RCA Category</th><th>RCA Sub-Parameter</th>
+          <th>Call Summary</th><th>Top Opportunity</th>
+          <th>Overall Opportunities</th><th>Recommendations</th>
+          <th>Critical Flags</th><th>Repeat %</th><th>Evaluation</th>
+        </tr></thead><tbody id="r-tbody"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SALES TAB ── -->
+  <div class="db-tab-panel" id="db-tab-sales">
+    <div class="db-chart-row">
+      <div class="db-chart-card"><h3>Top 5 Call Drivers</h3><div class="db-chart-box" id="s-chart-drivers"></div></div>
+      <div class="db-chart-card"><h3>Top 5 Opportunities</h3><div class="db-chart-box" id="s-chart-opps"></div></div>
+    </div>
+    <div class="db-table-card">
+      <div class="db-tbl-toolbar">
+        <h3>&#128681; Critical Flag Details</h3>
+        <div class="db-export-btns">
+          <span class="db-row-count" id="s-row-count" style="margin-right:8px"></span>
+          <button class="db-btn-exp" onclick="dbFlagOnly('s')">&#128681; Flag Records</button>
+          <button class="db-btn-exp" onclick="dbExportAll('s')">&#11015; Export All</button>
+          <button class="db-btn-exp primary" onclick="dbExportFiltered('s')">&#11015; Export Filtered</button>
+        </div>
+      </div>
+      <div class="db-tbl-wrap">
+        <table class="db-tbl"><thead><tr>
+          <th>Date</th><th>Audit Ref</th><th>Team Member</th><th>LOB</th>
+          <th>Locale</th><th>Analysis Type</th>
+          <th>Call Driver</th><th>RCA Category</th><th>RCA Sub-Parameter</th>
+          <th>Call Summary</th><th>Top Opportunity</th>
+          <th>Overall Opportunities</th><th>Recommendations</th>
+          <th>Critical Flags</th><th>Repeat %</th><th>Evaluation</th>
+        </tr></thead><tbody id="s-tbody"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── AUDIT LOG TAB ── -->
+  <div class="db-tab-panel" id="db-tab-auditlog">
+    <div class="db-table-card">
+      <div class="db-tbl-toolbar">
+        <h3>&#128196; Audit Log — All Submitted Evaluations</h3>
+        <div class="db-export-btns">
+          <span class="db-row-count" id="al-row-count" style="margin-right:8px"></span>
+          <button class="db-btn-exp" onclick="dbExportAll('al')">&#11015; Export All</button>
+          <button class="db-btn-exp primary" onclick="dbExportFiltered('al')">&#11015; Export Filtered</button>
+        </div>
+      </div>
+      <div class="db-tbl-wrap">
+        <table class="db-tbl"><thead><tr>
+          <th>Audit Ref</th><th>Submitted At</th><th>Interaction ID</th>
+          <th>SAP ID</th><th>Team Member</th><th>Team Leader</th>
+          <th>Operations Manager</th><th>LOB</th><th>Locale</th>
+          <th>Observer</th><th>Analysis Type</th><th>Direction</th>
+          <th>Duration</th><th>Email Status</th><th>Recipients</th>
+        </tr></thead><tbody id="al-tbody"></tbody></table>
+      </div>
+    </div>
+
+  </div>
+  </div><!-- /audit log tab -->
+
+  </div><!-- /db-body -->
+  <!-- Export spinner -->
+  <div id="db-export-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);
+       z-index:3000;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:10px;padding:36px 48px;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.3)">
+      <div style="width:44px;height:44px;border:4px solid #E8DFF5;border-top-color:#4B286D;border-radius:50%;
+           animation:spin .85s linear infinite;margin:0 auto 16px"></div>
+      <p style="font-size:14px;font-weight:700;color:#4B286D;margin-bottom:6px">Creating Spreadsheet…</p>
+      <p style="font-size:12px;color:#54565A">Your export will open in a new tab.</p>
+    </div>
+  </div>
+
+</div><!-- /dashboard-panel -->
+
+<!-- Email sending overlay -->
+<div id="email-overlay">
+  <div class="email-card">
+    <div class="spinner"></div>
+    <h3>Sending Audit Email</h3>
+    <p>Generating PDF and emailing<br/>Team Leader &amp; Operations Manager&hellip;</p>
+  </div>
+</div>
+
+<!-- Processing overlay -->
+<div id="processing-overlay">
+  <div class="processing-card">
+    <div class="spinner"></div>
+    <h3>Analyzing Call Script</h3>
+    <p>Your transcript is being processed by AI.<br/>This usually takes 30&ndash;90 seconds&hellip;</p>
+  </div>
+</div>
+
+<!-- Analysis modal -->
+<div id="analysis-modal">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <h2>Process Call Script</h2>
+      <button class="modal-close" onclick="closeModal()">&#10005;</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-ftr">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-apply" onclick="applyAndClose()">Apply Suggestions &amp; Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var _lastHTML      = '';
+var _autofillTimer = null;
+var _sapTimer      = null;
+
+// ── Autofill ──────────────────────────────────────────────────────────────────
+// Tracks whether the Team Member field was set by a confirmed SAP ID lookup.
+// When true, transcript autofill will never overwrite it.
+var _sapResolvedParticipant = false;
+
+function scheduleAutofill() {
+  clearTimeout(_autofillTimer);
+  _autofillTimer = setTimeout(function () {
+    var txt = document.getElementById('transcript').value;
+    if (!txt.trim()) return;
+    google.script.run
+      .withSuccessHandler(function (meta) {
+        if (!meta) return;
+
+        // Always fill call detail fields from transcript metadata
+        setIfEmpty('interactionId', meta.interactionId);
+        setIfEmpty('startTime',     meta.startTime);
+        setIfEmpty('duration',      meta.duration);
+
+        if (meta.direction && !document.getElementById('direction').value) {
+          var sel = document.getElementById('direction');
+          for (var i = 0; i < sel.options.length; i++) {
+            if (sel.options[i].text.toLowerCase() === meta.direction.trim().toLowerCase()) {
+              sel.selectedIndex = i; break;
+            }
+          }
+        }
+        if (!document.getElementById('customerBAN').value) {
+          if (meta.customerBAN)       document.getElementById('customerBAN').value = meta.customerBAN;
+          else if (meta.customerName) document.getElementById('customerBAN').value = meta.customerName;
+        }
+
+        // ONLY fill Team Member from transcript if the SAP ID lookup has NOT
+        // already resolved a specific person. This prevents the transcript's
+        // first participant from overwriting the observer's actual agent.
+        if (!_sapResolvedParticipant && meta.participant &&
+            !document.getElementById('participant').value) {
+          document.getElementById('participant').value = meta.participant;
+          lookupSapFromName(meta.participant);
+        }
+      })
+      .getTranscriptMetadata(txt);
+  }, 800);
+}
+
+function setIfEmpty(id, val) {
+  if (val && !document.getElementById(id).value)
+    document.getElementById(id).value = val;
+}
+
+// Triggered when SAP ID is typed — looks up all roster fields.
+// Sets _sapResolvedParticipant so transcript autofill won't overwrite the name.
+function debounceSapLookup() {
+  clearTimeout(_sapTimer);
+  // If SAP ID is cleared, reset the lock so autofill can run again
+  if (!document.getElementById('sapId').value.trim()) {
+    _sapResolvedParticipant = false;
+  }
+  _sapTimer = setTimeout(function () {
+    var sap = document.getElementById('sapId').value.trim();
+    if (sap.length < 4) return;
+    google.script.run
+      .withSuccessHandler(function (row) {
+        if (!row) return;
+        // SAP lookup wins — always set the name from the roster, overwriting anything
+        if (row.participant) {
+          document.getElementById('participant').value = row.participant;
+          _sapResolvedParticipant = true;  // lock: transcript autofill won't overwrite this
+        }
+        if (row.lineOfBusiness) document.getElementById('lineOfBusiness').value = row.lineOfBusiness;
+        if (row.teamLeader)     document.getElementById('teamLeader').value     = row.teamLeader;
+        if (row.opsManager)     document.getElementById('opsManager').value     = row.opsManager;
+        if (row.locale)         document.getElementById('locale').value         = row.locale;
+        if (row.vtid)           document.getElementById('vtid').value           = row.vtid;
+      })
+      .getRosterBySapId(sap);
+  }, 600);
+}
+
+// Legacy: triggered when participant name is typed manually
+function debounceLookupSap() {
+  clearTimeout(_sapTimer);
+  _sapTimer = setTimeout(function () {
+    var name = document.getElementById('participant').value.trim();
+    if (name) {
+      google.script.run
+        .withSuccessHandler(function (id) { if (id) document.getElementById('sapId').value = id; })
+        .getSapIdForParticipant(name);
+    }
+  }, 600);
+}
+
+// ── Save as Draft — persists form to localStorage ────────────────────────────
+function saveAsDraft(btn) {
+  var draft = {
+    sapId:          document.getElementById('sapId').value,
+    participant:    document.getElementById('participant').value,
+    teamLeader:     document.getElementById('teamLeader').value,
+    opsManager:     document.getElementById('opsManager').value,
+    lineOfBusiness: document.getElementById('lineOfBusiness').value,
+    locale:         document.getElementById('locale').value,
+    vtid:           document.getElementById('vtid').value,
+    startTime:      document.getElementById('startTime').value,
+    customerBAN:    document.getElementById('customerBAN').value,
+    interactionId:  document.getElementById('interactionId').value,
+    direction:      document.getElementById('direction').value,
+    duration:       document.getElementById('duration').value,
+    analysisType:   document.querySelector('input[name="analysisType"]:checked').value,
+    transcript:     document.getElementById('transcript').value,
+    auditRef:       _currentAuditRef,
+    savedAt:        new Date().toLocaleString()
+  };
+  try {
+    localStorage.setItem('nh_analyzer_draft', JSON.stringify(draft));
+    var orig = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.innerHTML = '&#10003; Saved!';
+      btn.style.background = 'var(--telus-green)';
+      btn.style.color = '#fff';
+      btn.style.border = 'none';
+      setTimeout(function() {
+        btn.innerHTML = orig;
+        btn.style.background = '#fff';
+        btn.style.color = 'var(--telus-purple)';
+        btn.style.border = '1.5px solid var(--telus-purple)';
+      }, 2000);
+    }
+  } catch(e) {
+    alert('Draft could not be saved: ' + e.message);
+  }
+}
+
+// ── Restore draft on page load ────────────────────────────────────────────────
+function restoreDraftIfAvailable() {
+  try {
+    var raw = localStorage.getItem('nh_analyzer_draft');
+    if (!raw) return;
+    var draft = JSON.parse(raw);
+    if (!draft.sapId && !draft.transcript) return;
+
+    // Ask user if they want to restore
+    if (!confirm('A saved draft was found (saved ' + (draft.savedAt || '') + ').\nRestore it?')) {
+      localStorage.removeItem('nh_analyzer_draft');
+      return;
+    }
+
+    var setVal = function(id, val) { var el = document.getElementById(id); if (el && val) el.value = val; };
+    setVal('sapId',          draft.sapId);
+    setVal('participant',    draft.participant);
+    setVal('teamLeader',     draft.teamLeader);
+    setVal('opsManager',     draft.opsManager);
+    setVal('lineOfBusiness', draft.lineOfBusiness);
+    setVal('locale',         draft.locale);
+    setVal('vtid',           draft.vtid);
+    setVal('startTime',      draft.startTime);
+    setVal('customerBAN',    draft.customerBAN);
+    setVal('interactionId',  draft.interactionId);
+    setVal('duration',       draft.duration);
+    setVal('transcript',     draft.transcript);
+
+    if (draft.direction) {
+      var sel = document.getElementById('direction');
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === draft.direction) { sel.selectedIndex = i; break; }
+      }
+    }
+    if (draft.analysisType) {
+      var radio = document.querySelector('input[name="analysisType"][value="' + draft.analysisType + '"]');
+      if (radio) radio.checked = true;
+    }
+    if (draft.auditRef) {
+      _currentAuditRef = draft.auditRef;
+      document.getElementById('audit-ref-display').textContent = draft.auditRef;
+    }
+    localStorage.removeItem('nh_analyzer_draft');  // clear after restore
+  } catch(e) {
+    localStorage.removeItem('nh_analyzer_draft');
+  }
+}
+
+// Run on load
+if (typeof google !== 'undefined' && google.script) {
+  restoreDraftIfAvailable();
+}
+
+// ── Clear transcript only (button on transcript card) ────────────────────────
+function clearTranscript() {
+  document.getElementById('transcript').value        = '';
+  document.getElementById('interactionId').value     = '';
+  document.getElementById('startTime').value         = '';
+  document.getElementById('duration').value          = '';
+  document.getElementById('customerBAN').value       = '';
+  document.getElementById('direction').selectedIndex = 0;
+  hideError();
+}
+
+// ── Clear ALL fields + reset form completely (button on audit meta bar) ───────
+function clearAllFields() {
+  // Transcript + call details
+  clearTranscript();
+
+  // Team member fields
+  ['sapId','participant','teamLeader','opsManager','lineOfBusiness','locale','vtid']
+    .forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+
+  // Reset applied output and alerts
+  document.getElementById('applied-section').classList.remove('visible');
+  document.getElementById('applied-output').innerHTML = '';
+  hideError();
+
+  // Reset lock state if previously locked
+  ['sapId','participant','teamLeader','opsManager','lineOfBusiness','locale','vtid',
+   'startTime','customerBAN','interactionId','direction','duration','transcript']
+    .forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) { el.disabled = false; el.style.background = ''; el.style.color = ''; }
+    });
+  document.querySelectorAll('input[name="analysisType"]').forEach(function(r){ r.disabled = false; });
+  var btnP = document.getElementById('btn-process');
+  if (btnP) btnP.disabled = false;
+  var btnS = document.getElementById('btn-submit');
+  if (btnS) { btnS.disabled = false; btnS.style.display = ''; }
+
+  // Remove lock banner if present
+  document.querySelectorAll('.page > div[style*="1A5E00"]').forEach(function(el){ el.remove(); });
+
+  // Reset state
+  _lastHTML = '';
+  _currentAuditRef = '';
+  _sapResolvedParticipant = false;
+
+  // Re-generate audit ref for the new session
+  var now = new Date();
+  var y = now.getFullYear(), mo = String(now.getMonth()+1).padStart(2,'0'), d = String(now.getDate()).padStart(2,'0');
+  document.getElementById('audit-ref-display').textContent = 'NHA-' + y + mo + d + '-…';
+}
+
+// ── Submit ────────────────────────────────────────────────────────────────────
+function showError(msg) {
+  var el = document.getElementById('alert-error');
+  el.textContent = msg;
+  el.classList.add('visible');
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function hideError() {
+  document.getElementById('alert-error').classList.remove('visible');
+  document.getElementById('alert-cache').classList.remove('visible');
+  document.getElementById('alert-success').classList.remove('visible');
+}
+function showCache(msg) {
+  var el = document.getElementById('alert-cache');
+  document.getElementById('cache-msg').textContent = msg || 'Loaded from cache — no AI processing needed.';
+  el.classList.add('visible');
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function showSuccess(msg) {
+  var el = document.getElementById('alert-success');
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+
+function handleSubmit() {
+  hideError();
+  var formData = {
+    sapId:          document.getElementById('sapId').value.trim(),
+    participant:    document.getElementById('participant').value.trim(),
+    locale:         document.getElementById('locale').value.trim(),
+    vtid:           document.getElementById('vtid').value.trim(),
+    teamLeader:     document.getElementById('teamLeader').value.trim(),
+    opsManager:     document.getElementById('opsManager').value.trim(),
+    lineOfBusiness: document.getElementById('lineOfBusiness').value.trim(),
+    startTime:      document.getElementById('startTime').value.trim(),
+    customerBAN:    document.getElementById('customerBAN').value.trim(),
+    interactionId:  document.getElementById('interactionId').value.trim(),
+    direction:      document.getElementById('direction').value,
+    duration:       document.getElementById('duration').value.trim(),
+    analysisType:   document.querySelector('input[name="analysisType"]:checked').value,
+    transcript:     document.getElementById('transcript').value.trim()
+  };
+  if (!formData.sapId)      { showError('Please fill in: SAP ID'); return; }
+  if (!formData.transcript) { showError('Please paste a call transcript'); return; }
+
+  document.getElementById('btn-process').disabled = true;
+  document.getElementById('processing-overlay').classList.add('visible');
+  document.getElementById('applied-section').classList.remove('visible');
+
+  google.script.run
+    .withSuccessHandler(function (result) {
+      document.getElementById('processing-overlay').classList.remove('visible');
+      document.getElementById('btn-process').disabled = false;
+      if (!result.success) { showError('Error: ' + result.error); return; }
+      if (result.sheetUrl) {
+        document.getElementById('sheet-link').href = result.sheetUrl;
+      }
+      _lastHTML = result.html || '';
+
+      // Audit ref
+      if (result.auditRef) {
+        _currentAuditRef = result.auditRef;
+        document.getElementById('audit-ref-display').textContent = result.auditRef;
+      }
+
+      // Backfill any fields the server resolved that the autofill missed
+      if (result.resolvedFields) {
+        var rf = result.resolvedFields;
+        var setIfBlank = function(id, val) {
+          var el = document.getElementById(id);
+          if (el && !el.value && val) el.value = val;
+        };
+        setIfBlank('interactionId', rf.interactionId);
+        setIfBlank('startTime',     rf.startTime);
+        setIfBlank('duration',      rf.duration);
+        setIfBlank('customerBAN',   rf.customerBAN);
+        setIfBlank('participant',   rf.participant);
+        // Direction dropdown
+        if (rf.direction && !document.getElementById('direction').value) {
+          var sel = document.getElementById('direction');
+          for (var i = 0; i < sel.options.length; i++) {
+            if (sel.options[i].text.toLowerCase() === rf.direction.trim().toLowerCase()) {
+              sel.selectedIndex = i; break;
+            }
+          }
+        }
+      }
+
+      if (result.fromCache) {
+        showCache('&#9889; This Interaction ID was already analyzed. Showing cached results — no AI cost.');
+      }
+      openModal(document.getElementById('transcript').value, _lastHTML);
+    })
+    .withFailureHandler(function (err) {
+      document.getElementById('processing-overlay').classList.remove('visible');
+      document.getElementById('btn-process').disabled = false;
+      showError('Unexpected error: ' + (err.message || err));
+    })
+    .submitTranscript(formData);
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+// Strip dangerous tags from AI HTML before injecting into the DOM
+function sanitiseResultHTML(html) {
+  if (!html) return '';
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe[\s\S]*?>/gi, '')
+    .replace(/<object[\s\S]*?<\/object>/gi, '')
+    .replace(/<form[\s\S]*?<\/form>/gi, '')
+    .replace(/\s+on\w+="[^"]*"/gi, '')
+    .replace(/\s+on\w+='[^']*'/gi, '');
+}
+
+function openModal(transcriptText, resultHTML) {
+  var body = document.getElementById('modal-body');
+  body.innerHTML =
+    '<p class="modal-script-label">Paste Call Script Here</p>' +
+    '<div class="modal-script-box">' + escHtml(transcriptText) + '</div>' +
+    '<hr class="modal-divider"/>' +
+    '<p class="modal-results-label">Analysis Results</p>' +
+    sanitiseResultHTML(resultHTML);
+  document.getElementById('analysis-modal').classList.add('visible');
+}
+function closeModal()  { document.getElementById('analysis-modal').classList.remove('visible'); }
+function reOpenModal() { if (_lastHTML) openModal(document.getElementById('transcript').value, _lastHTML); }
+
+// ── Apply & Close ─────────────────────────────────────────────────────────────
+function applyAndClose() {
+  var out = document.getElementById('applied-output');
+  out.innerHTML = sanitiseResultHTML(_lastHTML);
+  // Ensure all relevant elements are editable
+  out.querySelectorAll('.r-summary-box,.r-pos-stmt,.r-systemic').forEach(function(el) {
+    el.setAttribute('contenteditable', 'true');
+  });
+  out.querySelectorAll('td:not(.r-table-label),.r-hl-box li,.r-coaching-list li').forEach(function(el) {
+    el.setAttribute('contenteditable', 'true');
+  });
+  closeModal();
+  var section = document.getElementById('applied-section');
+  section.classList.add('visible');
+  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function copyApplied(btn) {
+  navigator.clipboard.writeText(document.getElementById('applied-output').innerText)
+    .then(function () {
+      var orig = btn.textContent;
+      btn.textContent = '✓ Copied!';
+      setTimeout(function () { btn.textContent = orig; }, 2000);
+    });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD — embedded, no iframe
+// ══════════════════════════════════════════════════════════════════════════════
+var _dbAllData    = [];
+var _dbRoster     = [];
+var _dbRFiltered  = [];
+var _dbSFiltered  = [];
+var _dbLoaded      = false;
+
+var _dbAuditLog    = [];
+var _dbAlFiltered  = [];
+
+// ── Audit meta init ───────────────────────────────────────────────────────────
+var _currentAuditRef  = '';
+var _currentObserver  = { name: '', sapId: '', email: '' };
+
+(function initAuditMeta() {
+  var now = new Date();
+  var y   = now.getFullYear();
+  var m   = String(now.getMonth()+1).padStart(2,'0');
+  var d   = String(now.getDate()).padStart(2,'0');
+  document.getElementById('audit-ref-display').textContent = 'NHA-' + y + m + d + '-…';
+
+  if (typeof google !== 'undefined' && google.script) {
+    // Restore observer from sessionStorage for instant display
+    try {
+      var cachedObs = sessionStorage.getItem('nh_observer');
+      if (cachedObs) {
+        _currentObserver = JSON.parse(cachedObs);
+        document.getElementById('observer-display').textContent =
+          _currentObserver.name || _currentObserver.email || 'Unknown';
+      }
+    } catch(e) {}
+
+    // Always fetch fresh in background (server caches it, so fast)
+    google.script.run
+      .withSuccessHandler(function(obs) {
+        _currentObserver = obs || {};
+        var displayName = _currentObserver.name || _currentObserver.email || 'Unknown';
+        document.getElementById('observer-display').textContent = displayName;
+        try { sessionStorage.setItem('nh_observer', JSON.stringify(_currentObserver)); } catch(e) {}
+      })
+      .withFailureHandler(function() {
+        if (!_currentObserver.name) document.getElementById('observer-display').textContent = 'Could not resolve';
+      })
+      .getObserverInfo();
+
+    // Pre-warm roster data in background so SAP lookups are instant
+    google.script.run
+      .withSuccessHandler(function() {}) // fire and forget — just warms server cache
+      .withFailureHandler(function() {})
+      .getRosterAll();
+  }
+})();
+
+// ── Download evaluation — requests server-side structured PDF ─────────────────
+function downloadAuditPDF() {
+  if (!_lastHTML) { showError('No analysis to download. Run Process Script first.'); return; }
+  var ref = _currentAuditRef || document.getElementById('audit-ref-display').textContent;
+
+  // Collect current form data for the structured PDF
+  var formData = getFormData();
+  formData.auditRef     = ref;
+  formData.observerName = _currentObserver.name || _currentObserver.email || '';
+
+  // Show a brief loading indicator
+  var btn = document.querySelector('.btn-secondary[onclick="downloadAuditPDF()"]');
+  if (btn) { btn.textContent = '⟳ Generating…'; btn.disabled = true; }
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (btn) { btn.textContent = '📄 Download Evaluation'; btn.disabled = false; }
+      if (!result || !result.url) {
+        // Fallback: open HTML version in new tab
+        _downloadHTMLFallback(ref);
+        return;
+      }
+      // Open the Drive PDF link in new tab
+      window.open(result.url, '_blank');
+    })
+    .withFailureHandler(function(e) {
+      if (btn) { btn.textContent = '📄 Download Evaluation'; btn.disabled = false; }
+      _downloadHTMLFallback(ref);
+    })
+    .generateAndServePDF(formData, _lastHTML);
+}
+
+// Fallback: open the evaluation as a print-ready HTML page
+function _downloadHTMLFallback(ref) {
+  var agent    = document.getElementById('participant').value.trim() || 'Agent';
+  var observer = document.getElementById('observer-display').textContent;
+  var sapId    = document.getElementById('sapId').value.trim();
+  var intId    = document.getElementById('interactionId').value.trim();
+  var ts       = new Date().toLocaleString();
+
+  var fullHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Audit ' + ref + '</title>' +
+    '<style>body{font-family:Helvetica Neue,Helvetica,Arial,sans-serif;font-size:12px;margin:0}' +
+    '.no-print{background:#4B286D;color:#fff;padding:10px 18px;display:flex;gap:12px;align-items:center}' +
+    '.no-print button{background:#fff;color:#4B286D;border:none;border-radius:3px;padding:5px 14px;font-weight:700;cursor:pointer}' +
+    '@media print{.no-print{display:none}}</style>' +
+    sharedCSS_client() + '</head><body>' +
+    '<div class="no-print">' +
+    '<strong>Audit Report — ' + ref + '</strong>' +
+    '<button onclick="window.print()">&#128424; Print / Save PDF</button>' +
+    '<button onclick="window.close()">Close</button>' +
+    '</div>' +
+    sanitiseResultHTML(_lastHTML) + '</body></html>';
+
+  var blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+  var url  = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+}
+
+function sharedCSS_client() {
+  return '<style>' +
+    '.ai-section{margin-bottom:18px;background:#fff;border:1px solid #D8D8D8;border-radius:6px;padding:14px 16px}' +
+    '.ai-title{font-size:13px;font-weight:700;color:#4B286D;padding:7px 12px;background:#F5F0FF;border-left:4px solid #4B286D;border-radius:0 4px 4px 0;margin-bottom:12px}' +
+    '.ai-table{width:100%;border-collapse:collapse;font-size:12px}' +
+    '.ai-table thead tr{background:#4B286D}.ai-table th{padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:#fff}' +
+    '.ai-table td{padding:9px 12px;border-bottom:1px solid #EBEBEB;vertical-align:top;line-height:1.6}' +
+    '.ai-table tbody tr:nth-child(even) td{background:#FAFAFA}.ai-label-col{font-weight:600;color:#1A1A2E;width:22%}' +
+    '.ai-flag{background:#FFF5F5;border:1px solid #F5AAAA;border-left:4px solid #C12335;border-radius:4px;padding:12px 14px;margin-bottom:10px}' +
+    '.ai-flag-title{font-weight:700;color:#C12335;font-size:12px;margin-bottom:5px}' +
+    '.ai-flag-stmt{background:#EDF7E6;border:1px solid #B3DFA0;border-radius:4px;padding:8px 10px;font-size:12px;font-style:italic;color:#1A5E00}' +
+    '.ai-hl-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}' +
+    '.ai-hl-box{border-radius:6px;padding:12px}.ai-hl-high{background:#EDF7E6;border:1px solid #B3DFA0}.ai-hl-low{background:#FFF5F5;border:1px solid #F5AAAA}' +
+    '.ai-hl-title{font-size:11px;font-weight:700;margin-bottom:6px}.ai-hl-high .ai-hl-title{color:#2B8000}.ai-hl-low .ai-hl-title{color:#C12335}' +
+    '.ai-hl-box ul{padding-left:16px;font-size:12px;line-height:1.9}' +
+    '.ai-summary{background:#F9F9F9;border:1px solid #D8D8D8;border-radius:4px;padding:12px;font-size:12px;line-height:1.75}' +
+    '.ai-chip{background:#F4F4F7;border:1px solid #D8D8D8;border-radius:20px;padding:6px 12px;margin:4px;display:inline-block}' +
+    '.ai-chip-label{font-size:10px;font-weight:700;color:#54565A;text-transform:uppercase;display:block}' +
+    '.ai-chip-val{font-size:12px;font-weight:600}' +
+    '.ai-score-panel{background:#F5F0FF;border:1px solid #D1B8E8;border-radius:6px;padding:12px}' +
+    '.ai-score-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #E4D8F5;font-size:12px}' +
+    '.ai-badge{display:inline-block;border-radius:4px;padding:2px 9px;font-size:11px;font-weight:700;color:#fff}' +
+    '.ai-badge-good{background:#2B8000}.ai-badge-mid{background:#8C4A00}.ai-badge-bad{background:#C12335}.ai-badge-zero{background:#767676}' +
+    '.ai-call-block{border:1px solid #D8D8D8;border-radius:6px;padding:16px;margin-bottom:16px}' +
+    '.ai-call-badge{display:inline-block;background:#4B286D;color:#fff;font-size:11px;font-weight:700;padding:3px 12px;border-radius:12px;margin-bottom:12px}' +
+    '.ai-coaching{padding-left:18px;font-size:12px;line-height:1.9}' +
+    '.ai-perfect{background:#EDF7E6;border:1px solid #B3DFA0;border-radius:4px;padding:10px 12px;margin-top:10px;font-size:12px}' +
+    '.ai-flag-rl-label{font-size:10px;font-weight:700;text-transform:uppercase;color:#2B8000;margin-bottom:4px}' +
+    '.ai-info{display:flex;flex-wrap:wrap;gap:8px}' +
+    '</style>';
+}
+
+function openDashboard() {
+  document.getElementById('dashboard-panel').classList.add('visible');
+  document.getElementById('analytics-fab').style.display = 'flex';
+  if (!_dbLoaded) loadDashboardData();
+}
+function closeDashboard() {
+  document.getElementById('dashboard-panel').classList.remove('visible');
+  document.getElementById('analytics-fab').style.display = 'none';
+  closeAnalyticsPanel();
+}
+
+// ── Tab switch ────────────────────────────────────────────────────────────────
+function dbSwitchTab(tab, btn) {
+  document.querySelectorAll('.db-tab-btn').forEach(function(b) { b.classList.remove('db-active'); });
+  btn.classList.add('db-active');
+  document.getElementById('db-tab-overview').classList.toggle('db-active', tab === 'overview');
+  document.getElementById('db-tab-repeats').classList.toggle('db-active',  tab === 'repeats');
+  document.getElementById('db-tab-sales').classList.toggle('db-active',    tab === 'sales');
+  document.getElementById('db-tab-auditlog').classList.toggle('db-active', tab === 'auditlog');
+  // Show only the active tab's stats row — sits right under the filters
+  document.getElementById('ov-stats').style.display = tab === 'overview'  ? '' : 'none';
+  document.getElementById('r-stats').style.display  = tab === 'repeats'   ? '' : 'none';
+  document.getElementById('s-stats').style.display  = tab === 'sales'     ? '' : 'none';
+  document.getElementById('al-stats').style.display = tab === 'auditlog'  ? '' : 'none';
+  // Render Overview when switched to
+  if (tab === 'overview' && _dbLoaded) { setTimeout(renderOverviewTab, 50); }
+  // Update FAB — hidden on Audit Log and Overview (no per-type analytics)
+  var fab = document.getElementById('analytics-fab');
+  if (fab) fab.style.display = (tab === 'auditlog' || tab === 'overview') ? 'none' : 'flex';
+  _lastAnalyticsType = (tab === 'sales') ? 's' : 'r';
+  if (_dbLoaded) {
+    if (tab === 'repeats' || tab === 'sales') {
+      setTimeout(function() {
+        dbDrawChart(tab === 'repeats' ? 'r' : 's',
+                    tab === 'repeats' ? _dbRFiltered : _dbSFiltered);
+      }, 50);
+    }
+    if (tab === 'auditlog' && !_dbAuditLog.length) {
+      loadAuditLog();
+    }
+  }
+}
+
+// ── Speed: localStorage pre-cache key ────────────────────────────────────────
+// ── Unified localStorage helper — stale-while-revalidate pattern ─────────────
+var LS_CACHE_KEY     = 'nh_dashboard_cache_v3';
+var LS_ROSTER_KEY    = 'nh_roster_cache_v2';
+var LS_AUDITLOG_KEY  = 'nh_auditlog_cache_v2';
+var LS_CACHE_MAX_AGE = 20 * 60 * 1000;   // 20 min — dashboard rows
+var LS_ROSTER_AGE    = 60 * 60 * 1000;   // 60 min — roster (changes rarely)
+var LS_AUDITLOG_AGE  = 10 * 60 * 1000;   // 10 min — audit log
+
+function lsGet(key, maxAge) {
+  try {
+    var raw = localStorage.getItem(key);
+    if (!raw) return null;
+    var obj = JSON.parse(raw);
+    if (Date.now() - (obj.savedAt || 0) > maxAge) return null;
+    return obj.data;
+  } catch(e) { return null; }
+}
+function lsSet(key, data) {
+  try { localStorage.setItem(key, JSON.stringify({ data: data, savedAt: Date.now() })); } catch(e) {}
+}
+function lsDel(key) { try { localStorage.removeItem(key); } catch(e) {} }
+
+// ── Load dashboard data — stale-while-revalidate, parallel roster+auditlog ───
+function loadDashboardData() {
+  dbSetLoading(true);
+
+  var cachedDash    = lsGet(LS_CACHE_KEY,   LS_CACHE_MAX_AGE);
+  var cachedRoster  = lsGet(LS_ROSTER_KEY,  LS_ROSTER_AGE);
+  var cachedAudit   = lsGet(LS_AUDITLOG_KEY, LS_AUDITLOG_AGE);
+
+  if (cachedDash) {
+    // Instant render from localStorage — user sees data in <50ms
+    if (cachedRoster) _dbRoster = cachedRoster;
+    if (cachedAudit)  _dbAuditLog = cachedAudit;
+    dbHandleData(cachedDash, true);
+    dbSetLoading(false);
+
+    // Background refresh — update silently without blocking UI
+    _refreshAllInBackground();
+    return;
+  }
+
+  // No cache — must fetch. Load all three in parallel.
+  _fetchAllParallel(function() { dbSetLoading(false); });
+}
+
+// Fetch dashboard + roster + auditlog in parallel, render when all done
+function _fetchAllParallel(onDone) {
+  var pending = 3, dashResult = null, rosterResult = null, auditResult = null;
+  function check() {
+    pending--;
+    if (pending > 0) return;
+    if (rosterResult) _dbRoster    = rosterResult;
+    if (auditResult)  _dbAuditLog  = auditResult;
+    if (dashResult) {
+      dbHandleData(dashResult, false);
+      lsSet(LS_CACHE_KEY, dashResult);
+    }
+    if (onDone) onDone();
+  }
+  google.script.run
+    .withSuccessHandler(function(r){ dashResult=r; check(); })
+    .withFailureHandler(function(){ pending--; check(); })
+    .getDashboardData();
+  google.script.run
+    .withSuccessHandler(function(r){ rosterResult=r; lsSet(LS_ROSTER_KEY,r); check(); })
+    .withFailureHandler(function(){ pending--; check(); })
+    .getRosterAll();
+  google.script.run
+    .withSuccessHandler(function(r){ auditResult=r; lsSet(LS_AUDITLOG_KEY,r); check(); })
+    .withFailureHandler(function(){ pending--; check(); })
+    .getAuditLogData();
+}
+
+// Background refresh — doesn't show loading spinner
+function _refreshAllInBackground() {
+  google.script.run
+    .withSuccessHandler(function(r){ lsSet(LS_CACHE_KEY, r); dbHandleData(r, false); })
+    .withFailureHandler(function(){})
+    .getDashboardData();
+  google.script.run
+    .withSuccessHandler(function(r){ _dbRoster=r; lsSet(LS_ROSTER_KEY,r); })
+    .withFailureHandler(function(){})
+    .getRosterAll();
+  google.script.run
+    .withSuccessHandler(function(r){ _dbAuditLog=r; lsSet(LS_AUDITLOG_KEY,r); })
+    .withFailureHandler(function(){})
+    .getAuditLogData();
+}
+
+// ── Force refresh button ──────────────────────────────────────────────────────
+function dbForceRefresh() {
+  var btn = document.getElementById('db-refresh-btn');
+  btn.disabled = true;
+  btn.textContent = '⟳ Refreshing…';
+  dbSetLoading(true);
+  // Clear all localStorage caches
+  lsDel(LS_CACHE_KEY); lsDel(LS_ROSTER_KEY); lsDel(LS_AUDITLOG_KEY);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled = false;
+      btn.textContent = '⟳ Refresh';
+      dbHandleData(result, false);
+      lsSet(LS_CACHE_KEY, result);
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      btn.textContent = '⟳ Refresh';
+      alert('Refresh failed: ' + (e.message || e));
+    })
+    .getDashboardDataFresh();
+}
+
+// ── Shared handler for both load and refresh ──────────────────────────────────
+function dbHandleData(result, isLocalCache) {
+  var rawRows = (result && result.rows) ? result.rows : [];
+
+  // Show cache status
+  var statusEl = document.getElementById('db-cache-status');
+  if (result && result.ts) {
+    var ts      = new Date(result.ts);
+    var timeStr = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    var source  = isLocalCache ? '⚡ Instant' : (result.fromCache ? '⚡ Cached' : '↻ Live');
+    statusEl.textContent = source + ' · ' + rawRows.length + ' records · as of ' + timeStr;
+    statusEl.style.color = isLocalCache ? '#FFE082' : (result.fromCache ? 'rgba(255,255,255,.7)' : '#B3DFA0');
+  }
+
+  // Also load Audit_Log to use as a reliable source for Repeats & Sales tabs.
+  // Audit_Log always has: Audit Ref, Team Member, Analysis Type, SAP ID, etc.
+  // Dashboard_Data may have column-shift issues from schema changes.
+  google.script.run
+    .withSuccessHandler(function(auditRows) {
+      _dbAuditLog = auditRows || [];
+
+      // ── Build _dbAllData from Audit_Log as the AUTHORITATIVE source ───────────
+      // Audit_Log always has correct Analysis Type, Team Member, SAP ID etc.
+      // Dashboard_Data has the analytical fields (Call Summary, Opportunities etc.)
+      // We join them by Audit Ref so every row has both.
+
+      // Build a lookup: Audit Ref → Dashboard_Data row
+      var dashMap = {};
+      rawRows.forEach(function(r) {
+        var ref = (r['Audit Ref'] || '').toString().trim();
+        if (ref) dashMap[ref] = r;
+      });
+
+      // Build merged rows from Audit_Log (guaranteed correct structure)
+      _dbAllData = _dbAuditLog.map(function(log) {
+        var ref   = (log['Audit Ref'] || '').toString().trim();
+        var dash  = dashMap[ref] || {};
+
+        return {
+          'Audit Ref':             ref,
+          'Timestamp':             log['Submitted At']           || dash['Timestamp']             || '',
+          'Interaction ID':        log['Interaction ID']         || dash['Interaction ID']         || '',
+          'SAP ID':                log['SAP ID']                 || dash['SAP ID']                 || '',
+          'Team Member':           log['Team Member']            || dash['Team Member']            || '',
+          'Team Leader':           log['Team Leader']            || dash['Team Leader']            || '',
+          'Operations Manager':    log['Operations Manager']     || dash['Operations Manager']     || '',
+          'Line of Business':      log['Line of Business']       || dash['Line of Business']       || '',
+          'Locale':                log['Locale']                 || dash['Locale']                 || '',
+          'VTID':                  log['VTID']                   || dash['VTID']                  || '',
+          'Observer Name':         log['Observer Name']          || dash['Observer Name']          || '',
+          'Department':            dash['Department']            || '',
+          'Direction':             log['Direction']              || dash['Direction']              || '',
+          'Transcript Duration':   log['Duration']               || dash['Transcript Duration']    || '',
+          'Analysis Type':         log['Analysis Type']          || dash['Analysis Type']          || '',
+          'Call Reason':           dash['Call Reason']           || '',
+          'Call Summary':          dash['Call Summary']          || '',
+          'Overall Opportunities': dash['Overall Opportunities'] || '',
+          'Recommendations':       dash['Recommendations']       || '',
+          'Critical Flags':        dash['Critical Flags']        || '',
+          'Repeat Projection %':   log['Repeat Projection %']    || dash['Repeat Projection %']    || '',
+          'Issue Resolved':        log['Issue Resolved']         || dash['Issue Resolved']         || '',
+          'Transfer Occurred':     log['Transfer Occurred']      || dash['Transfer Occurred']      || '',
+          // RCA enriched fields — from Dashboard_Data
+          'Call Driver':           dash['Call Driver']           || '',
+          'RCA Category':          dash['RCA Category']          || '',
+          'RCA Sub-Parameter':     dash['RCA Sub-Parameter']     || '',
+          'Top Opportunity':       dash['Top Opportunity']       || '',
+          'Product Opportunity':   dash['Product Opportunity']   || '',
+          'PDF Email Link':        dash['PDF Email Link']        || '',
+          'Email Status':          log['Email Status']           || dash['Email Status']           || ''
+        };
+      });
+
+      // Load roster then render
+      if (_dbRoster.length) {
+        dbSetLoading(false);
+        dbFinishRender();
+      } else {
+        google.script.run
+          .withSuccessHandler(function(roster) {
+            _dbRoster = roster || [];
+            dbSetLoading(false);
+            dbFinishRender();
+          })
+          .withFailureHandler(function() {
+            dbSetLoading(false);
+            dbFinishRender();
+          })
+          .getRosterAll();
+      }
+    })
+    .withFailureHandler(function() {
+      _dbAllData = rawRows;
+      dbSetLoading(false);
+      dbFinishRender();
+    })
+    .getAuditLogData();
+}
+
+function dbSetLoading(on) {
+  document.getElementById('db-loading').style.display = on ? 'block' : 'none';
+}
+
+function dbFinishRender() {
+  _dbLoaded = true;
+  dbPopulateFilters();
+  dbSelectAllPills();
+  // Show the stats row for the currently active tab
+  document.getElementById('ov-stats').style.display = 'none';
+  document.getElementById('r-stats').style.display  = 'none';
+  document.getElementById('s-stats').style.display  = 'none';
+  document.getElementById('al-stats').style.display = 'none';
+  var activeTab = document.querySelector('.db-tab-btn.db-active');
+  if (activeTab) {
+    var tabText = activeTab.textContent;
+    if (tabText.indexOf('Audit') !== -1)    document.getElementById('al-stats').style.display = '';
+    else if (tabText.indexOf('Sales') !== -1) document.getElementById('s-stats').style.display = '';
+    else if (tabText.indexOf('Overview') !== -1 || tabText.indexOf('Overview') !== -1)
+                                             document.getElementById('ov-stats').style.display = '';
+    else                                     document.getElementById('r-stats').style.display  = '';
+  } else {
+    document.getElementById('ov-stats').style.display = '';
+  }
+  dbApplyAll();
+}
+
+// ── Audit Log stats + table (called from dbApplyAll) ─────────────────────────
+function dbRenderAuditStats(rows) {
+  var total   = rows.length;
+  var sent    = rows.filter(function(r) { return r['Email Status'] === 'Sent'; }).length;
+  document.getElementById('al-stats').innerHTML =
+    dbStat(total,   'Total Audits', '') +
+    dbStat(sent,    'Emailed',      sent > 0 ? 'background:#EDF7E6;border-color:#B3DFA0' : '') +
+    dbStat(total - sent, 'Pending Email', (total-sent) > 0 ? 'background:#FFF5F5;border-color:#F5AAAA' : '') +
+    dbStat(dbUniq(rows.map(function(r){return r['Team Member'];})).filter(Boolean).length, 'Unique Agents', '') +
+    dbStat(dbUniq(rows.map(function(r){return r['Observer Name'];})).filter(Boolean).length, 'Observers', '');
+}
+
+function dbRenderAuditTable(rows) {
+  var tbody = document.getElementById('al-tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;padding:32px;color:#54565A">No audit records match current filters.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(function(r) {
+    var ts  = r['Submitted At'] ? new Date(r['Submitted At']).toLocaleDateString() : '';
+    var es  = r['Email Status'] === 'Sent'
+      ? '<span style="background:#EDF7E6;color:#2B8000;border-radius:3px;padding:2px 7px;font-size:10px;font-weight:700">&#10003; Sent</span>'
+      : '<span style="background:#F0F0F0;color:#54565A;border-radius:3px;padding:2px 7px;font-size:10px;font-weight:700">Pending</span>';
+    return '<tr>' +
+      '<td style="font-weight:700;color:#4B286D;white-space:nowrap">' + escHtml(r['Audit Ref']||'') + '</td>' +
+      '<td style="white-space:nowrap">' + ts + '</td>' +
+      '<td style="font-size:11px">' + escHtml(r['Interaction ID']||'') + '</td>' +
+      '<td>' + escHtml(r['SAP ID']||'') + '</td>' +
+      '<td>' + escHtml(r['Team Member']||'') + '</td>' +
+      '<td>' + escHtml(r['Team Leader']||'') + '</td>' +
+      '<td>' + escHtml(r['Operations Manager']||'') + '</td>' +
+      '<td>' + escHtml(r['Line of Business']||'') + '</td>' +
+      '<td>' + escHtml(r['Locale']||'') + '</td>' +
+      '<td>' + escHtml(r['Observer Name']||'') + '</td>' +
+      '<td style="font-size:11px">' + escHtml(r['Analysis Type']||'') + '</td>' +
+      '<td>' + escHtml(r['Direction']||'') + '</td>' +
+      '<td>' + escHtml(r['Duration']||'') + '</td>' +
+      '<td>' + es + '</td>' +
+      '<td style="font-size:11px">' + escHtml(r['Recipients']||'') + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ── Audit Log tab: load + render ──────────────────────────────────────────────
+function loadAuditLog() {
+  // 1. Render from localStorage instantly if available
+  var cached = lsGet(LS_AUDITLOG_KEY, LS_AUDITLOG_AGE);
+  if (cached && cached.length) {
+    _dbAuditLog = cached;
+    dbPopulateFilters();
+    dbApplyAll();
+    // Refresh in background silently
+    google.script.run
+      .withSuccessHandler(function(rows){ _dbAuditLog=rows||[]; lsSet(LS_AUDITLOG_KEY,rows); dbApplyAll(); })
+      .withFailureHandler(function(){})
+      .getAuditLogData();
+    return;
+  }
+  // 2. No cache — fetch and show loading indicator
+  document.getElementById('al-tbody').innerHTML =
+    '<tr><td colspan="15" style="text-align:center;padding:24px;color:#54565A">Loading…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(rows) {
+      _dbAuditLog = rows || [];
+      lsSet(LS_AUDITLOG_KEY, _dbAuditLog);
+      dbPopulateFilters();
+      dbApplyAll();
+    })
+    .withFailureHandler(function(e) {
+      document.getElementById('al-tbody').innerHTML =
+        '<tr><td colspan="15" style="color:#C12335;padding:16px">Failed: ' + (e.message||e) + '</td></tr>';
+    })
+    .getAuditLogData();
+}
+
+// Audit log filters now use the unified shared filter panel (sh-ms-* elements).
+// These legacy per-tab functions are kept as safe stubs to avoid call errors.
+function dbPopulateAuditLogFilters() { dbPopulateFilters(); }
+
+function dbApplyAuditLog() {
+  // Delegate entirely to unified filter — reads from shared sh-ms-* stores
+  var f       = dbGetSharedFilters();
+  var dateFrom = f.dateFrom;
+  var dateTo   = f.dateTo;
+  var sapQ     = f.sapQ;
+  var refs     = f.refs;
+  var members  = f.members;
+  var leaders  = f.leaders;
+  var ops      = f.ops;
+  var lobs     = f.lobs;
+  var locales  = f.locales;
+  var atypes   = f.atypes;
+
+  _dbAlFiltered = _dbAuditLog.filter(function(r) {
+    if (dateFrom) { var d=new Date(r['Submitted At']); if(!isNaN(d)&&d<new Date(dateFrom)) return false; }
+    if (dateTo)   { var d2=new Date(r['Submitted At']); if(!isNaN(d2)&&d2>new Date(dateTo+'T23:59:59')) return false; }
+    if (sapQ && (r['SAP ID']||'').toLowerCase().indexOf(sapQ)===-1) return false;
+    if (refs.length    && refs.indexOf(r['Audit Ref']||'')           ===-1) return false;
+    if (members.length && members.indexOf(r['Team Member']||'')      ===-1) return false;
+    if (leaders.length && leaders.indexOf(r['Team Leader']||'')      ===-1) return false;
+    if (ops.length     && ops.indexOf(r['Operations Manager']||'')   ===-1) return false;
+    if (lobs.length    && lobs.indexOf(r['Line of Business']||'')    ===-1) return false;
+    if (locales.length && locales.indexOf(r['Locale']||'')           ===-1) return false;
+    if (atypes.length  && atypes.indexOf(r['Analysis Type']||'')     ===-1) return false;
+    return true;
+  });
+
+  document.getElementById('al-row-count').textContent =
+    _dbAlFiltered.length + ' record' + (_dbAlFiltered.length!==1?'s':'');
+
+  // Stats
+  var total   = _dbAlFiltered.length;
+  var sent    = _dbAlFiltered.filter(function(r){return r['Email Status']==='Sent';}).length;
+  var pending = total - sent;
+  document.getElementById('al-stats').innerHTML =
+    dbStat(total,   'Total Audits') +
+    dbStat(sent,    'Emailed') +
+    dbStat(pending, 'Pending Email') +
+    dbStat(dbUniq(_dbAlFiltered.map(function(r){return r['Team Member'];})).filter(Boolean).length, 'Unique Agents') +
+    dbStat(dbUniq(_dbAlFiltered.map(function(r){return r['Observer Name'];})).filter(Boolean).length, 'Observers');
+
+  // Table
+  var tbody = document.getElementById('al-tbody');
+  if (!_dbAlFiltered.length) {
+    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;padding:32px;color:#54565A">No audit records found. Submit & Email an audit to populate this log.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _dbAlFiltered.map(function(r) {
+    var ts  = r['Submitted At'] ? new Date(r['Submitted At']).toLocaleDateString() : '';
+    var es  = r['Email Status']==='Sent'
+      ? '<span style="background:#EDF7E6;color:#2B8000;border-radius:3px;padding:2px 7px;font-size:10px;font-weight:700">&#10003; Sent</span>'
+      : '<span style="background:#F0F0F0;color:#54565A;border-radius:3px;padding:2px 7px;font-size:10px;font-weight:700">Pending</span>';
+    return '<tr>' +
+      '<td style="font-weight:700;color:#4B286D;white-space:nowrap">' + escHtml(r['Audit Ref']||'') + '</td>' +
+      '<td style="white-space:nowrap">'  + ts + '</td>' +
+      '<td style="font-size:11px">'      + escHtml(r['Interaction ID']||'') + '</td>' +
+      '<td>'  + escHtml(r['SAP ID']||'') + '</td>' +
+      '<td>'  + escHtml(r['Team Member']||'') + '</td>' +
+      '<td>'  + escHtml(r['Team Leader']||'') + '</td>' +
+      '<td>'  + escHtml(r['Operations Manager']||'') + '</td>' +
+      '<td>'  + escHtml(r['Line of Business']||'') + '</td>' +
+      '<td>'  + escHtml(r['Locale']||'') + '</td>' +
+      '<td>'  + escHtml(r['Observer Name']||'') + '</td>' +
+      '<td style="font-size:11px">'  + escHtml(r['Analysis Type']||'') + '</td>' +
+      '<td>'  + escHtml(r['Direction']||'') + '</td>' +
+      '<td>'  + escHtml(r['Duration']||'') + '</td>' +
+      '<td>'  + es + '</td>' +
+      '<td style="font-size:11px">'  + escHtml(r['Recipients']||'') + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ── Searchable checkbox multi-select ─────────────────────────────────────────
+function dbBuildMs(listId, values, pfx, field) {
+  var el = document.getElementById(listId);
+  if (!el) return;
+  el.innerHTML = '';
+  values.filter(Boolean).sort().forEach(function(v) {
+    var id   = listId + '_' + v.replace(/\W/g,'_');
+    var item = document.createElement('label');
+    item.className = 'db-ms-item';
+    // pfx='sh' + field='member' means this is the shared team member filter
+    var changeHandler = (pfx === 'sh' && field === 'member')
+      ? ' onchange="dbMemberChange(\'sh\',\'' + escHtml(v) + '\')"'
+      : ' onchange="dbApplyAll()"';
+    item.innerHTML = '<input type="checkbox" id="' + id + '" value="' + escHtml(v) + '"' +
+      changeHandler + '> ' + escHtml(v);
+    el.appendChild(item);
+  });
+}
+
+function dbSearch(input, listId) {
+  var q = input.value.toLowerCase();
+  var el = document.getElementById(listId);
+  el.querySelectorAll('.db-ms-item').forEach(function(item) {
+    item.style.display = item.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+  });
+}
+
+function dbGetChecked(listId) {
+  return Array.from(document.getElementById(listId).querySelectorAll('input:checked'))
+    .map(function(cb) { return cb.value; });
+}
+
+// ── Populate SHARED filters from all data ────────────────────────────────────
+function dbPopulateFilters() {
+  var all = _dbAllData.concat(_dbAuditLog);
+  var f   = function(field) { return dbUniq(all.map(function(r) { return r[field] || ''; })); };
+  dbBuildMs('sh-ms-member', f('Team Member'),        'sh', 'member');
+  dbBuildMs('sh-ms-leader', f('Team Leader'),        null, null);
+  dbBuildMs('sh-ms-ops',    f('Operations Manager'), null, null);
+  dbBuildMs('sh-ms-lob',    f('Line of Business'),   null, null);
+  dbBuildMs('sh-ms-locale', f('Locale'),             null, null);
+  dbBuildMs('sh-ms-atype',  f('Analysis Type'),      null, null);
+  dbBuildMs('sh-ms-ref',    f('Audit Ref'),           null, null);
+}
+
+// dbPopulateAuditLogFilters — unified version defined above near dbApplyAuditLog
+
+// ── When Team Member ticked — prefill from roster (shared panel) ─────────────
+function dbMemberChange(pfx, name) {
+  var row = _dbRoster.find(function(r) { return r.participant === name; });
+  if (!row) return;
+  dbPrecheck('sh-ms-leader', row.teamLeader);
+  dbPrecheck('sh-ms-ops',    row.opsManager);
+  dbPrecheck('sh-ms-lob',    row.lineOfBusiness);
+  dbPrecheck('sh-ms-locale', row.locale);
+  dbApplyAll();
+}
+
+function dbPrecheck(listId, val) {
+  if (!val) return;
+  var el = document.getElementById(listId);
+  if (!el) return;
+  el.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
+    if (cb.value === val) cb.checked = true;
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PILL DROPDOWN SYSTEM — Looker Studio style
+// ══════════════════════════════════════════════════════════════════════════════
+
+var _openPill = null;  // currently open pill key
+
+var PILL_KEYS = ['member','leader','ops','lob','locale','vtid','atype','ref'];
+var PILL_LABELS = {
+  member: 'Team Member', leader: 'Team Leader', ops: 'Ops Manager',
+  lob: 'LOB', locale: 'Locale', vtid: 'VTID', atype: 'Analysis Type', ref: 'Audit Ref'
+};
+var PILL_PREFILL = { member: true }; // member pill prefills others
+
+// ── Open / close a pill panel ─────────────────────────────────────────────────
+function dbTogglePill(key, pillEl) {
+  if (_openPill === key) {
+    dbClosePill();
+    return;
+  }
+  dbClosePill();
+  _openPill = key;
+
+  var panel = document.getElementById('panel-' + key);
+  if (!panel) return;
+
+  // Build panel content
+  panel.innerHTML = dbBuildPanelHTML(key);
+
+  // Position below the pill button
+  var rect = pillEl.getBoundingClientRect();
+  panel.style.top  = (rect.bottom + 4) + 'px';
+  panel.style.left = rect.left + 'px';
+  panel.classList.add('db-pill-panel-open');
+  pillEl.classList.add('db-pill-open');
+
+  // Focus search
+  var s = panel.querySelector('.db-pill-panel-search');
+  if (s) setTimeout(function(){ s.focus(); }, 60);
+}
+
+function dbClosePill() {
+  if (!_openPill) return;
+  var panel = document.getElementById('panel-' + _openPill);
+  if (panel) panel.classList.remove('db-pill-panel-open');
+  var pill  = document.getElementById('pill-' + _openPill);
+  if (pill) pill.classList.remove('db-pill-open');
+  _openPill = null;
+}
+
+// Close on outside click
+document.addEventListener('click', function(e) {
+  if (!_openPill) return;
+  var panel = document.getElementById('panel-' + _openPill);
+  var pill  = document.getElementById('pill-'  + _openPill);
+  if (panel && !panel.contains(e.target) && pill && !pill.contains(e.target)) {
+    dbClosePill();
+  }
+});
+
+// ── Build panel HTML ──────────────────────────────────────────────────────────
+function dbBuildPanelHTML(key) {
+  var storeEl  = document.getElementById('sh-ms-' + key);
+  var items    = storeEl ? storeEl.querySelectorAll('input[type=checkbox]') : [];
+  var checked  = {};
+  items.forEach(function(cb){ if (cb.checked) checked[cb.value] = true; });
+
+  // Collect all unique values from data
+  var all = _dbAllData.concat(_dbAuditLog);
+  var fieldMap = {
+    member: 'Team Member', leader: 'Team Leader', ops: 'Operations Manager',
+    lob: 'Line of Business', locale: 'Locale', vtid: 'VTID',
+    atype: 'Analysis Type', ref: 'Audit Ref'
+  };
+  var field  = fieldMap[key];
+  var values = dbUniq(all.map(function(r){ return r[field] || ''; })).filter(Boolean).sort();
+
+  var countSel = Object.keys(checked).length;
+  var allSelected = (countSel === values.length && values.length > 0);
+
+  var html = '<input class="db-pill-panel-search" placeholder="Search ' + PILL_LABELS[key] + '…" ' +
+    'oninput="dbPillSearch(this,\'' + key + '\')">' +
+    // Select All / Deselect All row
+    '<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid #F0F0F0;background:#FAFAFA">' +
+    '<label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:#4B286D;cursor:pointer;user-select:none">' +
+    '<input type="checkbox" id="sel-all-' + key + '" ' + (allSelected ? 'checked' : '') + ' ' +
+    'onchange="dbPillSelectAll(\'' + key + '\',this.checked)" ' +
+    'style="accent-color:#4B286D;width:14px;height:14px">' +
+    (allSelected ? 'Deselect All' : 'Select All') +
+    '</label>' +
+    '<span style="font-size:10px;color:#888;margin-left:auto">' + values.length + ' option' + (values.length !== 1 ? 's' : '') + '</span>' +
+    '</div>' +
+    '<div class="db-pill-panel-list" id="plist-' + key + '">';
+
+  values.forEach(function(v) {
+    var chk = checked[v] ? ' checked' : '';
+    var prefill = (key === 'member')
+      ? ' onchange="dbPillMemberChange(\'' + escAttr(v) + '\',this)"'
+      : ' onchange="dbPillCrossSelect(\'' + key + '\',\'' + escAttr(v) + '\',this.checked)"';
+    html += '<label class="db-pill-panel-item" style="justify-content:space-between">' +
+      '<span style="display:flex;align-items:center;gap:8px">' +
+      '<input type="checkbox" value="' + escHtml(v) + '"' + chk + prefill + '>' +
+      escHtml(v) +
+      '</span>' +
+      '<span onclick="event.stopPropagation();event.preventDefault();dbPillOnly(\'' + key + '\',\'' + escAttr(v) + '\')" ' +
+      'style="font-size:10px;color:#4B286D;font-weight:700;cursor:pointer;opacity:0;' +
+      'padding:1px 6px;border:1px solid #D1B8E8;border-radius:3px;white-space:nowrap;' +
+      'transition:opacity .15s" ' +
+      'class="pill-only-btn">only</span>' +
+      '</label>';
+  });
+
+  if (!values.length) {
+    html += '<div style="padding:12px;color:#888;font-size:12px;text-align:center">No options available</div>';
+  }
+
+  html += '</div><div class="db-pill-panel-footer">' +
+    '<span class="db-pill-panel-count">' + values.length + ' option' + (values.length !== 1 ? 's' : '') + '</span>' +
+    '<button class="db-pill-panel-clear-btn" onclick="dbClearPill(\'' + key + '\')">Clear</button>' +
+    '</div>';
+  return html;
+}
+
+// ── Only — deselect all others, select just this one ─────────────────────────
+function dbPillOnly(key, val) {
+  var store = document.getElementById('sh-ms-' + key);
+  if (store) {
+    store.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
+      cb.checked = (cb.value === val);
+    });
+  }
+  var panel = document.getElementById('panel-' + key);
+  if (panel) {
+    panel.querySelectorAll('.db-pill-panel-item input[type=checkbox]').forEach(function(cb) {
+      cb.checked = (cb.value === val);
+    });
+  }
+  dbUpdatePillLabel(key, [val]);
+  dbClosePill();
+  // If member, also narrow related pills
+  if (key === 'member') dbPillMemberChange(val, { checked: true });
+  else dbApplyAll();
+}
+
+// ── Select All / Deselect All ─────────────────────────────────────────────────
+function dbPillSelectAll(key, selectAll) {
+  var panel = document.getElementById('panel-' + key);
+  if (!panel) return;
+
+  // Check/uncheck all visible items in the list
+  panel.querySelectorAll('.db-pill-panel-item input[type=checkbox]').forEach(function(cb) {
+    var item = cb.closest('.db-pill-panel-item');
+    if (item && item.style.display !== 'none') cb.checked = selectAll;
+  });
+
+  // Update the Select All checkbox label
+  var saBox = document.getElementById('sel-all-' + key);
+  if (saBox) {
+    saBox.nextSibling && (saBox.parentNode.lastChild.textContent = selectAll ? 'Deselect All' : 'Select All');
+  }
+
+  // Sync to store and apply
+  if (key === 'member') {
+    // Use member-specific handler to trigger prefill
+    panel.querySelectorAll('.db-pill-panel-item input[type=checkbox]').forEach(function(cb) {
+      if (selectAll) dbPillMemberChange(cb.value, cb);
+    });
+    if (!selectAll) { dbPillCheck('member'); }
+  } else {
+    dbPillCheck(key);
+  }
+}
+
+// ── Panel search filter ───────────────────────────────────────────────────────
+function dbPillSearch(input, key) {
+  var q   = input.value.toLowerCase();
+  var list = document.getElementById('plist-' + key);
+  if (!list) return;
+  list.querySelectorAll('.db-pill-panel-item').forEach(function(item) {
+    item.style.display = item.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+  });
+}
+
+// ── Checkbox change in panel → sync to hidden store + apply ──────────────────
+function dbPillCheck(key) {
+  var panel   = document.getElementById('panel-' + key);
+  var storeEl = document.getElementById('sh-ms-' + key);
+  if (!panel || !storeEl) return;
+
+  // Sync panel checkboxes → hidden store
+  var checked = [];
+  panel.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
+    var existing = storeEl.querySelector('input[value="' + CSS.escape(cb.value) + '"]');
+    if (!existing) {
+      var lbl = document.createElement('label');
+      lbl.innerHTML = '<input type="checkbox" value="' + escHtml(cb.value) + '"> ' + escHtml(cb.value);
+      storeEl.appendChild(lbl);
+      existing = storeEl.querySelector('input[value="' + CSS.escape(cb.value) + '"]');
+    }
+    if (existing) existing.checked = cb.checked;
+    if (cb.checked) checked.push(cb.value);
+  });
+
+  dbUpdatePillLabel(key, checked);
+  dbApplyAll();
+}
+
+// ── Any dropdown selection → cross-prefill related pills ─────────────────────
+// When user picks a Team Member, prefill Leader/Ops/LOB/Locale/VTID from roster.
+// When user picks a Team Leader, prefill all members who report to that leader.
+function dbPillMemberChange(name, checkbox) {
+  dbPillCheck('member');
+
+  // When a specific Team Member is selected, automatically pre-tick the
+  // matching Team Leader, Ops Manager, LOB, Locale in their pill stores.
+  // This means when the user opens those pills they see the right values
+  // already checked — but it doesn't force those filters on.
+  var members = dbGetChecked('sh-ms-member');
+  if (members.length > 0) {
+    // Collect all related values for selected members
+    var leaders = [], ops = [], lobs = [], locales = [];
+    members.forEach(function(m) {
+      var rosterRow = _dbRoster.find(function(r){ return r.participant === m; });
+      if (rosterRow) {
+        if (rosterRow.teamLeader)     leaders.push(rosterRow.teamLeader);
+        if (rosterRow.opsManager)     ops.push(rosterRow.opsManager);
+        if (rosterRow.lineOfBusiness) lobs.push(rosterRow.lineOfBusiness);
+        if (rosterRow.locale)         locales.push(rosterRow.locale);
+      }
+      // Also from dashboard data (has VTID)
+      var dataRow = _dbAllData.find(function(r){ return r['Team Member'] === m; });
+      if (dataRow) {
+        if (dataRow['Team Leader'])        leaders.push(dataRow['Team Leader']);
+        if (dataRow['Operations Manager']) ops.push(dataRow['Operations Manager']);
+        if (dataRow['Line of Business'])   lobs.push(dataRow['Line of Business']);
+        if (dataRow['Locale'])             locales.push(dataRow['Locale']);
+      }
+    });
+    // Pre-tick only relevant options in each pill (deselect the rest)
+    dbPreTickPill('leader', dbUniq(leaders));
+    dbPreTickPill('ops',    dbUniq(ops));
+    dbPreTickPill('lob',    dbUniq(lobs));
+    dbPreTickPill('locale', dbUniq(locales));
+  } else {
+    // No member selected — restore all options in related pills
+    ['leader','ops','lob','locale'].forEach(function(k) {
+      var store = document.getElementById('sh-ms-' + k);
+      if (store) store.querySelectorAll('input').forEach(function(cb){ cb.checked = true; });
+      dbUpdatePillLabel(k, []);
+    });
+  }
+  dbApplyAll();
+}
+
+// Pre-tick only the specified values in a pill store, deselect others
+function dbPreTickPill(key, vals) {
+  var store = document.getElementById('sh-ms-' + key);
+  if (!store) return;
+  store.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
+    cb.checked = (vals.indexOf(cb.value) !== -1);
+  });
+  // Update the pill label to show selection state
+  dbUpdatePillLabel(key, vals);
+}
+
+// Non-member pill selection — just sync and apply, no cross-prefill
+function dbPillCrossSelect(key, val, checked) {
+  dbPillCheck(key);
+  dbApplyAll();
+}
+
+function dbPrefillPill(key, val) {
+  if (!val) return;
+  // Ensure option exists in store and check it
+  var store = document.getElementById('sh-ms-' + key);
+  if (!store) return;
+  var existing = store.querySelector('input[value="' + CSS.escape(val) + '"]');
+  if (!existing) {
+    var lbl = document.createElement('label');
+    lbl.innerHTML = '<input type="checkbox" value="' + escHtml(val) + '"> ' + escHtml(val);
+    store.appendChild(lbl);
+    existing = store.querySelector('input[value="' + CSS.escape(val) + '"]');
+  }
+  if (existing) existing.checked = true;
+  dbUpdatePillLabel(key, [val]);
+}
+
+// ── Update pill button label ───────────────────────────────────────────────────
+function dbUpdatePillLabel(key, selected) {
+  var valEl = document.getElementById('pill-' + key + '-val');
+  var clrEl = document.getElementById('pill-' + key + '-clr');
+  var pill  = document.getElementById('pill-' + key);
+  if (!valEl) return;
+
+  if (!selected || !selected.length) {
+    valEl.textContent = 'All';
+    if (clrEl) clrEl.style.display = 'none';
+    if (pill)  pill.classList.remove('db-pill-active');
+  } else if (selected.length === 1) {
+    valEl.textContent = selected[0];
+    if (clrEl) clrEl.style.display = '';
+    if (pill)  pill.classList.add('db-pill-active');
+  } else {
+    valEl.textContent = selected.length + ' selected';
+    if (clrEl) clrEl.style.display = '';
+    if (pill)  pill.classList.add('db-pill-active');
+  }
+}
+
+// ── Clear a single pill ───────────────────────────────────────────────────────
+function dbClearPill(key) {
+  // Clear = select all = no filter on this pill
+  var store = document.getElementById('sh-ms-' + key);
+  if (store) store.querySelectorAll('input').forEach(function(cb){ cb.checked = true; });
+  var panel = document.getElementById('panel-' + key);
+  if (panel) panel.querySelectorAll('input').forEach(function(cb){ cb.checked = true; });
+  dbUpdatePillLabel(key, []);
+  // If clearing member, also restore all related pills
+  if (key === 'member') {
+    ['leader','ops','lob','locale'].forEach(function(k) {
+      var s = document.getElementById('sh-ms-' + k);
+      if (s) s.querySelectorAll('input').forEach(function(cb){ cb.checked = true; });
+      dbUpdatePillLabel(k, []);
+    });
+  }
+  dbApplyAll();
+}
+
+// ── Populate pill stores from data (replaces old dbPopulateFilters) ───────────
+function dbPopulateFilters() {
+  var all = _dbAllData.concat(_dbAuditLog);
+  var fieldMap = {
+    member: 'Team Member', leader: 'Team Leader', ops: 'Operations Manager',
+    lob: 'Line of Business', locale: 'Locale', vtid: 'VTID',
+    atype: 'Analysis Type', ref: 'Audit Ref'
+  };
+
+  // For VTID: also pull from roster since dashboard data may not have it yet
+  var vtidFromRoster = dbUniq(_dbRoster.map(function(r){ return r.vtid || ''; })).filter(Boolean);
+
+  PILL_KEYS.forEach(function(key) {
+    var field  = fieldMap[key];
+    var values = dbUniq(all.map(function(r){ return r[field] || ''; })).filter(Boolean);
+    // Merge in roster VTIDs so the filter always has options
+    if (key === 'vtid') values = dbUniq(values.concat(vtidFromRoster)).filter(Boolean);
+    values = values.sort();
+
+    var store = document.getElementById('sh-ms-' + key);
+    if (!store) return;
+    store.innerHTML = '';
+    values.forEach(function(v) {
+      var lbl = document.createElement('label');
+      lbl.innerHTML = '<input type="checkbox" value="' + escHtml(v) + '"> ' + escHtml(v);
+      store.appendChild(lbl);
+    });
+  });
+}
+
+// ── Select every option in every pill (called on dashboard open) ─────────────
+function dbSelectAllPills() {
+  PILL_KEYS.forEach(function(key) {
+    var store = document.getElementById('sh-ms-' + key);
+    if (!store) return;
+    store.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
+      cb.checked = true;
+    });
+    // Show no label change — "All" means everything selected with no pill activated
+    dbUpdatePillLabel(key, []);  // keep label as "All" for clean look
+  });
+}
+
+// ── Shared filter state reader ────────────────────────────────────────────────
+// Returns selected values — but if ALL options are checked, return [] (no filter)
+// This means "all selected" = same as "no filter" = show everything
+function dbGetPillFilter(key) {
+  var store = document.getElementById('sh-ms-' + key);
+  if (!store) return [];
+  var all      = store.querySelectorAll('input[type=checkbox]');
+  var checked  = store.querySelectorAll('input[type=checkbox]:checked');
+  // If everything is checked (or nothing is explicitly narrowed), no filter
+  if (all.length === 0 || checked.length === all.length) return [];
+  // If nothing checked, also no filter (show all)
+  if (checked.length === 0) return [];
+  return Array.from(checked).map(function(cb){ return cb.value; });
+}
+
+function dbGetSharedFilters() {
+  return {
+    dateFrom: document.getElementById('sh-date-from').value,
+    dateTo:   document.getElementById('sh-date-to').value,
+    sapQ:     (document.getElementById('sh-sap-search').value || '').trim().toLowerCase(),
+    members:  dbGetPillFilter('member'),
+    leaders:  dbGetPillFilter('leader'),
+    ops:      dbGetPillFilter('ops'),
+    lobs:     dbGetPillFilter('lob'),
+    locales:  dbGetPillFilter('locale'),
+    vtids:    dbGetPillFilter('vtid'),
+    atypes:   dbGetPillFilter('atype'),
+    refs:     dbGetPillFilter('ref')
+  };
+}
+
+// ── Apply all tabs at once ────────────────────────────────────────────────────
+function dbApplyAll() {
+  var f = dbGetSharedFilters();
+
+  // Count active filter groups for badge
+  var active = [f.members, f.leaders, f.ops, f.lobs, f.locales, f.vtids, f.atypes, f.refs]
+    .filter(function(a) { return a && a.length > 0; }).length +
+    (f.dateFrom || f.dateTo ? 1 : 0) + (f.sapQ ? 1 : 0);
+
+  // Sync pill labels to current selection
+  PILL_KEYS.forEach(function(k) {
+    var fm = { member: f.members, leader: f.leaders, ops: f.ops,
+               lob: f.lobs, locale: f.locales, vtid: f.vtids, atype: f.atypes, ref: f.refs };
+    dbUpdatePillLabel(k, fm[k] || []);
+  });
+  var badge = document.getElementById('db-active-filter-badge');
+  if (active > 0) {
+    badge.textContent = active + ' active';
+    badge.style.display = 'inline';
+  } else {
+    badge.style.display = 'none';
+  }
+
+  // Filter helper
+  function matchRow(r, tsField) {
+    var ts = r[tsField] || r['Timestamp'] || r['Submitted At'] || '';
+    if (f.dateFrom) { var d = new Date(ts); if (!isNaN(d) && d < new Date(f.dateFrom)) return false; }
+    if (f.dateTo)   { var d2 = new Date(ts); if (!isNaN(d2) && d2 > new Date(f.dateTo + 'T23:59:59')) return false; }
+    if (f.sapQ && (r['SAP ID'] || '').toLowerCase().indexOf(f.sapQ) === -1) return false;
+    if (f.members.length && f.members.indexOf(r['Team Member']        || '') === -1) return false;
+    if (f.leaders.length && f.leaders.indexOf(r['Team Leader']        || '') === -1) return false;
+    if (f.ops.length     && f.ops.indexOf(r['Operations Manager']     || '') === -1) return false;
+    if (f.lobs.length    && f.lobs.indexOf(r['Line of Business']      || '') === -1) return false;
+    if (f.locales.length && f.locales.indexOf(r['Locale']             || '') === -1) return false;
+    if (f.vtids.length   && f.vtids.indexOf(r['VTID']                 || '') === -1) return false;
+    if (f.atypes.length  && f.atypes.indexOf(r['Analysis Type']       || '') === -1) return false;
+    if (f.refs.length    && f.refs.indexOf(r['Audit Ref']             || '') === -1) return false;
+    return true;
+  }
+
+  // Repeats tab
+  _dbRFiltered = _dbAllData.filter(function(r) {
+    if ((r['Analysis Type'] || '').indexOf('Repeats') === -1) return false;
+    return matchRow(r, 'Timestamp');
+  });
+  document.getElementById('r-row-count').textContent = _dbRFiltered.length + ' record' + (_dbRFiltered.length !== 1 ? 's' : '');
+  dbRenderStats('r', _dbRFiltered);
+  dbRenderTable('r', _dbRFiltered);
+  dbDrawChart('r', _dbRFiltered);
+
+  // Sales tab
+  _dbSFiltered = _dbAllData.filter(function(r) {
+    if ((r['Analysis Type'] || '').indexOf('Sales') === -1) return false;
+    return matchRow(r, 'Timestamp');
+  });
+  document.getElementById('s-row-count').textContent = _dbSFiltered.length + ' record' + (_dbSFiltered.length !== 1 ? 's' : '');
+  dbRenderStats('s', _dbSFiltered);
+  dbRenderTable('s', _dbSFiltered);
+  dbDrawChart('s', _dbSFiltered);
+
+  // Audit Log tab
+  _dbAlFiltered = _dbAuditLog.filter(function(r) {
+    return matchRow(r, 'Submitted At');
+  });
+  document.getElementById('al-row-count').textContent = _dbAlFiltered.length + ' record' + (_dbAlFiltered.length !== 1 ? 's' : '');
+  dbRenderAuditStats(_dbAlFiltered);
+  dbRenderAuditTable(_dbAlFiltered);
+
+  // Shared count summary
+  var total = _dbRFiltered.length + _dbSFiltered.length;
+  document.getElementById('sh-row-count').textContent =
+    total + ' total record' + (total !== 1 ? 's' : '') + ' across Repeats & Sales';
+
+  // Re-render Overview tab if it's currently visible
+  var ovTab = document.getElementById('db-tab-overview');
+  if (ovTab && ovTab.classList.contains('db-active')) {
+    setTimeout(renderOverviewTab, 50);
+  }
+}
+
+// Legacy stubs so old onclick handlers don't break
+function dbApply(pfx) { dbApplyAll(); }
+
+function dbClearAll() {
+  document.getElementById('sh-date-from').value  = '';
+  document.getElementById('sh-date-to').value    = '';
+  document.getElementById('sh-sap-search').value = '';
+  PILL_KEYS.forEach(function(k) {
+    // Re-select ALL options (clear = show everything)
+    var store = document.getElementById('sh-ms-' + k);
+    if (store) store.querySelectorAll('input').forEach(function(cb){ cb.checked = true; });
+    var panel = document.getElementById('panel-' + k);
+    if (panel) panel.querySelectorAll('input').forEach(function(cb){ cb.checked = true; });
+    dbUpdatePillLabel(k, []);  // show "All" label
+  });
+  dbClosePill();
+  dbApplyAll();
+}
+function dbClear() { dbClearAll(); }
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function dbRenderStats(pfx, rows) {
+  var total      = rows.length;
+  var resolved   = rows.filter(function(r){ return (r['Issue Resolved']||'').toLowerCase().indexOf('yes')!==-1; }).length;
+  var unresolved = total - resolved;
+  var emailed    = rows.filter(function(r){ return r['Email Status']==='Sent'; }).length;
+  var repRows    = rows.filter(function(r){ return parseFloat(r['Repeat Projection %'])>0; });
+  var avgRep     = repRows.length
+    ? Math.round(repRows.reduce(function(s,r){ return s+(parseFloat(r['Repeat Projection %'])||0); },0)/repRows.length)
+    : 0;
+  var flagged    = rows.filter(function(r){ return (r['Critical Flags']||'').trim(); }).length;
+
+  var repClass   = avgRep > 50 ? 'red' : avgRep > 25 ? 'amber' : 'green';
+  var repSub     = avgRep > 50 ? '&#9660; High Risk' : avgRep > 25 ? '&#9650; Moderate' : '&#10003; Low Risk';
+  var repSubCls  = avgRep > 50 ? 'down' : avgRep > 25 ? '' : 'up';
+
+  document.getElementById(pfx+'-stats').innerHTML =
+    dbKPIStat('&#128222;', total,          'Total Interactions',  '', total>0?'All calls this period':'No data','') +
+    dbKPIStat('&#10003;',  resolved,       'Issues Resolved',     'green',
+      total>0 ? Math.round(resolved/total*100)+'% resolution rate' : '—', 'up') +
+    dbKPIStat('&#10007;',  unresolved,     'Unresolved',          unresolved>0?'red':'',
+      unresolved>0 ? 'Requires follow-up' : 'All resolved', unresolved>0?'down':'up') +
+    dbKPIStat('&#128201;', avgRep+'%',     'Avg Repeat Risk',     repClass, repSub, repSubCls) +
+    dbKPIStat('&#128681;', flagged,        'Critical Flags',      flagged>0?'red':'',
+      flagged>0 ? 'Need coaching' : 'No flags', flagged>0?'down':'') +
+    dbKPIStat('&#128140;', emailed,        'Audits Emailed',      emailed>0?'green':'',
+      emailed>0 ? 'Reports sent' : 'None sent yet', emailed>0?'up':'');
+}
+
+function dbRenderAuditStats(rows) {
+  var total   = rows.length;
+  var sent    = rows.filter(function(r){ return r['Email Status']==='Sent'; }).length;
+  var pending = total - sent;
+  var agents  = dbUniq(rows.map(function(r){ return r['Team Member']||''; })).filter(Boolean).length;
+  var obs     = dbUniq(rows.map(function(r){ return r['Observer Name']||''; })).filter(Boolean).length;
+  document.getElementById('al-stats').innerHTML =
+    dbKPIStat('&#128196;', total,   'Total Audits',   '', 'All evaluations','') +
+    dbKPIStat('&#10003;',  sent,    'Emailed',        sent>0?'green':'', sent>0?'Reports delivered':'None sent','up') +
+    dbKPIStat('&#9203;',   pending, 'Pending Email',  pending>0?'amber':'', pending>0?'Awaiting submission':'All sent','') +
+    dbKPIStat('&#128100;', agents,  'Unique Agents',  '', 'Agents evaluated','') +
+    dbKPIStat('&#128065;', obs,     'Observers',      '', 'QA evaluators','');
+}
+
+// ── KPI stat card with icon, value, label, sub-text ──────────────────────────
+function dbKPIStat(icon, value, label, colorClass, subText, subClass) {
+  var cls = 'db-stat' + (colorClass ? ' ' + colorClass : '');
+  return '<div class="' + cls + '">' +
+    '<span class="db-stat-icon">' + icon + '</span>' +
+    '<div class="db-stat-val">' + value + '</div>' +
+    '<div class="db-stat-lbl">' + label + '</div>' +
+    (subText ? '<div class="db-stat-sub ' + (subClass||'') + '">' + subText + '</div>' : '') +
+    '</div>';
+}
+
+// Legacy shim — some callers still use dbStat
+function dbStat(v, l, extraStyle) {
+  var cls = '';
+  if (extraStyle && extraStyle.indexOf('#2B8000')!==-1) cls='green';
+  else if (extraStyle && extraStyle.indexOf('#C12335')!==-1) cls='red';
+  return dbKPIStat('', v, l, cls, '', '');
+}
+
+// ── Charts (Google Charts) ────────────────────────────────────────────────────
+function dbDrawChart(pfx, rows, _retries) {
+  if (typeof google === 'undefined' || !google.visualization) {
+    var attempts = (_retries || 0) + 1;
+    if (attempts > 15) {
+      // After ~6s give up gracefully — don't loop forever
+      [pfx + '-chart-drivers', pfx + '-chart-opps'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.innerHTML = '<div style="text-align:center;padding:40px;color:#888;font-size:12px">Charts unavailable — could not load Google Charts library.</div>';
+      });
+      return;
+    }
+    setTimeout(function(){ dbDrawChart(pfx, rows, attempts); }, 400);
+    return;
+  }
+  // Top 5 Call Drivers — column X (Call Driver)
+  dbBarChart(pfx + '-chart-drivers', 'Call Driver', dbTopNByField(rows, 'Call Driver', 5));
+
+  // Top 5 Opportunities — column Z (RCA Sub-Parameter)
+  dbBarChart(pfx + '-chart-opps', 'RCA Sub-Parameter', dbTopNByField(rows, 'RCA Sub-Parameter', 5));
+}
+
+// Count occurrences of a field value — used for Call Reason chart
+function dbTopNByField(rows, field, n) {
+  var counts = {};
+  rows.forEach(function(r) {
+    var v = (r[field] || '').trim().substring(0, 60);
+    if (v) counts[v] = (counts[v] || 0) + 1;
+  });
+  return Object.keys(counts)
+    .sort(function(a,b){ return counts[b]-counts[a]; })
+    .slice(0, n)
+    .map(function(k){ return [k, counts[k]]; });
+}
+
+// Top 5 opportunities: split the Overall Opportunities text into individual items
+// and count each one, then return top 5 by frequency, highest to lowest
+function dbTopNOpps(rows, n) {
+  var counts = {};
+  rows.forEach(function(r) {
+    var opp = (r['Overall Opportunities'] || '').trim();
+    if (!opp) return;
+    // Split on numbered items (1. 2. etc), bullet points, or newlines
+    var items = opp.split(/[\n\r]+|\d+\.\s+|[•\-]\s+/).map(function(s){ return s.trim(); }).filter(function(s){ return s.length > 8; });
+    if (!items.length) {
+      // No split found — use the whole string truncated
+      var t = opp.substring(0, 60);
+      counts[t] = (counts[t] || 0) + 1;
+    } else {
+      items.forEach(function(item) {
+        var t = item.substring(0, 60);
+        counts[t] = (counts[t] || 0) + 1;
+      });
+    }
+  });
+  return Object.keys(counts)
+    .sort(function(a,b){ return counts[b]-counts[a]; })
+    .slice(0, n)
+    .map(function(k){ return [k, counts[k]]; });
+}
+
+function dbBarChart(containerId, labelName, data) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  if (!data || !data.length) {
+    el.innerHTML = '<div style="text-align:center;padding:50px;color:#888;font-size:12px">No data yet</div>';
+    return;
+  }
+  var dt = new google.visualization.DataTable();
+  dt.addColumn('string', labelName);
+  dt.addColumn('number', 'Count');
+  dt.addColumn({type:'string', role:'style'});
+  dt.addColumn({type:'string', role:'annotation'}); // shows count on bar
+  data.forEach(function(r){ dt.addRow([r[0], r[1], 'color:#4B286D;opacity:.85', String(r[1])]); });
+  new google.visualization.BarChart(el).draw(dt, {
+    legend:      { position: 'none' },
+    chartArea:   { left: 170, top: 8, width: '52%', height: '90%' },
+    bar:         { groupWidth: '60%' },
+    hAxis:       { minValue: 0, textStyle: { fontSize: 11 }, format: '#', gridlines: { count: -1 } },
+    vAxis:       { textStyle: { fontSize: 11 } },
+    annotations: { alwaysOutside: true, textStyle: { fontSize: 12, bold: true, color: '#4B286D' } },
+    backgroundColor: 'transparent'
+  });
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+function dbRenderTable(pfx, rows) {
+  var tbody = document.getElementById(pfx + '-tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="12" class="db-empty">No records found. Submit a call analysis to populate the dashboard.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(function(r) {
+    var ts      = r['Timestamp'] ? new Date(r['Timestamp']).toLocaleDateString() : '';
+    var auditRef = r['Audit Ref'] || '';
+    var isSales = (r['Analysis Type']||'').indexOf('Sales') !== -1;
+
+    // Audit Ref as clickable link — opens the evaluation download
+    var auditCell = auditRef
+      ? '<a href="#" onclick="dbOpenEvaluation(\'' + escHtml(auditRef) + '\');return false;" ' +
+        'style="color:#4B286D;font-weight:700;text-decoration:none;font-size:12px" ' +
+        'title="Open evaluation for ' + escHtml(auditRef) + '">' +
+        escHtml(auditRef) + ' &#128279;</a>'
+      : '';
+
+    var atype = isSales
+      ? '<span style="background:#EDF7E6;color:#2B8000;border-radius:3px;padding:2px 7px;font-size:10px;font-weight:700">Sales</span>'
+      : '<span style="background:#F5F0FF;color:#4B286D;border-radius:3px;padding:2px 7px;font-size:10px;font-weight:700">Repeats</span>';
+
+    // Repeat % — colour code
+    var repRaw  = (r['Repeat Projection %'] || '').toString().trim();
+    var repNum  = parseFloat(repRaw);
+    // Always display as "N%" — add % if not already present
+    var repPct  = isNaN(repNum) ? repRaw : repNum + '%';
+    var repStyle = !isNaN(repNum) && repNum > 50
+      ? 'color:#C12335;font-weight:700'
+      : (!isNaN(repNum) && repNum > 25 ? 'color:#8C4A00;font-weight:600' : '');
+
+    // Evaluation link — PDF email status + link
+    var evalCell = r['Email Status'] === 'Sent'
+      ? '<span class="db-badge-sent">&#10003; Emailed</span>'
+      : '<span class="db-badge-pending">Pending</span>';
+
+    // RCA Category colour badge
+    var rca     = (r['RCA Category'] || '').trim();
+    var rcaStyle = '';
+    if (rca.indexOf('Agent')    !== -1) rcaStyle = 'background:#FFF0F0;color:#C12335;border:1px solid #F5AAAA';
+    if (rca.indexOf('Process')  !== -1) rcaStyle = 'background:#FFF8E1;color:#8C4A00;border:1px solid #FFE082';
+    if (rca.indexOf('Customer') !== -1) rcaStyle = 'background:#E8F5E9;color:#2B8000;border:1px solid #B3DFA0';
+    if (rca.indexOf('Transfer') !== -1) rcaStyle = 'background:#F3E5F5;color:#4B286D;border:1px solid #D1B8E8';
+    var rcaBadge = rca
+      ? '<span style="' + rcaStyle + ';border-radius:3px;padding:2px 6px;font-size:10px;font-weight:700;white-space:nowrap">' + escHtml(rca) + '</span>'
+      : '';
+
+    return '<tr>' +
+      '<td style="white-space:nowrap;font-size:12px">' + ts + '</td>' +
+      '<td style="min-width:150px">' + auditCell + '</td>' +
+      '<td style="white-space:nowrap">' + escHtml(r['Team Member']||'') + '</td>' +
+      '<td>' + escHtml(r['Line of Business']||'') + '</td>' +
+      '<td>' + escHtml(r['Locale']||'') + '</td>' +
+      '<td>' + atype + '</td>' +
+      '<td style="white-space:nowrap;font-weight:600;color:#1A1A2E" title="' + escHtml(r['Call Driver']||'') + '">' + escHtml((r['Call Driver']||'')) + '</td>' +
+      '<td>' + rcaBadge + '</td>' +
+      '<td style="max-width:160px;font-size:12px" title="' + escHtml(r['RCA Sub-Parameter']||'') + '">' + escHtml((r['RCA Sub-Parameter']||'').substring(0,60)) + '</td>' +
+      '<td style="max-width:180px;font-size:12px" title="' + escHtml(r['Call Summary']||'') + '">' + escHtml((r['Call Summary']||'').substring(0,80)) + '</td>' +
+      '<td style="max-width:180px;font-weight:600;color:#4B286D;font-size:12px" title="' + escHtml(r['Top Opportunity']||'') + '">' + escHtml((r['Top Opportunity']||'').substring(0,70)) + '</td>' +
+      '<td style="max-width:180px;font-size:12px" title="' + escHtml(r['Overall Opportunities']||'') + '">' + escHtml((r['Overall Opportunities']||'').substring(0,80)) + '</td>' +
+      '<td style="max-width:160px;font-size:12px" title="' + escHtml(r['Recommendations']||'') + '">' + escHtml((r['Recommendations']||'').substring(0,80)) + '</td>' +
+      '<td style="max-width:160px;font-size:12px" title="' + escHtml(r['Critical Flags']||'') + '">' + escHtml((r['Critical Flags']||'').substring(0,70)) + '</td>' +
+      '<td style="text-align:center;' + repStyle + '">' + escHtml(repPct) + '</td>' +
+      '<td>' + evalCell + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ── Open evaluation from dashboard — searches cached HTML by Audit Ref ─────────
+function dbOpenEvaluation(auditRef) {
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result || !result.html) {
+        alert('Evaluation for ' + auditRef + ' not found in cache. Re-process the transcript to regenerate it.');
+        return;
+      }
+      // Open in a new window as a printable report
+      var w = window.open('', '_blank');
+      w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+        '<title>Evaluation — ' + auditRef + '</title>' +
+        '<style>body{font-family:Helvetica Neue,Helvetica,Arial,sans-serif;font-size:13px;color:#1A1A2E;margin:24px;max-width:1100px}' +
+        '.no-print{background:#4B286D;color:#fff;padding:10px 16px;margin-bottom:20px;border-radius:4px;display:flex;gap:12px;align-items:center}' +
+        'button{background:#fff;color:#4B286D;border:none;border-radius:3px;padding:5px 14px;font-weight:700;cursor:pointer}' +
+        '@media print{.no-print{display:none}}</style>' +
+        result.css + '</head><body>' +
+        '<div class="no-print"><strong>Evaluation Report — ' + auditRef + '</strong>' +
+        '<button onclick="window.print()">&#128424; Print / Save PDF</button>' +
+        '<button onclick="window.close()">Close</button></div>' +
+        sanitiseResultHTML(result.html) + '</body></html>');
+      w.document.close();
+    })
+    .withFailureHandler(function(e) {
+      alert('Could not load evaluation: ' + (e.message || e));
+    })
+    .getEvaluationByAuditRef(auditRef);
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+function dbFlagOnly(pfx) {
+  var rows = pfx === 'r' ? _dbRFiltered : _dbSFiltered;
+  var flagged = rows.filter(function(r){ return (r['Critical Flags']||'').trim(); });
+  if (!flagged.length) { alert('No flagged records in current view.'); return; }
+  dbDownloadCSV(flagged, 'flagged_records.csv');
+}
+// ── Export to Google Spreadsheet (server-side) ────────────────────────────────
+function dbExportAll(pfx) {
+  var kw   = pfx === 'r' ? 'Repeats' : pfx === 's' ? 'Sales' : 'Audit Log';
+  var rows = pfx === 'al' ? _dbAuditLog
+           : pfx === 'r'  ? _dbAllData.filter(function(r){ return (r['Analysis Type']||'').indexOf('Repeats')!==-1; })
+           :                 _dbAllData.filter(function(r){ return (r['Analysis Type']||'').indexOf('Sales')!==-1; });
+  dbRunExport(rows, 'NH Audit Export — ' + kw + ' — All Records');
+}
+function dbExportFiltered(pfx) {
+  var kw   = pfx === 'r' ? 'Repeats' : pfx === 's' ? 'Sales' : 'Audit Log';
+  var rows = pfx === 'al' ? _dbAlFiltered
+           : pfx === 'r'  ? _dbRFiltered
+           :                 _dbSFiltered;
+  dbRunExport(rows, 'NH Audit Export — ' + kw + ' — Filtered View');
+}
+
+function dbRunExport(rows, title) {
+  if (!rows || !rows.length) { alert('No records to export.'); return; }
+  // Show spinner overlay
+  var overlay = document.getElementById('db-export-overlay');
+  if (overlay) overlay.style.display = 'flex';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (overlay) overlay.style.display = 'none';
+      if (!result.success) { alert('Export failed: ' + result.error); return; }
+      // Open the new spreadsheet in a new tab
+      window.open(result.url, '_blank');
+    })
+    .withFailureHandler(function(e) {
+      if (overlay) overlay.style.display = 'none';
+      alert('Export error: ' + (e.message || e));
+    })
+    .exportToSpreadsheet(rows, title);
+}
+
+function dbUniq(arr){ var seen={}; return arr.filter(function(v){ return v&&!seen[v]&&(seen[v]=1); }); }
+
+// ── Submit & Email ────────────────────────────────────────────────────────────
+function handleSubmitEmail() {
+  var teamLeader = document.getElementById('teamLeader').value.trim();
+  var opsManager = document.getElementById('opsManager').value.trim();
+  if (!teamLeader && !opsManager) {
+    showError('Please enter a Team Leader and/or Operations Manager name before submitting.');
+    return;
+  }
+  if (!_lastHTML) {
+    showError('No analysis to submit. Please run Process Script first.');
+    return;
+  }
+
+  var formData = getFormData();
+  document.getElementById('btn-submit').disabled = true;
+  document.getElementById('email-overlay').classList.add('visible');
+
+  google.script.run
+    .withSuccessHandler(function (result) {
+      document.getElementById('email-overlay').classList.remove('visible');
+      document.getElementById('btn-submit').disabled = false;
+      if (!result.success) {
+        showError('Email error: ' + result.error);
+        return;
+      }
+      showSuccess('&#10003; Audit emailed successfully to: ' + result.recipients.join(', '));
+      lockFormAfterSubmit(result.auditRef || _currentAuditRef);
+    })
+    .withFailureHandler(function (err) {
+      document.getElementById('email-overlay').classList.remove('visible');
+      document.getElementById('btn-submit').disabled = false;
+      showError('Email failed: ' + (err.message || err));
+    })
+    .sendAuditEmail(formData, _lastHTML);
+}
+
+// ── Lock form after submission — prevents editing a submitted evaluation ───────
+function lockFormAfterSubmit(auditRef) {
+  // Disable all form inputs and buttons
+  var fields = ['sapId','participant','teamLeader','opsManager','lineOfBusiness',
+                'locale','vtid','startTime','customerBAN','interactionId','direction',
+                'duration','transcript'];
+  fields.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) { el.disabled = true; el.style.background = '#f4f4f6'; el.style.color = '#888'; }
+  });
+
+  // Disable radio buttons for analysis type
+  document.querySelectorAll('input[name="analysisType"]').forEach(function(r){ r.disabled = true; });
+
+  // Disable Process Script and Clear buttons
+  document.getElementById('btn-process').disabled = true;
+
+  // Hide Submit button — already done
+  document.getElementById('btn-submit').style.display = 'none';
+
+  // Show a locked banner
+  var banner = document.createElement('div');
+  banner.style.cssText = 'background:#EDF7E6;border:1px solid #B3DFA0;border-left:4px solid #2B8000;' +
+    'border-radius:4px;padding:11px 16px;font-size:13px;font-weight:600;color:#1A5E00;' +
+    'margin-bottom:14px;display:flex;align-items:center;gap:8px';
+  banner.innerHTML = '&#128274; <span>Evaluation <strong>' + (auditRef || '') + '</strong> has been submitted and locked. ' +
+    'Start a new session to submit another evaluation.</span>';
+
+  var page = document.querySelector('.page');
+  if (page) page.insertBefore(banner, page.firstChild);
+
+  // Lock analysis output cells
+  document.querySelectorAll('#applied-output [contenteditable]').forEach(function(el) {
+    el.removeAttribute('contenteditable');
+    el.style.cursor = 'default';
+  });
+}
+
+function getFormData() {
+  return {
+    sapId:          document.getElementById('sapId').value.trim(),
+    participant:    document.getElementById('participant').value.trim(),
+    locale:         document.getElementById('locale').value.trim(),
+    vtid:           document.getElementById('vtid').value.trim(),
+    teamLeader:     document.getElementById('teamLeader').value.trim(),
+    opsManager:     document.getElementById('opsManager').value.trim(),
+    lineOfBusiness: document.getElementById('lineOfBusiness').value.trim(),
+    startTime:      document.getElementById('startTime').value.trim(),
+    customerBAN:    document.getElementById('customerBAN').value.trim(),
+    interactionId:  document.getElementById('interactionId').value.trim(),
+    direction:      document.getElementById('direction').value,
+    duration:       document.getElementById('duration').value.trim(),
+    analysisType:   document.querySelector('input[name="analysisType"]:checked').value,
+    auditRef:       _currentAuditRef,
+    observerName:   _currentObserver.name || _currentObserver.email || ''
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AI ANALYTICS PANEL
+// ══════════════════════════════════════════════════════════════════════════════
+var _lastAnalyticsHTML = '';
+var _lastAnalyticsType = 'r';
+var _anOpenDrop = null;
+var _anFilters  = {};   // current state of analytics panel filters
+
+// ── Analytics inline filter pills ────────────────────────────────────────────
+var AN_PILL_KEYS = ['member','leader','lob','locale'];
+var AN_PILL_FIELDS = { member:'Team Member', leader:'Team Leader', lob:'Line of Business', locale:'Locale' };
+
+function anInitFilters(pfx) {
+  // Seed from main dashboard filters
+  var f = dbGetSharedFilters();
+  _anFilters = {
+    dateFrom: f.dateFrom || '', dateTo: f.dateTo || '',
+    sapQ: f.sapQ || '',
+    member:  f.members  || [],
+    leader:  f.leaders  || [],
+    lob:     f.lobs     || [],
+    locale:  f.locales  || []
+  };
+
+  // Restore date inputs
+  document.getElementById('an-date-from').value = _anFilters.dateFrom;
+  document.getElementById('an-date-to').value   = _anFilters.dateTo;
+  document.getElementById('an-sap-q').value      = _anFilters.sapQ;
+
+  // Build pill dropdowns from all data
+  var rows = pfx === 's' ? _dbSFiltered.concat(_dbRFiltered) : _dbRFiltered.concat(_dbSFiltered);
+  var all  = _dbAllData;
+
+  AN_PILL_KEYS.forEach(function(key) {
+    var field  = AN_PILL_FIELDS[key];
+    var values = dbUniq(all.map(function(r){ return r[field]||''; })).filter(Boolean).sort();
+    anBuildDrop('an-drop-' + key, 'an-pill-' + key + '-val', key, values, _anFilters[key] || []);
+  });
+}
+
+function anBuildDrop(dropId, valId, key, values, selected) {
+  var drop = document.getElementById(dropId);
+  if (!drop) return;
+  var selSet = {};
+  (selected || []).forEach(function(v){ selSet[v] = true; });
+
+  drop.innerHTML =
+    '<input class="an-drop-search" placeholder="Search…" oninput="anDropSearch(this,\'' + dropId + '\')">' +
+    '<div class="an-drop-list" id="' + dropId + '-list">' +
+    values.map(function(v) {
+      var chk = selSet[v] ? ' checked' : '';
+      return '<label class="an-drop-item">' +
+        '<input type="checkbox" value="' + escHtml(v) + '"' + chk +
+        ' onchange="anDropChange(\'' + key + '\')">' +
+        escHtml(v) + '</label>';
+    }).join('') +
+    '</div>' +
+    '<div class="an-drop-footer"><span>' + values.length + ' options</span>' +
+    '<button class="an-drop-clear" onclick="anClearPill(\'' + key + '\')">Clear</button></div>';
+
+  anUpdatePillLabel(key, selected);
+}
+
+function anDropSearch(input, dropId) {
+  var q = input.value.toLowerCase();
+  document.querySelectorAll('#' + dropId + '-list .an-drop-item').forEach(function(item) {
+    item.style.display = item.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+  });
+}
+
+function anDropChange(key) {
+  var drop = document.getElementById('an-drop-' + key);
+  if (!drop) return;
+  var checked = Array.from(drop.querySelectorAll('input:checked')).map(function(cb){ return cb.value; });
+  _anFilters[key] = checked;
+  anUpdatePillLabel(key, checked);
+  // Cross-fill: member → prefill leader, lob, locale
+  if (key === 'member' && checked.length === 1) {
+    var name = checked[0];
+    var row  = _dbRoster.find(function(r){ return r.participant === name; });
+    if (row) {
+      if (row.teamLeader)     { _anFilters.leader = [row.teamLeader];     anRecheckDrop('leader', [row.teamLeader]); }
+      if (row.lineOfBusiness) { _anFilters.lob    = [row.lineOfBusiness]; anRecheckDrop('lob',    [row.lineOfBusiness]); }
+      if (row.locale)         { _anFilters.locale = [row.locale];         anRecheckDrop('locale', [row.locale]); }
+    }
+  }
+}
+
+function anRecheckDrop(key, vals) {
+  var drop = document.getElementById('an-drop-' + key);
+  if (!drop) return;
+  var set = {};
+  vals.forEach(function(v){ set[v]=true; });
+  drop.querySelectorAll('input[type=checkbox]').forEach(function(cb){ cb.checked = !!set[cb.value]; });
+  anUpdatePillLabel(key, vals);
+}
+
+function anUpdatePillLabel(key, selected) {
+  var el = document.getElementById('an-pill-' + key + '-val');
+  var pill = document.getElementById('an-pill-' + key);
+  if (!el) return;
+  if (!selected || !selected.length) {
+    el.textContent = 'All';
+    if (pill) pill.classList.remove('an-active');
+  } else if (selected.length === 1) {
+    el.textContent = selected[0];
+    if (pill) pill.classList.add('an-active');
+  } else {
+    el.textContent = selected.length + ' selected';
+    if (pill) pill.classList.add('an-active');
+  }
+}
+
+function anTogglePill(key) {
+  var drop = document.getElementById('an-drop-' + key);
+  if (!drop) return;
+  if (_anOpenDrop && _anOpenDrop !== key) {
+    document.getElementById('an-drop-' + _anOpenDrop).classList.remove('open');
+  }
+  if (drop.classList.contains('open')) {
+    drop.classList.remove('open');
+    _anOpenDrop = null;
+  } else {
+    var pill = document.getElementById('an-pill-' + key);
+    var rect = pill.getBoundingClientRect();
+    drop.style.top  = (rect.bottom + 4) + 'px';
+    drop.style.left = rect.left + 'px';
+    drop.classList.add('open');
+    _anOpenDrop = key;
+    var s = drop.querySelector('.an-drop-search');
+    if (s) setTimeout(function(){ s.focus(); }, 50);
+  }
+}
+
+function anClearPill(key) {
+  _anFilters[key] = [];
+  var drop = document.getElementById('an-drop-' + key);
+  if (drop) drop.querySelectorAll('input').forEach(function(cb){ cb.checked = false; });
+  anUpdatePillLabel(key, []);
+}
+
+function anClearFilters() {
+  document.getElementById('an-date-from').value = '';
+  document.getElementById('an-date-to').value   = '';
+  document.getElementById('an-sap-q').value      = '';
+  AN_PILL_KEYS.forEach(function(key){ anClearPill(key); });
+  _anFilters = { dateFrom:'', dateTo:'', sapQ:'', member:[], leader:[], lob:[], locale:[] };
+}
+
+function anApplyFilters() {
+  _anFilters.dateFrom = document.getElementById('an-date-from').value;
+  _anFilters.dateTo   = document.getElementById('an-date-to').value;
+  _anFilters.sapQ     = (document.getElementById('an-sap-q').value||'').trim().toLowerCase();
+}
+
+// Close open drop on outside click
+document.addEventListener('click', function(e) {
+  if (!_anOpenDrop) return;
+  var drop = document.getElementById('an-drop-' + _anOpenDrop);
+  var pill = document.getElementById('an-pill-' + _anOpenDrop);
+  if (drop && !drop.contains(e.target) && pill && !pill.contains(e.target)) {
+    drop.classList.remove('open');
+    _anOpenDrop = null;
+  }
+});
+
+function anGetFilteredRows() {
+  anApplyFilters();
+  var pfx  = _lastAnalyticsType;
+  var base = pfx === 's' ? _dbSFiltered : _dbRFiltered;
+  var sapQ = _anFilters.sapQ;
+  return base.filter(function(r) {
+    if (_anFilters.dateFrom) { var d=new Date(r['Timestamp']); if(!isNaN(d)&&d<new Date(_anFilters.dateFrom)) return false; }
+    if (_anFilters.dateTo)   { var d2=new Date(r['Timestamp']); if(!isNaN(d2)&&d2>new Date(_anFilters.dateTo+'T23:59:59')) return false; }
+    if (sapQ && (r['SAP ID']||'').toLowerCase().indexOf(sapQ)===-1) return false;
+    if (_anFilters.member.length && _anFilters.member.indexOf(r['Team Member']||'')===-1) return false;
+    if (_anFilters.leader.length && _anFilters.leader.indexOf(r['Team Leader']||'')===-1) return false;
+    if (_anFilters.lob.length    && _anFilters.lob.indexOf(r['Line of Business']||'')===-1) return false;
+    if (_anFilters.locale.length && _anFilters.locale.indexOf(r['Locale']||'')===-1) return false;
+    return true;
+  });
+}
+
+function anRunAnalytics() {
+  anApplyFilters();
+  var rows  = anGetFilteredRows();
+  var atype = _lastAnalyticsType === 's' ? 'sales' : 'repeats';
+
+  // Build filters object for AI context
+  var filters = {
+    dateFrom: _anFilters.dateFrom, dateTo: _anFilters.dateTo,
+    members: _anFilters.member, leaders: _anFilters.leader,
+    lobs: _anFilters.lob, locales: _anFilters.locale,
+    sapQ: _anFilters.sapQ
+  };
+
+  document.getElementById('an-panel-body').innerHTML =
+    '<div class="an-loading"><div class="an-spin"></div>' +
+    '<p style="font-size:14px;font-weight:600;color:#4B286D">Generating AI intelligence report…</p>' +
+    '<p style="font-size:12px;color:#888;margin-top:4px">Analyzing ' + rows.length + ' filtered record(s)</p></div>';
+  document.getElementById('an-cache-badge').textContent = '';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result.success) {
+        document.getElementById('an-panel-body').innerHTML =
+          '<div style="padding:40px;text-align:center;color:#C12335">&#9888; ' + escHtml(result.error||'Failed') + '</div>';
+        return;
+      }
+      _lastAnalyticsHTML = result.html || '';
+      document.getElementById('an-panel-body').innerHTML = _lastAnalyticsHTML;
+      document.getElementById('an-cache-badge').textContent =
+        result.fromCache ? '⚡ Cached' : '↻ Just generated · ' + new Date(result.generatedAt).toLocaleTimeString();
+    })
+    .withFailureHandler(function(e) {
+      document.getElementById('an-panel-body').innerHTML =
+        '<div style="padding:40px;text-align:center;color:#C12335">Error: ' + escHtml(e.message||e) + '</div>';
+    })
+    .getAIAnalytics(rows, filters, atype);
+}
+
+function openAnalyticsPanel(pfx) {
+  _lastAnalyticsType = pfx;
+  document.getElementById('analytics-panel').classList.add('visible');
+  document.getElementById('an-cache-badge').textContent = '';
+
+  // Update panel title based on tab
+  var titleEl = document.getElementById('an-panel-title');
+  if (titleEl) titleEl.innerHTML = pfx === 's'
+    ? '&#128200; AI Sales Analytics'
+    : '&#128222; AI Repeats and Transfer Analytics';
+
+  // Initialise inline filters from current dashboard state
+  anInitFilters(pfx);
+
+  document.getElementById('an-panel-body').innerHTML =
+    '<div class="an-loading"><div class="an-spin"></div>' +
+    '<p style="font-size:14px;font-weight:600;color:#4B286D">Generating AI intelligence report…</p>' +
+    '<p style="font-size:12px;color:#888;margin-top:4px">This takes 10–20 seconds</p></div>';
+
+  // Use anRunAnalytics so it respects the inline filters
+  anRunAnalytics();
+}
+
+function closeAnalyticsPanel() {
+  document.getElementById('analytics-panel').classList.remove('visible');
+}
+
+function regenerateAnalytics() {
+  // Force regenerate by clearing cache signal — just re-open
+  openAnalyticsPanel(_lastAnalyticsType);
+}
+
+function sendAnalyticsBriefingFromUI() {
+  var email = document.getElementById('an-email-input').value.trim();
+  if (!email || email.indexOf('@') === -1) {
+    alert('Please enter a valid email address.');
+    return;
+  }
+  if (!_lastAnalyticsHTML) {
+    alert('No analytics report to send. Generate one first.');
+    return;
+  }
+  var btn = document.getElementById('an-send-btn');
+  btn.disabled = true;
+  btn.textContent = '⟳ Sending…';
+
+  var atype   = _lastAnalyticsType === 'r' ? 'repeats' : 'sales';
+  var rows    = _lastAnalyticsType === 'r' ? _dbRFiltered : _dbSFiltered;
+  var filters = dbGetSharedFilters();
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled = false;
+      btn.textContent = 'Send Briefing';
+      if (result.success) {
+        btn.textContent = '✓ Sent!';
+        setTimeout(function(){ btn.textContent = 'Send Briefing'; }, 3000);
+      } else {
+        alert('Send failed: ' + (result.error || 'Unknown error'));
+      }
+    })
+    .withFailureHandler(function(e) {
+      btn.disabled = false;
+      btn.textContent = 'Send Briefing';
+      alert('Error: ' + (e.message || e));
+    })
+    .sendAnalyticsBriefing(email, _lastAnalyticsHTML, filters, atype, rows.length);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// OVERVIEW TAB — holistic cross-analyzer insights
+// ══════════════════════════════════════════════════════════════════════════════
+
+function renderOverviewTab() {
+  var all = _dbAllData; // all rows — both Repeats and Sales
+  if (!all || !all.length) {
+    document.getElementById('ov-highlights').innerHTML = '<li class="ov-empty">No data loaded yet. Click ⟳ Refresh.</li>';
+    document.getElementById('ov-lowlights').innerHTML  = '<li class="ov-empty">No data loaded yet.</li>';
+    return;
+  }
+
+  // ── 1. Overview KPI stats ──────────────────────────────────────────────────
+  var totalAll   = all.length;
+  var repeatsAll = all.filter(function(r){ return (r['Analysis Type']||'').indexOf('Repeats')!==-1; });
+  var salesAll   = all.filter(function(r){ return (r['Analysis Type']||'').indexOf('Sales')!==-1; });
+  var repRows    = all.filter(function(r){ return parseFloat(r['Repeat Projection %'])>0; });
+  var avgRep     = repRows.length ? Math.round(repRows.reduce(function(s,r){return s+(parseFloat(r['Repeat Projection %'])||0);},0)/repRows.length) : 0;
+  var agents     = dbUniq(all.map(function(r){return r['Team Member']||'';})).filter(Boolean);
+  var totalFlags = all.reduce(function(s,r){
+    return s + (r['Critical Flags']||'').split(',').filter(function(f){return f.trim()&&f.trim()!=='None';}).length;
+  },0);
+
+  document.getElementById('ov-stats').innerHTML =
+    dbKPIStat('&#127760;', totalAll,        'Total Evaluations',   '',       'All types combined', '') +
+    dbKPIStat('&#128222;', repeatsAll.length,'Repeats & Transfer',  '',       'FCR evaluations', '') +
+    dbKPIStat('&#128200;', salesAll.length,  'Sales Analyzed',      '',       'Sales evaluations', '') +
+    dbKPIStat('&#128201;', avgRep+'%',       'Avg Repeat Risk',     avgRep>50?'red':avgRep>25?'amber':'green',
+      avgRep>50?'&#9660; High Risk':'&#10003; On Target', avgRep>50?'down':'up') +
+    dbKPIStat('&#128100;', agents.length,    'Unique Agents',       '',       'Agents evaluated', '') +
+    dbKPIStat('&#128681;', totalFlags,       'Total Critical Flags',totalFlags>10?'red':'', 'Across all evals', totalFlags>10?'down':'');
+
+  // ── 2. Highlights & Lowlights (generated from data) ───────────────────────
+  var hlList = [], llList = [];
+  // Highlight: best agent (fewest flags)
+  var agentFlagMap = {};
+  all.forEach(function(r){
+    var m=r['Team Member']||''; if(!m) return;
+    var fc=(r['Critical Flags']||'').split(',').filter(function(f){return f.trim()&&f.trim()!=='None';}).length;
+    agentFlagMap[m]=(agentFlagMap[m]||0)+fc;
+  });
+  var bestAgent = agents.reduce(function(b,a){ return (agentFlagMap[a]||0)<(agentFlagMap[b]||0)?a:b; }, agents[0]);
+  if (bestAgent) hlList.push('<strong>' + escHtml(bestAgent) + '</strong> has the fewest critical flags (' + (agentFlagMap[bestAgent]||0) + ') — top performer');
+  // Highlight: low avg repeat risk
+  if (avgRep <= 25 && repeatsAll.length > 0) hlList.push('Average repeat risk is <strong>' + avgRep + '%</strong> — within acceptable threshold');
+  if (repeatsAll.length > 0 && salesAll.length > 0) hlList.push('<strong>' + salesAll.length + '</strong> sales evaluations and <strong>' + repeatsAll.length + '</strong> FCR evaluations completed this period');
+
+  // Lowlight: worst agent (most flags)
+  var worstAgent = agents.reduce(function(b,a){ return (agentFlagMap[a]||0)>(agentFlagMap[b]||0)?a:b; }, agents[0]);
+  if (worstAgent && (agentFlagMap[worstAgent]||0) > 3) llList.push('<strong>' + escHtml(worstAgent) + '</strong> has the most critical flags (' + (agentFlagMap[worstAgent]||0) + ') — priority coaching needed');
+  if (avgRep > 50) llList.push('Average repeat risk <strong>' + avgRep + '%</strong> is above the 50% threshold — systemic issue identified');
+  // Lowlight: most common flag
+  var flagCounts = {};
+  all.forEach(function(r){
+    (r['Critical Flags']||'').split(',').forEach(function(f){ f=f.trim(); if(f&&f!=='None') flagCounts[f]=(flagCounts[f]||0)+1; });
+  });
+  var topFlag = Object.keys(flagCounts).sort(function(a,b){return flagCounts[b]-flagCounts[a];})[0];
+  if (topFlag) llList.push('"<strong>' + escHtml(topFlag) + '</strong>" is the most common flag (' + flagCounts[topFlag] + ' occurrences) — requires process review');
+
+  document.getElementById('ov-highlights').innerHTML = hlList.length
+    ? hlList.map(function(h){return '<li>'+h+'</li>';}).join('')
+    : '<li class="ov-empty">No highlights yet</li>';
+  document.getElementById('ov-lowlights').innerHTML = llList.length
+    ? llList.map(function(l){return '<li>'+l+'</li>';}).join('')
+    : '<li class="ov-empty">No lowlights identified</li>';
+
+  // ── 3. Combined Call Drivers chart ────────────────────────────────────────
+  if (typeof google !== 'undefined' && google.visualization) {
+    var driverData = dbTopNByField(all, 'Call Driver', 8);
+    dbBarChart('ov-chart-drivers', 'Call Driver', driverData);
+
+    // Top Critical Flags chart
+    var flagData = Object.keys(flagCounts)
+      .sort(function(a,b){return flagCounts[b]-flagCounts[a];})
+      .slice(0,8).map(function(k){return[k,flagCounts[k]];});
+    dbBarChart('ov-chart-flags', 'Critical Flag', flagData);
+
+    // RCA Category pie/bar
+    var rcaCounts = {};
+    all.forEach(function(r){ var c=r['RCA Category']||'Unknown'; rcaCounts[c]=(rcaCounts[c]||0)+1; });
+    var rcaDt = new google.visualization.DataTable();
+    rcaDt.addColumn('string','RCA Category'); rcaDt.addColumn('number','Count');
+    Object.keys(rcaCounts).forEach(function(k){ rcaDt.addRow([k,rcaCounts[k]]); });
+    new google.visualization.PieChart(document.getElementById('ov-chart-rca')).draw(rcaDt,{
+      pieHole: 0.4, legend:{position:'right',textStyle:{fontSize:11}},
+      colors:['#C12335','#8C4A00','#2B8000','#4B286D','#888'],
+      chartArea:{left:10,top:10,width:'60%',height:'85%'}, backgroundColor:'transparent'
+    });
+
+    // Repeats vs Sales donut
+    var typeDt = new google.visualization.DataTable();
+    typeDt.addColumn('string','Type'); typeDt.addColumn('number','Count');
+    typeDt.addRows([['Repeats & Transfer', repeatsAll.length],['Sales', salesAll.length]]);
+    new google.visualization.PieChart(document.getElementById('ov-chart-type')).draw(typeDt,{
+      pieHole: 0.4, legend:{position:'right',textStyle:{fontSize:11}},
+      colors:['#4B286D','#2B8000'],
+      chartArea:{left:10,top:10,width:'60%',height:'85%'}, backgroundColor:'transparent'
+    });
+  }
+
+  // ── 4. Team Member Progression table ─────────────────────────────────────
+  var tmData = {};
+  all.forEach(function(r){
+    var m=r['Team Member']||''; if(!m) return;
+    if(!tmData[m]) tmData[m]={ evals:0, repPcts:[], flags:[], violations:{}, tl:r['Team Leader']||'', rcaCats:{} };
+    tmData[m].evals++;
+    var rp=parseFloat(r['Repeat Projection %']); if(!isNaN(rp)&&rp>0) tmData[m].repPcts.push(rp);
+    (r['Critical Flags']||'').split(',').forEach(function(f){
+      f=f.trim(); if(!f||f==='None') return;
+      tmData[m].violations[f]=(tmData[m].violations[f]||0)+1;
+      tmData[m].flags.push(f);
+    });
+    var cat=r['RCA Category']||''; if(cat) tmData[m].rcaCats[cat]=(tmData[m].rcaCats[cat]||0)+1;
+  });
+
+  // Sort by total flags descending (repeat offenders first)
+  var tmRows = Object.keys(tmData).map(function(name){
+    var d=tmData[name];
+    var avgR=d.repPcts.length?Math.round(d.repPcts.reduce(function(s,v){return s+v;},0)/d.repPcts.length):0;
+    var topV=Object.keys(d.violations).sort(function(a,b){return d.violations[b]-d.violations[a];})[0]||'—';
+    var topCat=Object.keys(d.rcaCats).sort(function(a,b){return d.rcaCats[b]-d.rcaCats[a];})[0]||'—';
+    return { name:name, evals:d.evals, avgRep:avgR, flagCount:d.flags.length, topViolation:topV, rcaCat:topCat, tl:d.tl };
+  }).sort(function(a,b){return b.flagCount-a.flagCount;});
+
+  document.getElementById('ov-tm-tbody').innerHTML = tmRows.length
+    ? tmRows.map(function(r,idx){
+        var repCls = r.avgRep>50?'ov-risk-high':r.avgRep>25?'ov-risk-mid':'ov-risk-low';
+        var flagCls= r.flagCount>5?'ov-risk-high':r.flagCount>2?'ov-risk-mid':'ov-risk-low';
+        var trend  = r.flagCount>5?'<span class="ov-trend-up">&#9650;</span>':r.flagCount>2?'<span class="ov-trend-flat">&#9644;</span>':'<span class="ov-trend-down">&#9660;</span>';
+        var pri    = r.flagCount>5?'<span class="ov-badge ov-badge-red">HIGH</span>':r.flagCount>2?'<span class="ov-badge ov-badge-amber">MED</span>':'<span class="ov-badge ov-badge-green">LOW</span>';
+        var rcaBadge='<span class="ov-badge ov-badge-purple">'+escHtml(r.rcaCat)+'</span>';
+        return '<tr>'+
+          '<td style="font-weight:600">'+(idx+1)+'. '+escHtml(r.name)+'</td>'+
+          '<td style="text-align:center">'+r.evals+'</td>'+
+          '<td class="'+repCls+'" style="text-align:center">'+(r.avgRep?r.avgRep+'%':'—')+'</td>'+
+          '<td class="'+flagCls+'" style="text-align:center;font-weight:700">'+r.flagCount+'</td>'+
+          '<td style="max-width:200px;font-size:11px" title="'+escHtml(r.topViolation)+'">'+escHtml(r.topViolation.substring(0,60))+'</td>'+
+          '<td>'+rcaBadge+'</td>'+
+          '<td style="font-size:11px">'+escHtml(r.tl)+'</td>'+
+          '<td style="text-align:center">'+trend+' '+pri+'</td>'+
+          '</tr>';
+      }).join('')
+    : '<tr><td colspan="8" style="text-align:center;padding:24px;color:#888">No agent data available</td></tr>';
+
+  // ── 5. Flag frequency table ───────────────────────────────────────────────
+  var sortedFlags = Object.keys(flagCounts).sort(function(a,b){return flagCounts[b]-flagCounts[a];});
+  var totalFlagCount = sortedFlags.reduce(function(s,k){return s+flagCounts[k];},0);
+  // Find top agent per flag
+  var flagAgent = {};
+  all.forEach(function(r){
+    var m=r['Team Member']||'';
+    (r['Critical Flags']||'').split(',').forEach(function(f){
+      f=f.trim(); if(!f||f==='None') return;
+      if(!flagAgent[f]||flagCounts[f]) flagAgent[f]=m;
+    });
+  });
+  // RCA category per flag (from agent's RCA category)
+  var flagRca = {};
+  all.forEach(function(r){
+    var cat=r['RCA Category']||'';
+    (r['Critical Flags']||'').split(',').forEach(function(f){
+      f=f.trim(); if(f&&f!=='None'&&!flagRca[f]) flagRca[f]=cat;
+    });
+  });
+
+  document.getElementById('ov-flag-tbody').innerHTML = sortedFlags.length
+    ? sortedFlags.slice(0,15).map(function(flag,idx){
+        var cnt=flagCounts[flag];
+        var pct=totalFlagCount>0?Math.round(cnt/totalFlagCount*100)+'%':'—';
+        var pri=cnt>5?'<span class="ov-badge ov-badge-red">HIGH</span>':cnt>2?'<span class="ov-badge ov-badge-amber">MED</span>':'<span class="ov-badge ov-badge-green">LOW</span>';
+        var cat=flagRca[flag]||'—';
+        var catBadge=cat!=='—'?'<span class="ov-badge ov-badge-purple">'+escHtml(cat.substring(0,20))+'</span>':cat;
+        return '<tr>'+
+          '<td style="font-weight:700;color:#4B286D">'+(idx+1)+'</td>'+
+          '<td style="font-weight:600;max-width:280px" title="'+escHtml(flag)+'">'+escHtml(flag.substring(0,70))+'</td>'+
+          '<td style="text-align:center;font-weight:700;color:'+(cnt>5?'#C12335':cnt>2?'#8C4A00':'#2B8000')+'">'+cnt+'</td>'+
+          '<td style="text-align:center">'+pct+'</td>'+
+          '<td style="font-size:11px">'+escHtml(flagAgent[flag]||'—')+'</td>'+
+          '<td>'+catBadge+'</td>'+
+          '<td>'+pri+'</td>'+
+          '</tr>';
+      }).join('')
+    : '<tr><td colspan="7" style="text-align:center;padding:24px;color:#888">No flags recorded yet</td></tr>';
+}
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// escAttr: escapes single quotes in addition to escHtml — use inside JS attribute strings
+function escAttr(str) {
+  return escHtml(str).replace(/'/g, '&#39;');
+}
+// ══════════════════════════════════════════════════════════════════════════════
+// CHAT ASSISTANT
+// ══════════════════════════════════════════════════════════════════════════════
+var _chatHistory = [];
+var _chatOpen    = false;
+
+function toggleChat() {
+  _chatOpen = !_chatOpen;
+  var panel = document.getElementById('chat-panel');
+  var fab   = document.getElementById('chat-fab');
+  panel.style.display = _chatOpen ? 'flex' : 'none';
+  fab.innerHTML = _chatOpen ? '&#10005;' : '&#128172;';
+  if (_chatOpen && _chatHistory.length === 0) {
+    appendChatMsg('assistant',
+      'Hi! I\'m your QA Assistant. I can help with:\n' +
+      '• General inquiries about the analysis\n' +
+      '• Sample positioning statements\n' +
+      '• Grammar check\n' +
+      '• Sentence construction\n\n' +
+      'What do you need help with?');
+  }
+  if (_chatOpen) {
+    setTimeout(function() { document.getElementById('chat-input').focus(); }, 100);
+  }
+}
+
+function appendChatMsg(role, text) {
+  _chatHistory.push({ role: role, text: text });
+  var body   = document.getElementById('chat-body');
+  var bubble = document.createElement('div');
+  bubble.style.cssText = role === 'user'
+    ? 'align-self:flex-end;background:#4B286D;color:#fff;border-radius:12px 12px 2px 12px;' +
+      'padding:9px 13px;max-width:82%;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word'
+    : 'align-self:flex-start;background:#F4F4F7;color:#1A1A2E;border-radius:12px 12px 12px 2px;' +
+      'padding:9px 13px;max-width:82%;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word';
+  bubble.textContent = text;
+  body.appendChild(bubble);
+  body.scrollTop = body.scrollHeight;
+}
+
+function appendChatTyping() {
+  var body   = document.getElementById('chat-body');
+  var el     = document.createElement('div');
+  el.id      = 'chat-typing';
+  el.style.cssText = 'align-self:flex-start;background:#F4F4F7;color:#888;border-radius:12px 12px 12px 2px;' +
+    'padding:9px 13px;font-size:13px;font-style:italic';
+  el.textContent = 'Thinking…';
+  body.appendChild(el);
+  body.scrollTop = body.scrollHeight;
+}
+
+function removeChatTyping() {
+  var el = document.getElementById('chat-typing');
+  if (el) el.remove();
+}
+
+function chatQuick(prompt) {
+  var input = document.getElementById('chat-input');
+  input.value = prompt;
+  input.focus();
+  // If the prompt ends with ': ' it's a template — let user complete it
+  if (!prompt.endsWith(': ')) sendChatMessage();
+}
+
+function sendChatMessage() {
+  var input = document.getElementById('chat-input');
+  var text  = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  appendChatMsg('user', text);
+  appendChatTyping();
+
+  google.script.run
+    .withSuccessHandler(function(reply) {
+      removeChatTyping();
+      appendChatMsg('assistant', reply || 'Sorry, I could not generate a response.');
+    })
+    .withFailureHandler(function(e) {
+      removeChatTyping();
+      appendChatMsg('assistant', 'Error: ' + (e.message || e));
+    })
+    .chatAssistant(text, _chatHistory.slice(-10));
+}
+
+// Send on Enter (Shift+Enter = new line)
+document.addEventListener('DOMContentLoaded', function() {
+  var inp = document.getElementById('chat-input');
+  if (inp) {
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+    });
+  }
+});
+</script>
+
+<!-- ══════════════════════════════════════════════════════════
+     CHAT WIDGET
+══════════════════════════════════════════════════════════ -->
+<style>
+#chat-fab {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  width: 52px;
+  height: 52px;
+  background: var(--telus-purple);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  font-size: 22px;
+  cursor: pointer;
+  z-index: 3000;
+  box-shadow: 0 4px 16px rgba(0,0,0,.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s, transform .15s;
+}
+#chat-fab:hover { background: #3a1f57; transform: scale(1.08); }
+
+#chat-panel {
+  display: none;
+  position: fixed;
+  bottom: 86px;
+  left: 24px;
+  width: 340px;
+  height: 480px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.22);
+  z-index: 2999;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+#chat-header {
+  background: var(--telus-purple);
+  color: #fff;
+  padding: 13px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+#chat-header .ch-icon { font-size: 18px; }
+#chat-header .ch-title { font-size: 14px; font-weight: 700; flex: 1; }
+#chat-header .ch-sub   { font-size: 10px; color: rgba(255,255,255,.7); display: block; }
+
+#chat-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #eee;
+  flex-shrink: 0;
+  background: #fafafa;
+}
+.chat-quick-btn {
+  background: #fff;
+  border: 1px solid #D1B8E8;
+  color: var(--telus-purple);
+  border-radius: 12px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .15s;
+}
+.chat-quick-btn:hover { background: #F5F0FF; }
+
+#chat-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#chat-footer {
+  border-top: 1px solid #eee;
+  padding: 9px 10px;
+  display: flex;
+  gap: 7px;
+  flex-shrink: 0;
+  background: #fff;
+}
+#chat-input {
+  flex: 1;
+  border: 1px solid #D8D8D8;
+  border-radius: 20px;
+  padding: 8px 13px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+  line-height: 1.4;
+  max-height: 80px;
+  overflow-y: auto;
+}
+#chat-input:focus { border-color: var(--telus-purple); }
+#chat-send {
+  background: var(--telus-purple);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s;
+}
+#chat-send:hover { background: #3a1f57; }
+</style>
+
+<!-- Chat FAB (bottom-left) -->
+<button id="chat-fab" onclick="toggleChat()" title="QA Assistant">&#128172;</button>
+
+<!-- AI Analytics FAB (bottom-right) — visible when dashboard is open -->
+<button id="analytics-fab" onclick="openAnalyticsPanel(_lastAnalyticsType || 'r')"
+  title="AI Analytics"
+  style="display:none;position:fixed;bottom:24px;right:24px;width:52px;height:52px;
+         background:#4B286D;color:#fff;border:none;border-radius:50%;font-size:20px;
+         cursor:pointer;z-index:3000;box-shadow:0 4px 16px rgba(0,0,0,.3);
+         align-items:center;justify-content:center;transition:background .15s,transform .15s">
+  &#129302;
+</button>
+
+<!-- Chat panel -->
+<div id="chat-panel">
+  <div id="chat-header">
+    <span class="ch-icon">&#129302;</span>
+    <div>
+      <div class="ch-title">QA Assistant</div>
+      <span class="ch-sub">Positioning · Grammar · Inquiries</span>
+    </div>
+  </div>
+
+  <!-- Quick prompts -->
+  <div id="chat-quick">
+    <button class="chat-quick-btn" onclick="chatQuick('Give me a sample positioning statement for missed authentication')">Positioning Statement</button>
+    <button class="chat-quick-btn" onclick="chatQuick('Check the grammar of: ')">Grammar Check</button>
+    <button class="chat-quick-btn" onclick="chatQuick('Help me improve this sentence: ')">Sentence Help</button>
+    <button class="chat-quick-btn" onclick="chatQuick('What is FCR and how do I improve it?')">FCR Tips</button>
+  </div>
+
+  <div id="chat-body"></div>
+
+  <div id="chat-footer">
+    <textarea id="chat-input" rows="1" placeholder="Ask anything…"></textarea>
+    <button id="chat-send" onclick="sendChatMessage()">&#10148;</button>
+  </div>
+</div>
+
+</body>
+</html>
