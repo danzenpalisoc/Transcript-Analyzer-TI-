@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -584,7 +584,7 @@ function renderTable(pfx, rows) {
       '<td>' + atype + '</td>' +
       '<td class="td-trunc" title="' + esc(r['Call Summary']) + '">' + esc(r['Call Summary']) + '</td>' +
       '<td class="td-trunc" title="' + esc(r['Overall Opportunities']) + '">' + esc(r['Overall Opportunities']) + '</td>' +
-      '<td class="td-trunc" title="' + esc(r['Recommendations']) + '">' + esc(r['Recommendations']) + '</td>' +
+      '<td class="td-trunc" title="' + esc(r['SMART Recommendation']||r['Recommendations']||'') + '">' + esc(r['SMART Recommendation']||r['Recommendations']||'') + '</td>' +
       '<td class="td-trunc" title="' + esc(r['Critical Flags']) + '">' + esc(r['Critical Flags']) + '</td>' +
       '<td style="text-align:center">' + esc(r['Repeat Projection %']) + '</td>' +
       '<td>' + esc(r['Issue Resolved']) + '</td>' +

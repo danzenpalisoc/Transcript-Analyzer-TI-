@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Real Time Observation — Evaluation View</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:#F0EBF8;color:#1A1A2E;font-size:13px}
+
+/* ── Header ── */
+.ev-header{background:#4B286D;padding:16px 28px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.ev-header-title{color:#fff;font-size:17px;font-weight:700;letter-spacing:-.2px;line-height:1.25}
+.ev-header-sub{color:rgba(255,255,255,.7);font-size:12px;margin-top:3px}
+.ev-header-logo{background:#fff;border-radius:6px;padding:6px 11px;font-size:10px;font-weight:700;color:#4B286D;letter-spacing:.5px;text-align:center;line-height:1.4;white-space:nowrap;flex-shrink:0}
+
+/* ── Layout ── */
+.ev-body{display:flex;gap:14px;padding:14px;max-width:1440px;margin:0 auto;align-items:flex-start}
+.ev-main{flex:1 1 0;min-width:0}
+.ev-sidebar{width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:12px}
+
+/* ── Cards ── */
+.ev-card{background:#fff;border-radius:8px;overflow:hidden;margin-bottom:12px;border:1px solid #E0D8F0}
+.ev-card-header{background:#E8DEF5;padding:9px 16px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#4B286D;border-bottom:1px solid #D5C8EC;display:flex;align-items:center;gap:7px}
+
+/* ── Team member 5-col grid ── */
+.ev-tm-grid{display:flex;border-top:none}
+.ev-tm-col{flex:1;padding:10px 14px;border-right:1px solid #EDE8F7;min-width:0}
+.ev-tm-col:last-child{border-right:none}
+.ev-col-label{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#6A3D99;margin-bottom:4px}
+.ev-col-val{font-size:12.5px;color:#1A1A2E;font-weight:500;word-break:break-word}
+
+/* ── Call details grid ── */
+.ev-call-grid{display:flex;flex-wrap:wrap;border-top:none}
+.ev-call-item{flex:0 0 25%;padding:10px 14px;border-right:1px solid #EDE8F7;border-bottom:1px solid #EDE8F7;min-width:0}
+.ev-call-item.wide{flex:0 0 50%}
+.ev-call-item:nth-child(4n){border-right:none}
+.ev-call-item a{color:#4B286D;font-size:11px;word-break:break-all}
+
+/* ── Analysis content ── */
+.ev-analysis-wrap{padding:14px 16px}
+
+/* ── Sidebar cards ── */
+.ev-sb-card{background:#fff;border-radius:8px;overflow:hidden;border:1px solid #E0D8F0}
+.ev-sb-header{background:#E8DEF5;padding:8px 13px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#4B286D;border-bottom:1px solid #D5C8EC;display:flex;align-items:center;gap:6px}
+
+/* Current Record */
+.ev-record-box{background:#4B286D;color:#fff;border-radius:5px;padding:12px 14px;margin:10px;font-size:12.5px;font-weight:700;text-align:center;letter-spacing:.3px;word-break:break-all}
+
+/* Survey */
+.ev-survey-body{padding:12px 13px}
+.ev-survey-row{margin-bottom:11px}
+.ev-survey-label{font-size:11px;font-weight:600;color:#4B286D;margin-bottom:4px}
+.ev-survey-select{width:100%;border:1px solid #C8B8E0;border-radius:4px;padding:7px 9px;font-size:12px;color:#1A1A2E;background:#fff;font-family:inherit}
+.ev-stars{display:flex;gap:5px;font-size:22px;color:#DDD;cursor:pointer;margin-top:2px}
+.ev-stars span.active{color:#F9A825}
+.ev-stars span:hover{color:#F9A825}
+.ev-survey-ta{width:100%;border:1px solid #C8B8E0;border-radius:4px;padding:7px 9px;font-size:12px;resize:vertical;min-height:65px;font-family:inherit;color:#1A1A2E}
+.ev-survey-btn{width:100%;background:#4B286D;color:#fff;border:none;border-radius:5px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.2px;margin-top:4px}
+.ev-survey-btn:hover{background:#3A1F56}
+.ev-survey-success{display:none;text-align:center;color:#2B8000;font-size:12px;margin-top:7px;font-weight:600}
+
+/* Previous evals table */
+.ev-prev-table{width:100%;border-collapse:collapse;font-size:11px}
+.ev-prev-table th{padding:6px 10px;text-align:left;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#6A3D99;border-bottom:2px solid #E8DEF5;white-space:nowrap}
+.ev-prev-table td{padding:7px 10px;border-bottom:1px solid #F4F0FA;color:#1A1A2E;vertical-align:middle}
+.ev-prev-table tr:last-child td{border-bottom:none}
+.ev-prev-type{display:inline-block;background:#F5F0FF;color:#4B286D;border-radius:10px;padding:1px 7px;font-size:9.5px;font-weight:700;white-space:nowrap}
+.ev-prev-type.sales{background:#FFF3E0;color:#E65100}
+.ev-view-link{color:#4B286D;font-weight:700;text-decoration:none;font-size:11px}
+.ev-view-link:hover{text-decoration:underline}
+
+/* Search */
+.ev-search-body{padding:11px 13px}
+.ev-radio-group label{display:flex;align-items:center;gap:5px;margin-bottom:4px;cursor:pointer;font-size:12px}
+.ev-search-input{width:100%;border:1px solid #C8B8E0;border-radius:4px;padding:7px 9px;font-size:12px;margin:8px 0;font-family:inherit}
+.ev-search-btn{width:100%;background:#4B286D;color:#fff;border:none;border-radius:5px;padding:9px;font-size:12px;font-weight:700;cursor:pointer}
+.ev-search-res{margin-top:8px;font-size:11px;color:#555}
+
+/* Loading */
+.ev-loading{text-align:center;padding:60px 20px;color:#6A3D99}
+.ev-spinner{width:38px;height:38px;border:4px solid #E8DEF5;border-top-color:#4B286D;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ev-error{background:#FFF5F5;border:1px solid #F5AAAA;border-radius:8px;padding:20px;margin:20px;color:#C12335;font-weight:600}
+
+@media(max-width:960px){
+  .ev-body{flex-direction:column}
+  .ev-sidebar{width:100%}
+  .ev-tm-grid{flex-wrap:wrap}
+  .ev-tm-col{flex:0 0 50%;border-bottom:1px solid #EDE8F7}
+  .ev-call-item{flex:0 0 50%}
+  .ev-call-item.wide{flex:0 0 100%}
+}
+</style>
+</head>
+<body>
+
+<div id="ev-loading" class="ev-loading">
+  <div class="ev-spinner"></div>
+  <p style="font-weight:600;color:#4B286D">Loading evaluation...</p>
+</div>
+<div id="ev-error" class="ev-error" style="display:none"></div>
+
+<div id="ev-content" style="display:none">
+
+  <!-- ── Header ── -->
+  <div class="ev-header">
+    <div>
+      <div class="ev-header-title" id="ev-title">Evaluation</div>
+      <div class="ev-header-sub">QA &amp; LS Team</div>
+    </div>
+    <div class="ev-header-logo">GLE·QA<br>TEAM</div>
+  </div>
+
+  <div class="ev-body">
+
+    <!-- ════ MAIN COLUMN ════ -->
+    <div class="ev-main">
+
+      <!-- Team Member Details -->
+      <div class="ev-card">
+        <div class="ev-card-header">&#128100; Team Member Details</div>
+        <div class="ev-tm-grid">
+          <div class="ev-tm-col"><div class="ev-col-label">SAP ID</div><div class="ev-col-val" id="ev-sap">—</div></div>
+          <div class="ev-tm-col"><div class="ev-col-label">Team Member</div><div class="ev-col-val" id="ev-agent">—</div></div>
+          <div class="ev-tm-col"><div class="ev-col-label">Team Leader</div><div class="ev-col-val" id="ev-tl">—</div></div>
+          <div class="ev-tm-col"><div class="ev-col-label">Operations Manager</div><div class="ev-col-val" id="ev-om">—</div></div>
+          <div class="ev-tm-col"><div class="ev-col-label">Line of Business</div><div class="ev-col-val" id="ev-lob">—</div></div>
+        </div>
+      </div>
+
+      <!-- Call Details -->
+      <div class="ev-card">
+        <div class="ev-card-header">&#128222; Call Details</div>
+        <div class="ev-call-grid">
+          <div class="ev-call-item"><div class="ev-col-label">Interaction Date</div><div class="ev-col-val" id="ev-date">—</div></div>
+          <div class="ev-call-item"><div class="ev-col-label">Customer's BAN</div><div class="ev-col-val" id="ev-ban">—</div></div>
+          <div class="ev-call-item wide"><div class="ev-col-label">FLP Conversation ID</div><div class="ev-col-val" id="ev-convo">—</div></div>
+          <div class="ev-call-item"><div class="ev-col-label">Listening Type</div><div class="ev-col-val" id="ev-dir">—</div></div>
+          <div class="ev-call-item"><div class="ev-col-label">Call Duration</div><div class="ev-col-val" id="ev-dur">—</div></div>
+          <div class="ev-call-item"><div class="ev-col-label">Call Driver Level 1</div><div class="ev-col-val" id="ev-cd1">—</div></div>
+          <div class="ev-call-item"><div class="ev-col-label">Call Driver Level 2</div><div class="ev-col-val" id="ev-cd2">—</div></div>
+        </div>
+      </div>
+
+      <!-- Customer Experience Blueprint / AI Analysis -->
+      <div class="ev-card">
+        <div class="ev-card-header">&#127922; Customer Experience Blueprint</div>
+        <div class="ev-analysis-wrap" id="ev-analysis">
+          <p style="color:#AAA;text-align:center;padding:24px">Loading evaluation content...</p>
+        </div>
+      </div>
+
+    </div><!-- end main -->
+
+    <!-- ════ SIDEBAR ════ -->
+    <div class="ev-sidebar">
+
+      <!-- Current Record -->
+      <div class="ev-sb-card">
+        <div class="ev-sb-header">&#128203; Current Record</div>
+        <div class="ev-record-box" id="ev-ref">—</div>
+        <div style="padding:0 10px 10px;text-align:center">
+          <div style="font-size:10px;color:#888" id="ev-atype-badge"></div>
+        </div>
+      </div>
+
+      <!-- Rate Your QA Experience (Survey) -->
+      <div class="ev-sb-card">
+        <div class="ev-sb-header">&#11088; Rate Your QA Experience</div>
+        <div class="ev-survey-body">
+          <p style="font-size:11px;color:#555;margin-bottom:10px">Observer: <strong id="ev-observer-name" style="color:#4B286D">—</strong></p>
+          <div class="ev-survey-row">
+            <div class="ev-survey-label">How would you rate this evaluation session?</div>
+            <div class="ev-stars" id="ev-stars">
+              <span data-v="1">&#9733;</span><span data-v="2">&#9733;</span>
+              <span data-v="3">&#9733;</span><span data-v="4">&#9733;</span><span data-v="5">&#9733;</span>
+            </div>
+          </div>
+          <div class="ev-survey-row">
+            <div class="ev-survey-label">Experience Type</div>
+            <select class="ev-survey-select" id="ev-exp-type">
+              <option value="">Select...</option>
+              <option>Coaching Session</option>
+              <option>Side-by-Side Monitoring</option>
+              <option>Remote Monitoring</option>
+              <option>Calibration</option>
+              <option>Self-Review</option>
+            </select>
+          </div>
+          <div class="ev-survey-row">
+            <div class="ev-survey-label">Comments or Remarks <span style="font-weight:400;color:#888">(Optional)</span></div>
+            <textarea class="ev-survey-ta" id="ev-comments" placeholder="Share your thoughts on this evaluation..."></textarea>
+          </div>
+          <button class="ev-survey-btn" onclick="submitSurvey()">Submit Feedback</button>
+          <div class="ev-survey-success" id="ev-survey-ok">&#10003; Thank you! Your feedback has been recorded.</div>
+        </div>
+      </div>
+
+      <!-- Previous Evaluations -->
+      <div class="ev-sb-card">
+        <div class="ev-sb-header">&#128202; Previous Evaluations</div>
+        <div style="overflow-x:auto">
+          <table class="ev-prev-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Interaction ID</th>
+                <th>Type</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="ev-prev-tbody">
+              <tr><td colspan="4" style="text-align:center;color:#BBB;padding:12px">No previous evaluations</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Search Evaluation -->
+      <div class="ev-sb-card">
+        <div class="ev-sb-header">&#128269; Search Evaluation</div>
+        <div class="ev-search-body">
+          <div class="ev-radio-group" id="ev-search-type">
+            <label><input type="radio" name="stype" value="ref" checked> Record ID</label>
+            <label><input type="radio" name="stype" value="sapid"> SAP ID</label>
+            <label><input type="radio" name="stype" value="ban"> Customer BAN</label>
+          </div>
+          <input class="ev-search-input" id="ev-search-q" placeholder="Enter Record ID...">
+          <button class="ev-search-btn" onclick="doSearch()">Search</button>
+          <div class="ev-search-res" id="ev-search-res"></div>
+        </div>
+      </div>
+
+    </div><!-- end sidebar -->
+  </div><!-- end body -->
+</div><!-- end content -->
+
+<script>
+var _auditRef = (function(){
+  var m = window.location.search.match(/[?&]ref=([^&]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+})();
+var _baseUrl = '';
+var _starVal = 0;
+
+window.onload = function() {
+  if (!_auditRef) { showError('No audit reference in link. Check the email button.'); return; }
+  google.script.run
+    .withSuccessHandler(render)
+    .withFailureHandler(function(e){ showError('Failed to load: ' + (e.message||e)); })
+    .getEvalViewData(_auditRef);
+};
+
+function render(d) {
+  if (!d || !d.success) { showError(d ? d.error : 'Unknown error'); return; }
+
+  var m    = d.meta || {};
+  var dash = d.dash || {};
+  _baseUrl = d.baseUrl || '';
+
+  var agent  = m['Team Member']  || dash['Team Member']  || 'Agent';
+  var sap    = m['SAP ID']       || dash['SAP ID']       || '';
+  var atype  = m['Analysis Type']|| dash['Analysis Type']|| '';
+  var isSales = atype.toLowerCase().indexOf('sales') !== -1;
+  var typeLabel = isSales ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
+  var observer  = m['Observer Name'] || dash['Observer Name'] || '—';
+
+  // Header
+  document.getElementById('ev-title').textContent = typeLabel + ' — ' + agent;
+
+  // Type badge in sidebar
+  document.getElementById('ev-atype-badge').textContent = typeLabel;
+
+  // Team Member Details
+  setText('ev-sap',   sap);
+  setText('ev-agent', agent);
+  setText('ev-tl',    m['Team Leader']       || dash['Team Leader']       || '—');
+  setText('ev-om',    m['Operations Manager'] || dash['Operations Manager']|| '—');
+  setText('ev-lob',   m['Line of Business']   || dash['Line of Business']  || '—');
+
+  // Call Details
+  var rawDate = m['Submitted At'] || '';
+  var dateStr = rawDate ? formatDate(rawDate) : '—';
+  setText('ev-date', dateStr);
+  setText('ev-ban',  dash['Customer BAN'] || '—');
+
+  var intId = m['Interaction ID'] || dash['Interaction ID'] || '—';
+  var convoEl = document.getElementById('ev-convo');
+  if (intId.length > 8 && (intId.indexOf('http') === 0 || intId.indexOf('//') !== -1)) {
+    convoEl.innerHTML = '<a href="' + esc(intId) + '" target="_blank" rel="noopener">' +
+      esc(intId.length > 60 ? intId.substring(0,60)+'…' : intId) + '</a>';
+  } else {
+    convoEl.textContent = intId;
+  }
+
+  setText('ev-dir', m['Direction']   || dash['Direction']  || '—');
+  setText('ev-dur', m['Duration']    || dash['Transcript Duration'] || '—');
+  setText('ev-cd1', dash['Call Driver']    || '—');
+  setText('ev-cd2', dash['RCA Sub-Parameter'] || '—');
+
+  // Current Record
+  setText('ev-ref', d.auditRef);
+
+  // Observer name in survey
+  setText('ev-observer-name', observer);
+
+  // AI Analysis (no transcript — already excluded from evalHtml)
+  var analysisEl = document.getElementById('ev-analysis');
+  if (d.evalHtml) {
+    analysisEl.innerHTML = d.evalHtml;
+    // Strip any "Transcript:" sections if they appear
+    analysisEl.querySelectorAll('.ai-section').forEach(function(sec) {
+      var title = sec.querySelector('.ai-title');
+      if (title && /transcript/i.test(title.textContent)) sec.remove();
+    });
+  } else {
+    analysisEl.innerHTML =
+      '<p style="color:#AAA;padding:24px;text-align:center">Evaluation content is being processed — check back shortly.</p>';
+  }
+
+  // Previous evaluations
+  var tbody = document.getElementById('ev-prev-tbody');
+  if (d.recent && d.recent.length) {
+    tbody.innerHTML = d.recent.map(function(r) {
+      var url    = _baseUrl + '?page=eval&ref=' + encodeURIComponent(r.ref);
+      var isSl   = (r.analysisType || '').toLowerCase().indexOf('sales') !== -1;
+      var typeTag = '<span class="ev-prev-type' + (isSl?' sales':'') + '">' +
+                    esc(isSl ? 'Sales' : 'Repeats') + '</span>';
+      var shortId = (r.interactionId || '—').substring(0, 18);
+      if ((r.interactionId||'').length > 18) shortId += '…';
+      return '<tr>' +
+        '<td style="white-space:nowrap">' + esc(r.date||'—') + '</td>' +
+        '<td title="' + esc(r.interactionId||'') + '" style="font-size:10.5px">' + esc(shortId) + '</td>' +
+        '<td>' + typeTag + '</td>' +
+        '<td><a class="ev-view-link" href="' + esc(url) + '">VIEW</a></td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  // Star rating handler
+  var stars = document.querySelectorAll('#ev-stars span');
+  stars.forEach(function(s) {
+    s.addEventListener('mouseover', function() {
+      var v = parseInt(this.getAttribute('data-v'));
+      stars.forEach(function(x,i){ x.classList.toggle('active', i < v); });
+    });
+    s.addEventListener('click', function() {
+      _starVal = parseInt(this.getAttribute('data-v'));
+    });
+  });
+  document.getElementById('ev-stars').addEventListener('mouseleave', function() {
+    stars.forEach(function(x,i){ x.classList.toggle('active', i < _starVal); });
+  });
+
+  // Search radio
+  document.getElementById('ev-search-type').addEventListener('change', function(e) {
+    var ph = {ref:'Enter Record ID…', sapid:'Enter SAP ID…', ban:'Enter Customer BAN…'};
+    document.getElementById('ev-search-q').placeholder = ph[e.target.value] || '';
+  });
+
+  document.getElementById('ev-loading').style.display = 'none';
+  document.getElementById('ev-content').style.display = 'block';
+}
+
+function submitSurvey() {
+  var type  = document.getElementById('ev-exp-type').value;
+  var notes = document.getElementById('ev-comments').value.trim();
+  if (!_starVal) { alert('Please select a star rating.'); return; }
+  // Future: call google.script.run to save survey response
+  document.getElementById('ev-survey-ok').style.display = 'block';
+  document.getElementById('ev-survey-btn') && (document.querySelector('.ev-survey-btn').disabled = true);
+}
+
+function doSearch() {
+  var q = document.getElementById('ev-search-q').value.trim();
+  var t = document.querySelector('input[name="stype"]:checked');
+  var res = document.getElementById('ev-search-res');
+  if (!q) return;
+  if (t && t.value === 'ref') {
+    window.location.href = window.location.pathname + '?page=eval&ref=' + encodeURIComponent(q);
+  } else {
+    res.textContent = 'Tip: search by Record ID to jump directly to an evaluation. Use the Dashboard to filter by SAP ID or BAN.';
+  }
+}
+
+function setText(id, v) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = (v || '—');
+}
+function esc(s) {
+  return (s||'').toString()
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function formatDate(s) {
+  try {
+    var d = new Date(s);
+    if (isNaN(d)) return s;
+    return d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  } catch(e){ return s; }
+}
+function showError(msg) {
+  document.getElementById('ev-loading').style.display = 'none';
+  var e = document.getElementById('ev-error');
+  e.textContent = msg;
+  e.style.display = 'block';
+}
+</script>
+</body>
+</html>

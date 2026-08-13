@@ -93,9 +93,11 @@ function backfillDashboardData() {
   var colMap   = {
     'Call Reason':          dHeaders.indexOf('Call Reason'),
     'Call Summary':         dHeaders.indexOf('Call Summary'),
-    'Overall Opportunities':dHeaders.indexOf('Overall Opportunities'),
-    'Recommendations':      dHeaders.indexOf('Recommendations'),
-    'Critical Flags':       dHeaders.indexOf('Critical Flags'),
+    'Overall Opportunities': dHeaders.indexOf('Overall Opportunities'),
+    'SMART Recommendation':  dHeaders.indexOf('SMART Recommendation') > -1
+                              ? dHeaders.indexOf('SMART Recommendation')
+                              : dHeaders.indexOf('Recommendations'),   // fallback for existing sheets
+    'Critical Flags':        dHeaders.indexOf('Critical Flags'),
     'Repeat Projection %':  dHeaders.indexOf('Repeat Projection %'),
     'Issue Resolved':       dHeaders.indexOf('Issue Resolved'),
     'Transfer Occurred':    dHeaders.indexOf('Transfer Occurred')
@@ -118,8 +120,8 @@ function backfillDashboardData() {
       row[colMap['Overall Opportunities']] = extractTextBlock(html, 'Opportunit');
       changed = true;
     }
-    if (colMap['Recommendations'] > -1 && !row[colMap['Recommendations']]) {
-      row[colMap['Recommendations']] = extractTextBlock(html, 'Recommendation');
+    if (colMap['SMART Recommendation'] > -1 && !row[colMap['SMART Recommendation']]) {
+      row[colMap['SMART Recommendation']] = extractTextBlock(html, 'Recommendation');
       changed = true;
     }
     if (colMap['Critical Flags'] > -1 && !row[colMap['Critical Flags']]) {
@@ -243,11 +245,17 @@ function enrichDashboardData() {
       if (repeatFromHTML && structured) structured.repeatPct = repeatFromHTML;
       if (structured) {
         // Write structured fields back to the sheet
-        if (colOf['Call Driver'])         dSheet.getRange(i+2, colOf['Call Driver']).setValue(structured.callDriver);
-        if (colOf['RCA Category'])        dSheet.getRange(i+2, colOf['RCA Category']).setValue(structured.rcaCategory);
-        if (colOf['RCA Sub-Parameter'])   dSheet.getRange(i+2, colOf['RCA Sub-Parameter']).setValue(structured.rcaSubParameter);
-        if (colOf['Top Opportunity'])     dSheet.getRange(i+2, colOf['Top Opportunity']).setValue(structured.topOpportunity);
-        if (colOf['Product Opportunity']) dSheet.getRange(i+2, colOf['Product Opportunity']).setValue(structured.productOpportunity);
+        if (colOf['Call Driver'])             dSheet.getRange(i+2, colOf['Call Driver']).setValue(structured.callDriver);
+        if (colOf['RCA Category'])            dSheet.getRange(i+2, colOf['RCA Category']).setValue(structured.rcaCategory);
+        if (colOf['RCA Sub-Parameter'])       dSheet.getRange(i+2, colOf['RCA Sub-Parameter']).setValue(structured.rcaSubParameter);
+        var topOppCol = colOf['Top SMART Opportunity'] || colOf['Top Opportunity'];
+        if (topOppCol)                        dSheet.getRange(i+2, topOppCol).setValue(structured.topOpportunity);
+        if (colOf['Product Opportunity'])     dSheet.getRange(i+2, colOf['Product Opportunity']).setValue(structured.productOpportunity);
+        if (colOf['SMART S (Specific)']   && structured.smartS) dSheet.getRange(i+2, colOf['SMART S (Specific)']).setValue(structured.smartS);
+        if (colOf['SMART M (Measurable)'] && structured.smartM) dSheet.getRange(i+2, colOf['SMART M (Measurable)']).setValue(structured.smartM);
+        if (colOf['SMART A (Attainable)'] && structured.smartA) dSheet.getRange(i+2, colOf['SMART A (Attainable)']).setValue(structured.smartA);
+        if (colOf['SMART R (Realistic)']  && structured.smartR) dSheet.getRange(i+2, colOf['SMART R (Realistic)']).setValue(structured.smartR);
+        if (colOf['SMART T (Time-bound)'] && structured.smartT) dSheet.getRange(i+2, colOf['SMART T (Time-bound)']).setValue(structured.smartT);
         if (colOf['Call Summary'] && !row[colOf['Call Summary']-1])
           dSheet.getRange(i+2, colOf['Call Summary']).setValue(structured.callSummaryShort);
         // Write critical flags (always overwrite)
@@ -285,14 +293,19 @@ function extractStructuredRCA(html, analysisType, auditRef) {
     '  "callDriver": "Short label for the main reason the customer called (5-8 words max). Examples: Service Move Request, Billing Inquiry, Internet Troubleshooting, Loyalty Retention, New Service Inquiry",\n' +
     '  "rcaCategory": "Exactly one of: Agent Controllable | Process/Policy | Customer Driven | Transfer Issue",\n' +
     '  "rcaSubParameter": "The specific missed step or policy gap in 10 words or less. Examples: Missed callback policy, Incomplete authentication, No retention attempt, Invalid transfer",\n' +
-    '  "topOpportunity": "The single most impactful coaching opportunity in 10 words or less. Be specific to this call.",\n' +
+    '  "topOpportunity": "The single most impactful coaching opportunity in 12 words or less. Be specific to this call.",\n' +
     (isSales
       ? '  "productOpportunity": "Name the specific product or service the agent could have offered but did not. If a sale was made, write what was sold.",\n'
       : '  "productOpportunity": "N/A",\n'
     ) +
     '  "callSummaryShort": "One sentence (max 20 words) describing what happened on this call.",\n' +
     '  "criticalFlags": "Comma-separated list of specific critical behaviors flagged in this evaluation. Use the exact flag names from the text (e.g. Missed callback policy, Incomplete authentication, No retention attempt). Max 5 flags. If none, write None.",\n' +
-    '  "repeatPct": "Extract ONLY the repeat call risk percentage number from the evaluation (e.g. 85). Just the number, no % sign, no other text. If not found, write 0."\n' +
+    '  "repeatPct": "Extract ONLY the repeat call risk percentage number from the evaluation (e.g. 85). Just the number, no % sign, no other text. If not found, write 0.",\n' +
+    '  "smartS": "The single most important SPECIFIC behavior for this agent to change. One clear sentence.",\n' +
+    '  "smartM": "How success will be MEASURED — what metric or observable outcome proves it worked. One sentence.",\n' +
+    '  "smartA": "The ATTAINABLE target — what the agent can realistically achieve with this change.",\n' +
+    '  "smartR": "Why this goal is REALISTIC for this agent right now — e.g. they already have the knowledge, it is a small habit shift.",\n' +
+    '  "smartT": "TIME-BOUND — specific deadline or timeline, e.g. Starting next call, Within 2 weeks, By next QA review."\n' +
     '}\n\n' +
     'RCA Category definitions:\n' +
     '- Agent Controllable: Agent had the knowledge/tools to resolve but did not (wrong steps, missed policy, lack of ownership)\n' +
@@ -309,7 +322,7 @@ function extractStructuredRCA(html, analysisType, auditRef) {
   var options = {
     method: 'post', contentType: 'application/json',
     headers: { 'Authorization': 'Bearer ' + FUELIX_CONFIG.apiKey, 'Content-Type': 'application/json' },
-    payload: JSON.stringify(payload), muteHttpExceptions: true
+    payload: JSON.stringify(payload), muteHttpExceptions: true, deadline: 120
   };
 
   var response = UrlFetchApp.fetch(FUELIX_CONFIG.baseUrl + '/v1/chat/completions', options);
@@ -330,16 +343,78 @@ function extractStructuredRCA(html, analysisType, auditRef) {
       callDriver:        (obj.callDriver         || '').substring(0, 100),
       rcaCategory:       (obj.rcaCategory        || '').substring(0, 50),
       rcaSubParameter:   (obj.rcaSubParameter    || '').substring(0, 100),
-      topOpportunity:    (obj.topOpportunity      || '').substring(0, 100),
+      topOpportunity:    (obj.topOpportunity      || '').substring(0, 150),
       productOpportunity:(obj.productOpportunity  || '').substring(0, 100),
       callSummaryShort:  (obj.callSummaryShort    || '').substring(0, 200),
       criticalFlags:     (obj.criticalFlags       || 'None').replace(/^None$/i, '').substring(0, 500),
-      repeatPct:         (obj.repeatPct           || '0').toString().replace(/[^0-9]/g,'').substring(0, 5)
+      repeatPct:         (obj.repeatPct           || '0').toString().replace(/[^0-9]/g,'').substring(0, 5),
+      smartS:            (obj.smartS              || '').substring(0, 300),
+      smartM:            (obj.smartM              || '').substring(0, 300),
+      smartA:            (obj.smartA              || '').substring(0, 300),
+      smartR:            (obj.smartR              || '').substring(0, 300),
+      smartT:            (obj.smartT              || '').substring(0, 200)
     };
   } catch(e) {
     Logger.log('JSON parse error for ' + auditRef + ': ' + e);
     return null;
   }
+}
+
+// ── Run ONCE from the Apps Script editor to upgrade the Dashboard_Data sheet ──
+// Renames 'Recommendations'→'SMART Recommendation', 'Top Opportunity'→'Top SMART Opportunity'
+// and appends 5 new SMART columns (S/M/A/R/T). Safe to run on a live sheet —
+// it only adds/renames header cells and does not touch data rows.
+function updateSpreadsheetSMARTFormat() {
+  var ss     = getOrCreateSpreadsheet();
+  var dSheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
+  if (dSheet.getLastRow() < 1) { Logger.log('Sheet is empty — nothing to update'); return; }
+
+  var headerRange = dSheet.getRange(1, 1, 1, dSheet.getLastColumn());
+  var headers     = headerRange.getValues()[0];
+
+  // ── 1. Rename existing headers ─────────────────────────────────────────────
+  var renames = {
+    'Recommendations': 'SMART Recommendation',
+    'Top Opportunity': 'Top SMART Opportunity'
+  };
+  headers.forEach(function(h, i) {
+    if (renames[h]) {
+      dSheet.getRange(1, i + 1).setValue(renames[h]);
+      Logger.log('Renamed col ' + (i+1) + ': "' + h + '" → "' + renames[h] + '"');
+    }
+  });
+
+  // ── 2. Add missing SMART columns (insert before PDF Email Link) ────────────
+  var newCols = [
+    'SMART S (Specific)',
+    'SMART M (Measurable)',
+    'SMART A (Attainable)',
+    'SMART R (Realistic)',
+    'SMART T (Time-bound)'
+  ];
+
+  // Find insertion point: before "PDF Email Link" or at end
+  headers = dSheet.getRange(1, 1, 1, dSheet.getLastColumn()).getValues()[0];
+  var insertBefore = headers.indexOf('PDF Email Link');
+  if (insertBefore === -1) insertBefore = headers.length; // append at end
+
+  // Only add columns that don't already exist
+  var toAdd = newCols.filter(function(c){ return headers.indexOf(c) === -1; });
+
+  if (toAdd.length) {
+    // Insert columns at insertBefore position (1-based)
+    dSheet.insertColumnsBefore(insertBefore + 1, toAdd.length);
+    var newRange = dSheet.getRange(1, insertBefore + 1, 1, toAdd.length);
+    newRange.setValues([toAdd])
+      .setFontWeight('bold')
+      .setBackground('#4B286D')
+      .setFontColor('#ffffff');
+    Logger.log('Added ' + toAdd.length + ' SMART columns at position ' + (insertBefore + 1));
+  } else {
+    Logger.log('All SMART columns already exist — no columns added');
+  }
+
+  Logger.log('updateSpreadsheetSMARTFormat complete.');
 }
 
 // ── Run once: add header notes/comments to Dashboard_Data columns ─────────────
@@ -552,7 +627,12 @@ function addDashboardColumnNotes() {
     'Call Driver':           'Short label for the main reason the customer called. Used for trend analysis and call volume charts. Examples: Service Move Request, Billing Dispute, Seasonal Hold.',
     'RCA Category':          'Root Cause Analysis category:\n• Agent Controllable — agent had tools/knowledge but did not resolve\n• Process/Policy — company policy prevented resolution\n• Customer Driven — customer behavior drove the outcome\n• Transfer Issue — invalid or unnecessary transfer occurred',
     'RCA Sub-Parameter':     'Specific missed step or policy gap that caused the repeat risk. Used for Top 5 Opportunities chart. Examples: Missed callback policy, Incomplete authentication, No retention attempt.',
-    'Top Opportunity':       'The single most impactful coaching action for the agent on this specific call. Should be referenced during coaching sessions.',
+    'Top SMART Opportunity':  'The single most impactful SMART coaching action for the agent on this specific call — written in Specific/Measurable/Attainable/Realistic/Time-bound format. Should be referenced during coaching sessions.',
+    'SMART S (Specific)':    'The exact specific behavior the agent needs to change or develop.',
+    'SMART M (Measurable)':  'How success will be measured — the observable metric that proves the coaching worked.',
+    'SMART A (Attainable)':  'The attainable target — what the agent can realistically achieve with this change.',
+    'SMART R (Realistic)':   'Why this goal is realistic for this agent right now — confirms the goal is achievable given their current skill level.',
+    'SMART T (Time-bound)':  'The deadline or timeline for achieving the SMART coaching goal.',
     'Product Opportunity':   'For Sales Analyzer: the specific product or service the agent could have offered. For Repeats: N/A.'
   };
 
@@ -991,7 +1071,11 @@ function notifyAdmins(formData, auditRef) {
     var vtid          = formData.vtid         || 'N/A';
     var submittedAt   = new Date().toLocaleString();
 
-    var subject = '[Admin] New Audit Submitted — ' + auditRef + ' | ' + agentName;
+    // Fix: truncate interactionId to prevent transcript blob leaking into email
+    var cleanIntId = interactionId.replace(/[\r\n\t]/g, ' ').substring(0, 120);
+
+    var evalUrl  = ScriptApp.getService().getUrl() + '?page=eval&ref=' + encodeURIComponent(auditRef);
+    var subject  = '[Admin] New Audit Submitted — ' + auditRef + ' | ' + agentName;
 
     // ── Plain text body ───────────────────────────────────────────────────────
     var plainBody =
@@ -1010,90 +1094,31 @@ function notifyAdmins(formData, auditRef) {
       'Line of Business: ' + lob + '\n' +
       'Locale / Site:    ' + locale + '\n' +
       '\nCALL DETAILS\n' +
-      'Interaction ID:   ' + interactionId + '\n' +
+      'Interaction ID:   ' + cleanIntId + '\n' +
       'Direction:        ' + direction + '\n' +
       'Duration:         ' + duration + '\n' +
       '─────────────────────────────────────\n\n' +
-      'This is an automated notification from the NH FCR, Transfer or Sales Call Analyzer.\n' +
-      'Log in to the analyzer to view the full evaluation.';
+      'View full evaluation: ' + evalUrl + '\n\n' +
+      'This is an automated notification from the NH Real Time Analyzer.\n';
 
     // ── HTML email body ───────────────────────────────────────────────────────
-    var htmlBody =
-      '<div style="font-family:Helvetica Neue,Helvetica,Arial,sans-serif;max-width:640px;color:#1A1A2E">' +
-
-      // Header
-      '<div style="background:#4B286D;padding:18px 24px;border-radius:8px 8px 0 0">' +
-        '<h2 style="color:#fff;margin:0;font-size:16px">&#128196; New Audit Submitted</h2>' +
-        '<p style="color:rgba(255,255,255,.7);margin:5px 0 0;font-size:12px">' +
-          'Audit Ref: <strong style="color:#fff">' + escEmail(auditRef) + '</strong> &nbsp;·&nbsp; ' +
-          submittedAt +
-        '</p>' +
-      '</div>' +
-
-      // Body
-      '<div style="background:#fff;border:1px solid #E0E0E0;border-top:none;' +
-           'border-radius:0 0 8px 8px;padding:24px">' +
-
-        // Observer + Type banner
-        '<div style="background:#F5F0FF;border-left:4px solid #4B286D;border-radius:4px;' +
-             'padding:10px 14px;margin-bottom:20px;font-size:13px">' +
-          '<strong>Observer:</strong> ' + escEmail(observer) + ' &nbsp;·&nbsp; ' +
-          '<strong>Type:</strong> ' + escEmail(analysisType) +
-        '</div>' +
-
-        // Two-column layout
-        '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:20px">' +
-
-          // Agent section header
-          '<tr><td colspan="2" style="padding:8px 0 4px;font-size:11px;font-weight:700;' +
-               'color:#4B286D;text-transform:uppercase;letter-spacing:.5px;' +
-               'border-bottom:2px solid #F5F0FF">Agent Details</td></tr>' +
-          adminRow('Agent Name',       agentName) +
-          adminRow('SAP ID',           sapId) +
-          adminRow('VTID',             vtid) +
-          adminRow('Team Leader',      teamLeader) +
-          adminRow('Operations Mgr',   opsManager) +
-          adminRow('Line of Business', lob) +
-          adminRow('Locale / Site',    locale) +
-
-          // Call section header
-          '<tr><td colspan="2" style="padding:12px 0 4px;font-size:11px;font-weight:700;' +
-               'color:#4B286D;text-transform:uppercase;letter-spacing:.5px;' +
-               'border-bottom:2px solid #F5F0FF">Call Details</td></tr>' +
-          adminRow('Interaction ID', interactionId) +
-          adminRow('Direction',      direction) +
-          adminRow('Duration',       duration) +
-
-        '</table>' +
-
-        '<p style="font-size:12px;color:#888;border-top:1px solid #EEE;padding-top:14px;margin-top:0">' +
-          'This is an automated admin notification from the <strong>NH FCR, Transfer or Sales Call Analyzer</strong>. ' +
-          'You received this because your role is listed as <strong>Admin/Dev</strong> in the Roster.' +
-        '</p>' +
-
-      '</div></div>';
-
-    // ── Generate PDF attachment ───────────────────────────────────────────────
-    var pdfAttachment = null;
-    try {
-      pdfAttachment = generateAuditPDF(formData, '');  // blank htmlResult = form-only PDF
-    } catch(pdfErr) {
-      Logger.log('Admin PDF generation failed (non-fatal): ' + pdfErr);
-    }
+    var htmlBody = buildAdminEmailHTML(
+      auditRef, submittedAt, observer, analysisType,
+      agentName, sapId, vtid, teamLeader, opsManager, lob, locale,
+      cleanIntId, direction, duration, evalUrl
+    );
 
     // ── Send individually — MailApp works without extra OAuth grant ───────────
     var sent = [], failed = [];
     recipients.forEach(function(r) {
       try {
-        var mailOpts = {
+        MailApp.sendEmail({
           to:       r.email,
           subject:  subject,
           body:     plainBody,
           htmlBody: htmlBody,
           name:     'NH Call Analyzer — Admin Notifications'
-        };
-        if (pdfAttachment) mailOpts.attachments = [pdfAttachment];
-        MailApp.sendEmail(mailOpts);
+        });
         sent.push(r.email);
         Logger.log('Sent to: ' + r.email);
       } catch(emailErr) {
@@ -1271,10 +1296,102 @@ function _writeHeaderRow(sheet, headers) {
 function doGet(e) {
   var page = e && e.parameter && e.parameter.page;
   if (page === 'dashboard') return doGetDashboard();
+  if (page === 'eval') {
+    return HtmlService
+      .createHtmlOutputFromFile('EvalView')
+      .setTitle('Real Time Feedback — Evaluation View')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
   return HtmlService
     .createHtmlOutputFromFile('index')
     .setTitle('NH FCR, Transfer or Sales Call Analyzer')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// ── Evaluation view — fetch all data for a single audit ref ──────────────────
+function getEvalViewData(auditRef) {
+  try {
+    var ss = getOrCreateSpreadsheet();
+
+    // 1. Audit_Log → metadata
+    var logSheet = getOrCreateSheet(ss, AUDIT_LOG_SHEET);
+    var logLast  = logSheet.getLastRow();
+    var meta     = {};
+    if (logLast >= 2) {
+      var logHeaders = logSheet.getRange(1,1,1,logSheet.getLastColumn()).getValues()[0];
+      var logData    = logSheet.getRange(2,1,logLast-1,logHeaders.length).getValues();
+      for (var i = 0; i < logData.length; i++) {
+        var row = logData[i];
+        var ref = (row[logHeaders.indexOf('Audit Ref')] || '').toString().trim();
+        if (ref === auditRef.trim()) {
+          logHeaders.forEach(function(h, idx) { meta[h] = (row[idx] || '').toString(); });
+          break;
+        }
+      }
+    }
+
+    // 2. Dashboard_Data → SMART fields + extra structured data
+    var dSheet  = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
+    var dLast   = dSheet.getLastRow();
+    var dash    = {};
+    if (dLast >= 2) {
+      var dHeaders = dSheet.getRange(1,1,1,dSheet.getLastColumn()).getValues()[0];
+      var dData    = dSheet.getRange(2,1,dLast-1,dHeaders.length).getValues();
+      for (var j = 0; j < dData.length; j++) {
+        var dRow = dData[j];
+        var dRef = (dRow[dHeaders.indexOf('Audit Ref')] || '').toString().trim();
+        if (dRef === auditRef.trim()) {
+          dHeaders.forEach(function(h, idx) { dash[h] = (dRow[idx] || '').toString(); });
+          break;
+        }
+      }
+    }
+
+    // 3. Cache sheet → AI HTML (keyed by Interaction ID)
+    var interactionId = meta['Interaction ID'] || dash['Interaction ID'] || '';
+    var evalHtml = '';
+    if (interactionId) {
+      var cached = findCachedResult(interactionId, meta['Analysis Type'] || '');
+      if (cached) evalHtml = sharedCSS() + fixBadgeClasses(cached);
+    }
+
+    // 4. Recent evaluations by same SAP ID (last 5, excluding this one)
+    var sapId   = meta['SAP ID'] || dash['SAP ID'] || '';
+    var recent  = [];
+    if (sapId && logLast >= 2) {
+      var logHeaders2 = logSheet.getRange(1,1,1,logSheet.getLastColumn()).getValues()[0];
+      var logData2    = logSheet.getRange(2,1,logLast-1,logHeaders2.length).getValues();
+      logData2.forEach(function(r) {
+        var rRef = (r[logHeaders2.indexOf('Audit Ref')] || '').toString().trim();
+        var rSap = (r[logHeaders2.indexOf('SAP ID')]    || '').toString().trim();
+        if (rSap === sapId && rRef !== auditRef.trim()) {
+          recent.push({
+            ref:          rRef,
+            date:         (r[logHeaders2.indexOf('Submitted At')]  || '').toString().substring(0,10),
+            interactionId:(r[logHeaders2.indexOf('Interaction ID')] || '').toString().substring(0,50),
+            analysisType: (r[logHeaders2.indexOf('Analysis Type')]  || '').toString()
+          });
+        }
+      });
+      recent = recent.slice(-5).reverse();
+    }
+
+    // 5. Web app base URL for links
+    var baseUrl = ScriptApp.getService().getUrl();
+
+    return {
+      success: true,
+      auditRef: auditRef,
+      meta: meta,
+      dash: dash,
+      evalHtml: evalHtml,
+      recent: recent,
+      baseUrl: baseUrl
+    };
+  } catch(e) {
+    Logger.log('getEvalViewData error: ' + e);
+    return { success: false, error: e.toString() };
+  }
 }
 
 // ── Fix badge colours deterministically based on score value ─────────────────
@@ -1537,28 +1654,37 @@ function callAIForAnalytics(context, analysisType) {
     'Return ONLY a valid JSON object with NO other text:\n' +
     '{\n' +
     '  "executiveSummary": "2-3 sentence overall assessment of performance and key finding",\n' +
-    '  "highlights": ["bullet 1", "bullet 2", "bullet 3"],\n' +
-    '  "lowlights": ["bullet 1", "bullet 2", "bullet 3"],\n' +
-    '  "topPerformer": { "name": "agent name", "insight": "why they stand out" },\n' +
+    '  "highlights": ["Specific positive finding with data to back it up", "highlight 2", "highlight 3"],\n' +
+    '  "lowlights": ["Specific gap or risk with data to back it up", "lowlight 2", "lowlight 3"],\n' +
+    '  "topPerformer": { "name": "agent name", "insight": "why they stand out — be specific" },\n' +
     '  "criticalFlags": [\n' +
-    '    { "label": "flag name", "count": 0, "type": "Agent Controllable or Process/Policy or Customer Driven", "impact": "one sentence impact" }\n' +
+    '    { "label": "flag name", "count": 0, "type": "Agent Controllable or Process/Policy or Customer Driven", "impact": "one sentence impact on FCR or sales" }\n' +
     '  ],\n' +
     '  "recommendations": [\n' +
-    '    { "category": "PROCESS or AGENT or TECHNOLOGY", "action": "specific actionable recommendation", "priority": "HIGH or MEDIUM or LOW" }\n' +
+    '    {\n' +
+    '      "category": "PROCESS or AGENT or TECHNOLOGY",\n' +
+    '      "priority": "HIGH or MEDIUM or LOW",\n' +
+    '      "smart_s": "Specific behavior or process to change — exact, not vague",\n' +
+    '      "smart_m": "How success will be measured (e.g. FCR rate below 20%, offer rate above 80%)",\n' +
+    '      "smart_a": "Attainable target — what the team can realistically hit",\n' +
+    '      "smart_r": "Why this is realistic right now — e.g. the team already has the tools/knowledge, it is a small habit shift",\n' +
+    '      "smart_t": "Timeline (e.g. within 2 weeks, by next QA cycle, before end of month)",\n' +
+    '      "positioningStatement": "A sample statement a TL can use verbatim when coaching, e.g. \'[Agent], when a customer calls about X, your goal is to Y. Let me show you how: [exact phrase].\'"\n' +
+    '    }\n' +
     '  ],\n' +
     '  "pillarInsights": [\n' +
     '    { "pillar": "pillar name", "score": "score or qualitative", "insight": "one sentence" }\n' +
     '  ],\n' +
     (isSales ? '  "salesInsights": "key sales performance observation in 2 sentences",\n' : '') +
-    '  "coachingPriority": "The single most important coaching action for this period in one sentence"\n' +
+    '  "coachingPriority": "The single most important SMART coaching action for this period. Format: S:[specific] | M:[metric] | A:[attainable] | R:[realistic] | T:[timeline]"\n' +
     '}\n\n' +
     'DATA SUMMARY:\n' + context;
 
   var payload = { model: FUELIX_CONFIG.model, messages: [{ role: 'user', content: prompt }], stream: false };
   var options = {
     method: 'post', contentType: 'application/json',
-    headers: { 'Authorization': 'Bearer ' + FUELIX_CONFIG.apiKey },
-    payload: JSON.stringify(payload), muteHttpExceptions: true
+    headers: { 'Authorization': 'Bearer ' + FUELIX_CONFIG.apiKey, 'Content-Type': 'application/json' },
+    payload: JSON.stringify(payload), muteHttpExceptions: true, deadline: 270
   };
   var resp = UrlFetchApp.fetch(FUELIX_CONFIG.baseUrl + '/v1/chat/completions', options);
   if (resp.getResponseCode() !== 200) { Logger.log('AI Analytics API error: ' + resp.getResponseCode()); return null; }
@@ -1615,19 +1741,49 @@ function renderAnalyticsHTML(d, filters, analysisType, rowCount) {
   html += '</ul></div>';
   html += '</div>';
 
-  // Recommendations
+  // SMART Recommendations
   if (d.recommendations && d.recommendations.length) {
-    html += '<div class="an-section"><div class="an-section-title">&#128161; RECOMMENDATIONS</div>';
-    var cats = {};
-    d.recommendations.forEach(function(r){ var c=r.category||'GENERAL'; if(!cats[c]) cats[c]=[]; cats[c].push(r); });
-    Object.keys(cats).forEach(function(cat) {
-      html += '<span class="an-rec-cat">' + e(cat) + '</span><ul>';
-      cats[cat].forEach(function(r){
-        html += '<li><strong>' + e(r.priority||'') + '</strong> — ' + e(r.action||'') + '</li>';
-      });
-      html += '</ul>';
+    html += '<div class="an-section"><div class="an-section-title">&#128161; SMART RECOMMENDATIONS</div>';
+    d.recommendations.forEach(function(r, idx) {
+      var pri = (r.priority || 'MEDIUM').toUpperCase();
+      var priColor = pri === 'HIGH' ? '#C12335' : pri === 'LOW' ? '#2B8000' : '#8C4A00';
+      html += '<div style="background:#FAFAFA;border:1px solid #E0D8F0;border-left:4px solid ' + priColor + ';border-radius:4px;padding:12px 14px;margin-bottom:10px">';
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' +
+        '<span style="background:' + priColor + ';color:#fff;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:700">' + e(pri) + '</span>' +
+        '<span style="font-size:12px;font-weight:700;color:#4B286D">' + e(r.category || 'GENERAL') + '</span>' +
+        '</div>';
+      if (r.smart_s || r.smart_m || r.smart_a || r.smart_r || r.smart_t) {
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px">' +
+          '<tr style="background:#F0EBF8">' +
+          '<td style="padding:3px 8px;font-weight:700;color:#4B286D;width:5%">S</td>' +
+          '<td style="padding:3px 8px">' + e(r.smart_s || '') + '</td></tr>' +
+          '<tr><td style="padding:3px 8px;font-weight:700;color:#4B286D">M</td>' +
+          '<td style="padding:3px 8px">' + e(r.smart_m || '') + '</td></tr>' +
+          '<tr style="background:#F0EBF8"><td style="padding:3px 8px;font-weight:700;color:#4B286D">A</td>' +
+          '<td style="padding:3px 8px">' + e(r.smart_a || '') + '</td></tr>' +
+          '<tr><td style="padding:3px 8px;font-weight:700;color:#4B286D">R</td>' +
+          '<td style="padding:3px 8px">' + e(r.smart_r || '') + '</td></tr>' +
+          '<tr style="background:#F0EBF8"><td style="padding:3px 8px;font-weight:700;color:#4B286D">T</td>' +
+          '<td style="padding:3px 8px">' + e(r.smart_t || '') + '</td></tr>' +
+          '</table>';
+      } else if (r.action) {
+        html += '<p style="font-size:13px;margin:0 0 6px">' + e(r.action) + '</p>';
+      }
+      if (r.positioningStatement) {
+        html += '<div style="background:#EDF7E6;border:1px solid #B3DFA0;border-radius:4px;padding:8px 10px;font-size:12px;color:#1A5E00;font-style:italic">' +
+          '&#127908; ' + e(r.positioningStatement) + '</div>';
+      }
+      html += '</div>';
     });
     html += '</div>';
+  }
+
+  // Coaching Priority (SMART)
+  if (d.coachingPriority) {
+    html += '<div class="an-section" style="background:#FFF8E1;border:2px solid #F9A825;border-radius:6px;padding:12px 16px">' +
+      '<div class="an-section-title" style="color:#E65100">&#127919; TOP COACHING PRIORITY (SMART)</div>' +
+      '<p style="font-size:13px;line-height:1.7;margin:0">' + e(d.coachingPriority) + '</p>' +
+      '</div>';
   }
 
   // Bottom 3-col: Pillar Analytics | Critical Flags | Top Performer
@@ -1667,11 +1823,6 @@ function renderAnalyticsHTML(d, filters, analysisType, rowCount) {
   }
 
   html += '</div>'; // end bottom-grid
-
-  // Coaching priority
-  if (d.coachingPriority) {
-    html += '<div class="an-coaching-bar">&#127979; <strong>Coaching Priority:</strong> ' + e(d.coachingPriority) + '</div>';
-  }
 
   // Sales-specific
   if (isSales && d.salesInsights) {
@@ -2323,6 +2474,11 @@ function submitTranscript(formData) {
       var rcaSubParameter   = structured ? structured.rcaSubParameter   : '';
       var topOpportunity    = structured ? structured.topOpportunity    : '';
       var productOpportunity= structured ? structured.productOpportunity: '';
+      var smartS            = structured ? structured.smartS            : '';
+      var smartM            = structured ? structured.smartM            : '';
+      var smartA            = structured ? structured.smartA            : '';
+      var smartR            = structured ? structured.smartR            : '';
+      var smartT            = structured ? structured.smartT            : '';
       if (structured && structured.callSummaryShort && !callSummary)
         callSummary = structured.callSummaryShort;
 
@@ -2339,6 +2495,7 @@ function submitTranscript(formData) {
         callReason, callSummary, opportunities, recommendations,
         criticalFlags, repeatPct, issueResolved, transferOccurred,
         callDriver, rcaCategory, rcaSubParameter, topOpportunity, productOpportunity,
+        smartS, smartM, smartA, smartR, smartT,
         'Pending', 'Not Sent'
       ]);
       invalidateDashboardCache();
@@ -2366,8 +2523,7 @@ function submitTranscript(formData) {
       Logger.log('Audit_Log write error (non-fatal): ' + le);
     }
 
-    // ── 9. Auto-send audit email to all recipient groups ─────────────────────
-    sendSubmissionEmail(formData, html, auditRef);
+    // ── 9. (Email is only sent when user clicks "Submit & Email Audit" — not here) ──
 
     return {
       success:      true,
@@ -2440,55 +2596,49 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
 
     Logger.log('sendSubmissionEmail: sending to ' + recipients.join(', '));
 
-    var subject = '[' + auditRef + '] Call Audit — ' + agentName;
+    var firstName  = agentName.split(' ')[0];
+    var evalTitle  = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
+    var subject    = 'Real Time Feedback — ' + agentName + ' (' + sapId + ') | BAN: ' + (formData.customerBAN || 'N/A');
 
     var body =
-      'Hi,\n\nA call audit has been completed.\n\n' +
-      'AUDIT REFERENCE: ' + auditRef + '\n' +
+      'Hi ' + firstName + ',\n\n' +
+      'We\'re excited to share feedback from your recent customer interaction!\n\n' +
+      'Your call has been reviewed to highlight your strengths and provide insights that will help you continue to grow and excel in your role.\n\n' +
+      'Remember: This evaluation is a tool for your development, and we\'re here to support your success every step of the way.\n\n' +
+      'EVALUATION DETAILS\n' +
       '─────────────────────────────────────\n' +
-      'Agent:          ' + agentName + '\n' +
-      'SAP ID:         ' + sapId + '\n' +
-      'Observer:       ' + (observerName || 'N/A') + '\n' +
-      'Interaction ID: ' + interactionId + '\n' +
-      'Start Time:     ' + (formData.startTime || 'N/A') + '\n' +
-      'Duration:       ' + (formData.duration  || 'N/A') + '\n' +
-      'Direction:      ' + (formData.direction || 'N/A') + '\n' +
-      'Analysis Type:  ' + analysisLabel + '\n' +
+      'Audit Reference:  ' + auditRef + '\n' +
+      'Interaction Date: ' + (formData.startTime || 'N/A') + '\n' +
+      'Customer BAN:     ' + (formData.customerBAN || 'N/A') + '\n' +
+      'Interaction ID:   ' + interactionId + '\n' +
+      'Listening Type:   ' + (formData.direction || 'N/A') + '\n' +
+      'Analysis Type:    ' + analysisLabel + '\n' +
       '─────────────────────────────────────\n\n' +
-      'The full audit report is attached as a PDF.\n\n' +
-      'This is an automated message from the NH FCR, Transfer or Sales Call Analyzer.\n';
+      'What\'s included in your evaluation:\n' +
+      '  • Call summary and key points\n' +
+      '  • Highlights of your performance\n' +
+      '  • SMART coaching recommendations\n' +
+      '  • Skill ratings and detailed feedback\n\n' +
+      'Please review your evaluation and discuss with your Team Leader for coaching and development opportunities.\n\n' +
+      'QA & LS Team\n' +
+      'This evaluation is for development purposes.\n';
 
-    var htmlBody =
-      '<div style="font-family:Helvetica Neue,Helvetica,Arial,sans-serif;max-width:620px;color:#1A1A2E">' +
-      '<div style="background:#4B286D;padding:18px 24px;border-radius:6px 6px 0 0">' +
-        '<h2 style="color:#fff;margin:0;font-size:16px">Call Audit Completed</h2>' +
-        '<p style="color:rgba(255,255,255,.7);margin:5px 0 0;font-size:12px">Ref: <strong style="color:#fff">' + escEmail(auditRef) + '</strong></p>' +
-      '</div>' +
-      '<div style="background:#fff;border:1px solid #D8D8D8;border-top:none;padding:24px;border-radius:0 0 6px 6px">' +
-        '<p style="margin-bottom:16px;font-size:13px">Hi,<br><br>A call audit (<strong>' + escEmail(auditRef) + '</strong>) has been completed for <strong>' + escEmail(agentName) + '</strong>.</p>' +
-        '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:20px">' +
-          emailRow('Audit Reference', auditRef) +
-          emailRow('Agent',           agentName) +
-          emailRow('SAP ID',          sapId) +
-          emailRow('Observer',        observerName || 'N/A') +
-          emailRow('Interaction ID',  interactionId) +
-          emailRow('Start Time',      formData.startTime || 'N/A') +
-          emailRow('Duration',        formData.duration  || 'N/A') +
-          emailRow('Direction',       formData.direction || 'N/A') +
-          emailRow('Analysis Type',   analysisLabel) +
-        '</table>' +
-        '<p style="font-size:12px;color:#54565A">The full audit report is attached as a PDF. Please review and take coaching action as needed.</p>' +
-      '</div></div>';
-
-    var pdfBlob = generateAuditPDF(formData, htmlResult);
+    var evalUrl  = ScriptApp.getService().getUrl() + '?page=eval&ref=' + encodeURIComponent(auditRef);
+    var htmlBody = buildAgentEmailHTML(
+      evalTitle, firstName, agentName, sapId,
+      auditRef, interactionId,
+      formData.startTime || 'N/A',
+      formData.customerBAN || 'N/A',
+      formData.direction || 'N/A',
+      analysisLabel, evalUrl
+    );
 
     MailApp.sendEmail({
-      to:          recipients.join(','),
-      subject:     subject,
-      body:        body,
-      htmlBody:    htmlBody,
-      attachments: pdfBlob ? [pdfBlob] : [],
-      name:        'NH Call Analyzer'
+      to:       recipients.join(','),
+      subject:  subject,
+      body:     body,
+      htmlBody: htmlBody,
+      name:     'NH Call Analyzer'
     });
 
     Logger.log('Submission email sent to: ' + recipients.join(', '));
@@ -2504,72 +2654,71 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
 // ─────────────────────────────────────────────────────────────────────────────
 function sendAuditEmail(formData, htmlResult) {
   try {
-    var teamLeaderEmail = resolveEmail(formData.teamLeader);
-    var opsMgrEmail     = resolveEmail(formData.opsManager);
-    var recipients      = [teamLeaderEmail, opsMgrEmail].filter(Boolean);
-
-    if (!recipients.length) {
-      return { success: false, error: 'Could not resolve email addresses for Team Leader or Operations Manager. Make sure their names match the roster.' };
-    }
-
-    var agentName     = formData.participant  || 'Agent';
+    var agentName     = formData.participant   || 'Agent';
+    var sapId         = formData.sapId         || 'N/A';
     var interactionId = formData.interactionId || 'N/A';
     var auditRef      = formData.auditRef      || 'N/A';
-    var observerName  = formData.observerName  || 'N/A';
     var analysisLabel = formData.analysisType === 'sales' ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
-    var subject       = '[' + auditRef + '] Call Audit — ' + agentName;
+    var firstName     = agentName.split(' ')[0];
+    var evalTitle     = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
+    var subject       = 'Real Time Observation Audit Submitted — ' + auditRef + ' | ' + agentName;
+
+    // ── Build recipient list: Agent + Team Leader + Ops Manager ──────────────
+    var agentEmail      = lookupAgentEmail(agentName);
+    var teamLeaderEmail = resolveEmail(formData.teamLeader);
+    var opsMgrEmail     = resolveEmail(formData.opsManager);
+    var validRe         = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    var seen            = {};
+    var recipients      = [agentEmail, teamLeaderEmail, opsMgrEmail].filter(function(em) {
+      if (!em || !validRe.test(em) || seen[em.toLowerCase()]) return false;
+      seen[em.toLowerCase()] = true;
+      return true;
+    });
+
+    if (!recipients.length) {
+      return { success: false, error: 'Could not resolve email addresses. Make sure the agent name, Team Leader and Operations Manager match the roster.' };
+    }
 
     // ── Plain-text body ───────────────────────────────────────────────────────
     var body =
-      'Hi,\n\nA call audit has been completed.\n\n' +
-      'AUDIT REFERENCE: ' + auditRef + '\n' +
+      'Hi ' + firstName + ',\n\n' +
+      'We\'re excited to share feedback from your recent customer interaction!\n\n' +
+      'Your call has been reviewed to highlight your strengths and provide insights that will help you continue to grow and excel in your role.\n\n' +
+      'EVALUATION DETAILS\n' +
       '─────────────────────────────────────\n' +
-      'Agent:          ' + agentName + '\n' +
-      'SAP ID:         ' + (formData.sapId || 'N/A') + '\n' +
-      'Observer:       ' + observerName + '\n' +
-      'Interaction ID: ' + interactionId + '\n' +
-      'Start Time:     ' + (formData.startTime || 'N/A') + '\n' +
-      'Duration:       ' + (formData.duration  || 'N/A') + '\n' +
-      'Direction:      ' + (formData.direction || 'N/A') + '\n' +
-      'Analysis Type:  ' + analysisLabel + '\n' +
+      'Audit Reference:  ' + auditRef + '\n' +
+      'Interaction Date: ' + (formData.startTime || 'N/A') + '\n' +
+      'Customer BAN:     ' + (formData.customerBAN || 'N/A') + '\n' +
+      'Interaction ID:   ' + interactionId + '\n' +
+      'Listening Type:   ' + (formData.direction || 'N/A') + '\n' +
+      'Analysis Type:    ' + analysisLabel + '\n' +
       '─────────────────────────────────────\n\n' +
-      'The full audit report is attached as a PDF.\n\n' +
-      'This is an automated message from the NH FCR, Transfer or Sales Call Analyzer.\n';
+      'What\'s included in your evaluation:\n' +
+      '  • Call summary and key points\n' +
+      '  • Highlights of your performance\n' +
+      '  • SMART coaching recommendations\n' +
+      '  • Skill ratings and detailed feedback\n\n' +
+      'Please review your evaluation and discuss with your Team Leader for coaching and development opportunities.\n\n' +
+      'QA & LS Team\n' +
+      'This evaluation is for development purposes.\n';
 
     // ── HTML email body ───────────────────────────────────────────────────────
-    var htmlBody =
-      '<div style="font-family:Helvetica Neue,Helvetica,Arial,sans-serif;max-width:620px;color:#1A1A2E">' +
-      '<div style="background:#4B286D;padding:18px 24px;border-radius:6px 6px 0 0">' +
-      '<h2 style="color:#fff;margin:0;font-size:16px">Call Audit Completed</h2>' +
-      '<p style="color:rgba(255,255,255,.7);margin:5px 0 0;font-size:12px">Ref: <strong style="color:#fff">' + escEmail(auditRef) + '</strong></p>' +
-      '</div>' +
-      '<div style="background:#fff;border:1px solid #D8D8D8;border-top:none;padding:24px;border-radius:0 0 6px 6px">' +
-      '<p style="margin-bottom:16px;font-size:13px">Hi,<br><br>' +
-      'A call audit (<strong>' + escEmail(auditRef) + '</strong>) has been completed for <strong>' + escEmail(agentName) + '</strong>.</p>' +
-      '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:20px">' +
-      emailRow('Audit Reference', auditRef) +
-      emailRow('Agent',           agentName) +
-      emailRow('SAP ID',          formData.sapId || 'N/A') +
-      emailRow('Observer',        observerName) +
-      emailRow('Interaction ID',  interactionId) +
-      emailRow('Start Time',      formData.startTime || 'N/A') +
-      emailRow('Duration',        formData.duration  || 'N/A') +
-      emailRow('Direction',       formData.direction || 'N/A') +
-      emailRow('Analysis Type',   analysisLabel) +
-      '</table>' +
-      '<p style="font-size:12px;color:#54565A">The full audit report is attached as a PDF. Please review and take coaching action as needed.</p>' +
-      '</div></div>';
-
-    // ── Generate PDF ──────────────────────────────────────────────────────────
-    var pdfBlob = generateAuditPDF(formData, htmlResult);
+    var evalUrl  = ScriptApp.getService().getUrl() + '?page=eval&ref=' + encodeURIComponent(auditRef);
+    var htmlBody = buildAgentEmailHTML(
+      evalTitle, firstName, agentName, sapId,
+      auditRef, interactionId,
+      formData.startTime || 'N/A',
+      formData.customerBAN || 'N/A',
+      formData.direction || 'N/A',
+      analysisLabel, evalUrl
+    );
 
     // ── Send email ────────────────────────────────────────────────────────────
     MailApp.sendEmail({
-      to:          recipients.join(','),
-      subject:     subject,
-      body:        body,
-      htmlBody:    htmlBody,
-      attachments: pdfBlob ? [pdfBlob] : [],
+      to:      recipients.join(','),
+      subject: subject,
+      body:    body,
+      htmlBody: htmlBody,
       name:        'NH Call Analyzer'
     });
 
@@ -2670,32 +2819,58 @@ function buildEvalFormHTML(formData, auditRef, analysisResult) {
 
   return '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
   '<style>' +
-  '@import url(\'https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap\');' +
-  'body{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:11px;color:#222;margin:0;padding:20px;background:#fff}' +
-  '.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;border-bottom:3px solid #4B286D;padding-bottom:12px}' +
-  '.hdr-left h1{font-size:18px;font-weight:800;color:#4B286D;margin:0 0 2px}' +
-  '.hdr-left p{font-size:11px;color:#555;margin:0}' +
-  '.hdr-logo{font-size:11px;font-weight:700;color:#4B286D;text-align:right;border:2px solid #4B286D;padding:6px 10px;border-radius:4px}' +
-  '.ref-bar{background:#4B286D;color:#fff;padding:6px 14px;border-radius:4px;font-size:11px;margin-bottom:16px;display:flex;justify-content:space-between}' +
-  '.section{margin-bottom:16px}' +
-  '.section-title{font-size:12px;font-weight:700;color:#4B286D;border-bottom:2px solid #4B286D;padding-bottom:4px;margin-bottom:10px;display:flex;align-items:center;gap:6px}' +
+  /* ── Page & body ── */
+  'body{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:11px;color:#222;margin:0;padding:10px 14px;background:#fff;width:100%}' +
+  /* ── Header ── */
+  '.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;border-bottom:3px solid #4B286D;padding-bottom:10px}' +
+  '.hdr-left h1{font-size:17px;font-weight:800;color:#4B286D;margin:0 0 2px}' +
+  '.hdr-left p{font-size:10px;color:#555;margin:0}' +
+  '.hdr-logo{font-size:10px;font-weight:700;color:#4B286D;text-align:right;border:2px solid #4B286D;padding:5px 9px;border-radius:4px}' +
+  '.ref-bar{background:#4B286D;color:#fff;padding:5px 12px;border-radius:4px;font-size:10px;margin-bottom:12px;display:flex;justify-content:space-between}' +
+  /* ── Sections ── */
+  '.section{margin-bottom:12px}' +
+  '.section-title{font-size:11px;font-weight:700;color:#4B286D;border-bottom:2px solid #4B286D;padding-bottom:3px;margin-bottom:8px}' +
+  /* ── Detail grids ── */
   '.detail-grid{display:table;width:100%;border-collapse:collapse}' +
   '.detail-row{display:table-row}' +
-  '.detail-label{display:table-cell;font-weight:700;color:#555;padding:4px 14px 4px 0;width:130px;font-size:10px;text-transform:uppercase;letter-spacing:.3px;vertical-align:top}' +
-  '.detail-val{display:table-cell;padding:4px 0;font-size:11px;vertical-align:top;border-bottom:1px solid #F0F0F0}' +
-  '.two-col{display:table;width:100%;table-layout:fixed;gap:12px}' +
-  '.col-left{display:table-cell;width:50%;padding-right:10px;vertical-align:top}' +
-  '.col-right{display:table-cell;width:50%;padding-left:10px;vertical-align:top}' +
-  '.checklist-box{border:1px solid #D8D8D8;border-radius:6px;padding:10px 12px;margin-bottom:8px;background:#FAFAFA}' +
-  '.checklist-label{font-size:10px;font-weight:700;color:#4B286D;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px}' +
-  '.checklist-val{font-size:11px;color:#1A1A2E;font-weight:600}' +
-  '.remarks-box{border:1px solid #D8D8D8;border-radius:6px;padding:12px;background:#FAFAFA;font-size:11px;line-height:1.7;white-space:pre-wrap;min-height:80px}' +
-  '.remarks-label{font-size:10px;font-weight:700;color:#4B286D;text-transform:uppercase;margin-bottom:6px;letter-spacing:.3px}' +
+  '.detail-label{display:table-cell;font-weight:700;color:#555;padding:3px 12px 3px 0;width:120px;font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;vertical-align:top;white-space:nowrap}' +
+  '.detail-val{display:table-cell;padding:3px 0;font-size:10.5px;vertical-align:top;border-bottom:1px solid #F0F0F0;word-break:break-word}' +
+  '.two-col{display:table;width:100%;table-layout:fixed}' +
+  '.col-left{display:table-cell;width:50%;padding-right:8px;vertical-align:top}' +
+  '.col-right{display:table-cell;width:50%;padding-left:8px;vertical-align:top}' +
+  /* ── Remarks boxes ── */
+  '.remarks-box{border:1px solid #D8D8D8;border-radius:4px;padding:8px 10px;background:#FAFAFA;font-size:10.5px;line-height:1.6;white-space:pre-wrap;min-height:60px;word-break:break-word}' +
+  '.remarks-label{font-size:9.5px;font-weight:700;color:#4B286D;text-transform:uppercase;margin-bottom:5px;letter-spacing:.3px}' +
   '.highlight{color:#2B8000;font-weight:600}' +
   '.lowlight{color:#C12335;font-weight:600}' +
-  '.footer{margin-top:24px;border-top:1px solid #D8D8D8;padding-top:8px;font-size:9px;color:#888;text-align:center}' +
-  '.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:#4B286D;color:#fff}' +
-  '@media print{body{margin:0;padding:15px}}' +
+  '.footer{margin-top:16px;border-top:1px solid #D8D8D8;padding-top:6px;font-size:8.5px;color:#888;text-align:center}' +
+  '.badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:9.5px;font-weight:700;background:#4B286D;color:#fff}' +
+  /* ── AI content overrides — maximize space for tables ── */
+  '.ai-section{margin-bottom:10px!important;padding:0!important}' +
+  '.ai-title{font-size:11px!important;padding:5px 10px!important;margin-bottom:6px!important}' +
+  '.ai-table{width:100%!important;table-layout:fixed!important;font-size:9.5px!important;border-collapse:collapse!important}' +
+  '.ai-table th,.ai-table td{padding:4px 6px!important;word-break:break-word!important;overflow-wrap:break-word!important;vertical-align:top!important;font-size:9.5px!important}' +
+  '.ai-table th{font-size:9px!important;white-space:normal!important}' +
+  '.ai-label-col{width:14%!important;font-size:9px!important}' +
+  '.ai-flag{padding:8px 10px!important;margin-bottom:6px!important}' +
+  '.ai-flag-title{font-size:10px!important}' +
+  '.ai-flag-detail{font-size:9.5px!important}' +
+  '.ai-flag-stmt{font-size:9.5px!important;padding:6px 8px!important}' +
+  '.ai-summary,.ai-perfect{font-size:10px!important;line-height:1.5!important}' +
+  '.ai-hl-grid{display:table!important;width:100%!important}' +
+  '.ai-hl-box{display:table-cell!important;width:50%!important;padding:8px 10px!important}' +
+  '.ai-hl-box:first-child{padding-right:5px!important}' +
+  '.ai-hl-box:last-child{padding-left:5px!important}' +
+  '.ai-hl-box ul{font-size:9.5px!important;line-height:1.5!important}' +
+  '.ai-coaching{font-size:9.5px!important;line-height:1.6!important}' +
+  '.ai-score-panel{padding:8px 10px!important}' +
+  '.ai-score-row{font-size:10px!important;padding:4px 0!important}' +
+  '.ai-badge{font-size:9px!important;padding:2px 6px!important}' +
+  '.ai-info{font-size:9.5px!important;gap:4px!important;flex-wrap:wrap!important}' +
+  '.ai-chip{font-size:9px!important;padding:2px 6px!important}' +
+  /* ── SMART table specific ── keep wider columns ── */
+  'table[style*="FDE8B0"] th,table[style*="FDE8B0"] td{font-size:9px!important;padding:3px 5px!important}' +
+  '@media print{body{margin:0;padding:8px 12px}}' +
   '</style></head><body>' +
 
   // Header
@@ -2834,6 +3009,271 @@ function emailRow(label, value) {
 function escEmail(s) {
   if (!s) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent-facing evaluation email — friendly intro matching the New Hire design
+// ─────────────────────────────────────────────────────────────────────────────
+function buildAgentEmailHTML(evalTitle, firstName, agentName, sapId,
+                              auditRef, interactionId,
+                              interactionDate, customerBAN,
+                              listeningType, analysisLabel, evalUrl) {
+  var e = escEmail;
+  var isSales = (analysisLabel || '').indexOf('Sales') !== -1;
+
+  // Detail row helper (label + value, lavender card style)
+  function detailRow(label, value) {
+    return '<tr>' +
+      '<td style="padding:10px 14px 2px;font-size:10px;font-weight:700;' +
+           'text-transform:uppercase;letter-spacing:.8px;color:#6A3D99">' + e(label) + '</td>' +
+      '</tr><tr>' +
+      '<td style="padding:0 14px 10px;font-size:14px;color:#1A1A2E;' +
+           'border-bottom:1px solid #E8DEF5">' + e(value) + '</td>' +
+      '</tr>';
+  }
+
+  var bullets = isSales
+    ? ['Call summary and key observations',
+       'Sales highlights and missed opportunities',
+       'SMART coaching recommendations (S·M·A·R·T)',
+       'Skill ratings across 5 sales dimensions',
+       'Sample positioning statements for practice']
+    : ['Call summary and key points',
+       'Highlights of your performance',
+       'SMART coaching recommendations (S·M·A·R·T)',
+       'Repeat risk analysis and FCR assessment',
+       'Critical flags and positioning statements'];
+
+  var bulletHTML = bullets.map(function(b) {
+    return '<li style="margin-bottom:7px">' + e(b) + '</li>';
+  }).join('');
+
+  return (
+    '<div style="font-family:Helvetica Neue,Helvetica,Arial,sans-serif;' +
+         'max-width:600px;margin:0 auto;background:#F4F4F8;padding:24px 16px">' +
+
+    // ── Header ───────────────────────────────────────────────────────────────
+    '<div style="background:#4B286D;padding:28px 32px;border-radius:10px 10px 0 0;text-align:center">' +
+      '<h1 style="color:#fff;margin:0 0 6px;font-size:22px;font-weight:700;letter-spacing:-.3px">' +
+        e(evalTitle) +
+      '</h1>' +
+      '<p style="color:rgba(255,255,255,.75);margin:0;font-size:13px;font-weight:500">' +
+        'QA &amp; LS Team' +
+      '</p>' +
+    '</div>' +
+
+    // ── Body card ─────────────────────────────────────────────────────────────
+    '<div style="background:#fff;border-radius:0 0 10px 10px;padding:30px 32px">' +
+
+      // Greeting
+      '<p style="font-size:15px;font-weight:600;margin:0 0 14px;color:#1A1A2E">' +
+        'Hi ' + e(firstName) + ',' +
+      '</p>' +
+      '<p style="font-size:13px;line-height:1.7;margin:0 0 10px;color:#3A3A4E">' +
+        'We\'re excited to share feedback from your recent customer interaction!' +
+      '</p>' +
+      '<p style="font-size:13px;line-height:1.7;margin:0 0 10px;color:#3A3A4E">' +
+        'Your call has been reviewed to highlight your strengths and provide insights ' +
+        'that will help you continue to grow and excel in your role.' +
+      '</p>' +
+      '<p style="font-size:13px;line-height:1.7;margin:0 0 24px;color:#3A3A4E">' +
+        '<strong>Remember:</strong> This evaluation is a tool for your development, and we\'re here ' +
+        'to support your success every step of the way.' +
+      '</p>' +
+
+      // Evaluation Details card
+      '<div style="background:#F5F0FF;border:1px solid #D5BFF0;border-left:4px solid #4B286D;' +
+           'border-radius:8px;margin-bottom:24px;overflow:hidden">' +
+        '<div style="padding:10px 14px 6px;font-size:11px;font-weight:700;' +
+             'text-transform:uppercase;letter-spacing:1px;color:#4B286D;' +
+             'border-bottom:1px solid #E0D0F7;display:flex;align-items:center;gap:6px">' +
+          '&#128203; EVALUATION DETAILS' +
+        '</div>' +
+        '<table style="width:100%;border-collapse:collapse">' +
+          detailRow('INTERACTION DATE', interactionDate) +
+          detailRow('CUSTOMER BAN', customerBAN) +
+          detailRow('FLP CONVERSATION ID', interactionId) +
+          detailRow('LISTENING TYPE', listeningType) +
+          detailRow('ANALYSIS TYPE', analysisLabel) +
+          detailRow('AUDIT REFERENCE', auditRef) +
+        '</table>' +
+      '</div>' +
+
+      // CTA Button
+      '<div style="text-align:center;margin-bottom:28px">' +
+        '<a href="' + (evalUrl || '#') + '" ' +
+           'style="display:inline-block;background:#4B286D;color:#fff;text-decoration:none;' +
+                  'border-radius:6px;padding:13px 32px;font-size:14px;font-weight:700;' +
+                  'letter-spacing:.3px;text-align:center">' +
+          'VIEW YOUR EVALUATION' +
+        '</a>' +
+        '<p style="font-size:11px;color:#888;margin:8px 0 0">' +
+          'Click the button above to open your full evaluation. You must be signed in with your work account.' +
+        '</p>' +
+      '</div>' +
+
+      // What's included
+      '<p style="font-size:13px;font-weight:600;color:#1A1A2E;margin:0 0 10px">' +
+        'What\'s included in your evaluation:' +
+      '</p>' +
+      '<ul style="padding-left:20px;font-size:13px;line-height:1.8;color:#3A3A4E;margin:0 0 24px">' +
+        bulletHTML +
+      '</ul>' +
+
+      // Closing
+      '<p style="font-size:13px;line-height:1.7;color:#3A3A4E;margin:0 0 0">' +
+        'Please review your evaluation and discuss with your Team Leader for coaching ' +
+        'and development opportunities. Remember, every call is a chance to grow — ' +
+        'keep up the great work! &#127775;' +
+      '</p>' +
+
+    '</div>' + // end body card
+
+    // ── Footer ───────────────────────────────────────────────────────────────
+    '<div style="padding:18px 8px;text-align:center">' +
+      '<p style="font-size:13px;font-weight:600;color:#4B286D;margin:0 0 4px">' +
+        'QA &amp; LS Team' +
+      '</p>' +
+      '<p style="font-size:11px;color:#999;margin:0">' +
+        'This evaluation is for development purposes.' +
+      '</p>' +
+    '</div>' +
+
+    '</div>' // end outer wrapper
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin notification email — TELUS-branded, matches New Hire Evaluation style
+// ─────────────────────────────────────────────────────────────────────────────
+function buildAdminEmailHTML(
+  auditRef, submittedAt, observer, analysisType,
+  agentName, sapId, vtid, teamLeader, opsManager, lob, locale,
+  interactionId, direction, duration, evalUrl
+) {
+  var e = escEmail;
+
+  function infoCard(label, value) {
+    return '<tr>' +
+      '<td style="padding:10px 0 2px;font-size:10px;font-weight:700;text-transform:uppercase;' +
+           'letter-spacing:.8px;color:#6A3D99;border-bottom:none">' + e(label) + '</td>' +
+    '</tr><tr>' +
+      '<td style="padding:0 0 10px;font-size:13px;color:#1A1A2E;font-weight:500;' +
+           'border-bottom:1px solid #EDE8F7">' + e(value || '—') + '</td>' +
+    '</tr>';
+  }
+
+  function sectionHeader(icon, title) {
+    return '<tr><td style="padding:16px 0 6px;font-size:10px;font-weight:700;' +
+      'text-transform:uppercase;letter-spacing:1px;color:#4B286D;' +
+      'border-bottom:2px solid #4B286D">' + icon + ' ' + e(title) + '</td></tr>';
+  }
+
+  return (
+    '<div style="font-family:Helvetica Neue,Helvetica,Arial,sans-serif;' +
+         'max-width:600px;margin:0 auto;background:#F0EBF8;padding:24px 16px">' +
+
+    // ── Header ───────────────────────────────────────────────────────────────
+    '<div style="background:#4B286D;padding:26px 30px;border-radius:10px 10px 0 0">' +
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between">' +
+        '<div>' +
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;' +
+               'letter-spacing:1.2px;color:rgba(255,255,255,.6);margin-bottom:6px">' +
+            'ADMIN NOTIFICATION' +
+          '</div>' +
+          '<h1 style="color:#fff;margin:0 0 8px;font-size:20px;font-weight:700;letter-spacing:-.2px">' +
+            '&#128196; New Audit Submitted' +
+          '</h1>' +
+          '<div style="background:rgba(255,255,255,.15);border-radius:20px;display:inline-block;' +
+               'padding:4px 14px;font-size:12px;font-weight:700;color:#fff;letter-spacing:.2px">' +
+            e(auditRef) +
+          '</div>' +
+        '</div>' +
+        '<div style="background:#fff;border-radius:6px;padding:6px 12px;text-align:center;' +
+             'font-size:10px;font-weight:700;color:#4B286D;letter-spacing:.5px;line-height:1.4;' +
+             'flex-shrink:0;margin-left:16px">' +
+          'GLE·QA<br>TEAM' +
+        '</div>' +
+      '</div>' +
+      '<div style="margin-top:10px;font-size:11px;color:rgba(255,255,255,.65)">' +
+        '&#128337; ' + e(submittedAt) +
+      '</div>' +
+    '</div>' +
+
+    // ── Body card ─────────────────────────────────────────────────────────────
+    '<div style="background:#fff;border-radius:0 0 10px 10px;padding:26px 30px">' +
+
+      // Observer / Type badge
+      '<div style="background:#F5F0FF;border-left:4px solid #4B286D;border-radius:6px;' +
+           'padding:11px 16px;margin-bottom:22px;font-size:13px;display:flex;gap:20px">' +
+        '<span><strong style="color:#4B286D">Observer:</strong> ' + e(observer) + '</span>' +
+        '<span><strong style="color:#4B286D">Type:</strong> ' + e(analysisType) + '</span>' +
+      '</div>' +
+
+      // Agent Details
+      '<table style="width:100%;border-collapse:collapse">' +
+        sectionHeader('&#128100;', 'Agent Details') +
+        // 2-col agent grid
+        '<tr><td>' +
+          '<table style="width:100%;border-collapse:collapse">' +
+            '<tr>' +
+              '<td style="width:50%;vertical-align:top"><table style="width:100%;border-collapse:collapse">' +
+                infoCard('Agent Name',    agentName) +
+                infoCard('SAP ID',        sapId) +
+                infoCard('VTID',          vtid) +
+                infoCard('Team Leader',   teamLeader) +
+              '</table></td>' +
+              '<td style="width:50%;vertical-align:top;padding-left:20px"><table style="width:100%;border-collapse:collapse">' +
+                infoCard('Operations Mgr',   opsManager) +
+                infoCard('Line of Business', lob) +
+                infoCard('Locale / Site',    locale) +
+              '</table></td>' +
+            '</tr>' +
+          '</table>' +
+        '</td></tr>' +
+
+        // Call Details
+        sectionHeader('&#128222;', 'Call Details') +
+        '<tr><td>' +
+          '<table style="width:100%;border-collapse:collapse">' +
+            '<tr>' +
+              '<td style="width:50%;vertical-align:top"><table style="width:100%;border-collapse:collapse">' +
+                infoCard('Interaction ID', interactionId) +
+                infoCard('Direction',      direction) +
+              '</table></td>' +
+              '<td style="width:50%;vertical-align:top;padding-left:20px"><table style="width:100%;border-collapse:collapse">' +
+                infoCard('Duration', duration) +
+              '</table></td>' +
+            '</tr>' +
+          '</table>' +
+        '</td></tr>' +
+      '</table>' +
+
+      // CTA Button
+      '<div style="text-align:center;margin:24px 0 20px">' +
+        '<a href="' + e(evalUrl) + '" ' +
+           'style="display:inline-block;background:#4B286D;color:#fff;text-decoration:none;' +
+                  'border-radius:6px;padding:12px 30px;font-size:14px;font-weight:700;letter-spacing:.3px">' +
+          'VIEW FULL EVALUATION' +
+        '</a>' +
+      '</div>' +
+
+      // Footer note
+      '<div style="border-top:1px solid #EDE8F7;padding-top:14px;font-size:11px;color:#999;text-align:center">' +
+        'You received this because your role is listed as <strong>Admin/Dev</strong> in the Roster.<br>' +
+        'NH FCR, Transfer or Sales Call Analyzer — Real Time Feedback' +
+      '</div>' +
+
+    '</div>' + // end body card
+
+    // Outer footer
+    '<div style="padding:14px 8px;text-align:center">' +
+      '<p style="font-size:12px;font-weight:600;color:#4B286D;margin:0 0 3px">QA &amp; LS Team</p>' +
+      '<p style="font-size:11px;color:#999;margin:0">This is an automated admin notification.</p>' +
+    '</div>' +
+
+    '</div>' // end wrapper
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

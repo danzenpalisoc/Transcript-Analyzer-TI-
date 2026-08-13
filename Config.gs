@@ -81,14 +81,20 @@ var DASHBOARD_HEADERS = [
   'Analysis Type',
   // ── Raw extracted fields ──
   'Call Reason', 'Call Summary', 'Overall Opportunities',
-  'Recommendations', 'Critical Flags', 'Repeat Projection %',
+  'SMART Recommendation', 'Critical Flags', 'Repeat Projection %',
   'Issue Resolved', 'Transfer Occurred',
   // ── Structured RCA fields (AI-enriched) ──
-  'Call Driver',          // Short label: e.g. "Service Move Request"
-  'RCA Category',         // Agent Controllable | Process/Policy | Customer Driven | Transfer Issue
-  'RCA Sub-Parameter',    // Specific missed step or gap
-  'Top Opportunity',      // #1 actionable coaching point (short)
-  'Product Opportunity',  // Missed upsell/product opportunity (Sales only)
+  'Call Driver',              // Short label: e.g. "Service Move Request"
+  'RCA Category',             // Agent Controllable | Process/Policy | Customer Driven | Transfer Issue
+  'RCA Sub-Parameter',        // Specific missed step or gap
+  'Top SMART Opportunity',    // #1 coaching point in SMART format (short)
+  'Product Opportunity',      // Missed upsell/product opportunity (Sales only)
+  // ── SMART Coaching Breakdown (from AI) ──
+  'SMART S (Specific)',       // Exact behavior to change
+  'SMART M (Measurable)',     // How success will be measured
+  'SMART A (Attainable)',     // Achievable target
+  'SMART R (Realistic)',      // Why this is realistic for this agent now
+  'SMART T (Time-bound)',     // Timeline for achieving the goal
   // ── Status ──
   'PDF Email Link', 'Email Status'
 ];

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -1708,8 +1708,8 @@ body {
           <th>Date</th><th>Audit Ref</th><th>Team Member</th><th>LOB</th>
           <th>Locale</th><th>Analysis Type</th>
           <th>Call Driver</th><th>RCA Category</th><th>RCA Sub-Parameter</th>
-          <th>Call Summary</th><th>Top Opportunity</th>
-          <th>Overall Opportunities</th><th>Recommendations</th>
+          <th>Call Summary</th><th>Top SMART Opportunity</th>
+          <th>Overall Opportunities</th><th>SMART Recommendation</th>
           <th>Critical Flags</th><th>Repeat %</th><th>Evaluation</th>
         </tr></thead><tbody id="r-tbody"></tbody></table>
       </div>
@@ -1737,8 +1737,8 @@ body {
           <th>Date</th><th>Audit Ref</th><th>Team Member</th><th>LOB</th>
           <th>Locale</th><th>Analysis Type</th>
           <th>Call Driver</th><th>RCA Category</th><th>RCA Sub-Parameter</th>
-          <th>Call Summary</th><th>Top Opportunity</th>
-          <th>Overall Opportunities</th><th>Recommendations</th>
+          <th>Call Summary</th><th>Top SMART Opportunity</th>
+          <th>Overall Opportunities</th><th>SMART Recommendation</th>
           <th>Critical Flags</th><th>Repeat %</th><th>Evaluation</th>
         </tr></thead><tbody id="s-tbody"></tbody></table>
       </div>
@@ -2575,7 +2575,7 @@ function dbHandleData(result, isLocalCache) {
           'Call Reason':           dash['Call Reason']           || '',
           'Call Summary':          dash['Call Summary']          || '',
           'Overall Opportunities': dash['Overall Opportunities'] || '',
-          'Recommendations':       dash['Recommendations']       || '',
+          'SMART Recommendation':   dash['SMART Recommendation'] || dash['Recommendations'] || '',
           'Critical Flags':        dash['Critical Flags']        || '',
           'Repeat Projection %':   log['Repeat Projection %']    || dash['Repeat Projection %']    || '',
           'Issue Resolved':        log['Issue Resolved']         || dash['Issue Resolved']         || '',
@@ -2584,7 +2584,7 @@ function dbHandleData(result, isLocalCache) {
           'Call Driver':           dash['Call Driver']           || '',
           'RCA Category':          dash['RCA Category']          || '',
           'RCA Sub-Parameter':     dash['RCA Sub-Parameter']     || '',
-          'Top Opportunity':       dash['Top Opportunity']       || '',
+          'Top SMART Opportunity':  dash['Top SMART Opportunity'] || dash['Top Opportunity'] || '',
           'Product Opportunity':   dash['Product Opportunity']   || '',
           'PDF Email Link':        dash['PDF Email Link']        || '',
           'Email Status':          log['Email Status']           || dash['Email Status']           || ''
@@ -3571,9 +3571,9 @@ function dbRenderTable(pfx, rows) {
       '<td>' + rcaBadge + '</td>' +
       '<td style="max-width:160px;font-size:12px" title="' + escHtml(r['RCA Sub-Parameter']||'') + '">' + escHtml((r['RCA Sub-Parameter']||'').substring(0,60)) + '</td>' +
       '<td style="max-width:180px;font-size:12px" title="' + escHtml(r['Call Summary']||'') + '">' + escHtml((r['Call Summary']||'').substring(0,80)) + '</td>' +
-      '<td style="max-width:180px;font-weight:600;color:#4B286D;font-size:12px" title="' + escHtml(r['Top Opportunity']||'') + '">' + escHtml((r['Top Opportunity']||'').substring(0,70)) + '</td>' +
+      '<td style="max-width:180px;font-weight:600;color:#4B286D;font-size:12px" title="' + escHtml((r['Top SMART Opportunity']||r['Top Opportunity']||'')) + '">' + escHtml(((r['Top SMART Opportunity']||r['Top Opportunity']||'')).substring(0,70)) + '</td>' +
       '<td style="max-width:180px;font-size:12px" title="' + escHtml(r['Overall Opportunities']||'') + '">' + escHtml((r['Overall Opportunities']||'').substring(0,80)) + '</td>' +
-      '<td style="max-width:160px;font-size:12px" title="' + escHtml(r['Recommendations']||'') + '">' + escHtml((r['Recommendations']||'').substring(0,80)) + '</td>' +
+      '<td style="max-width:160px;font-size:12px" title="' + escHtml((r['SMART Recommendation']||r['Recommendations']||'')) + '">' + escHtml(((r['SMART Recommendation']||r['Recommendations']||'')).substring(0,80)) + '</td>' +
       '<td style="max-width:160px;font-size:12px" title="' + escHtml(r['Critical Flags']||'') + '">' + escHtml((r['Critical Flags']||'').substring(0,70)) + '</td>' +
       '<td style="text-align:center;' + repStyle + '">' + escHtml(repPct) + '</td>' +
       '<td>' + evalCell + '</td>' +

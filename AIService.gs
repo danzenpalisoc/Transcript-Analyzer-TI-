@@ -17,8 +17,9 @@ function callFuelIX(prompt) {
       'Authorization': 'Bearer ' + FUELIX_CONFIG.apiKey,
       'Content-Type':  'application/json'
     },
-    payload:           JSON.stringify(payload),
-    muteHttpExceptions: true
+    payload:            JSON.stringify(payload),
+    muteHttpExceptions: true,
+    deadline:           270   // 270s — leaves headroom before the GAS 360s execution limit
   };
   var response = UrlFetchApp.fetch(endpoint, options);
   var code     = response.getResponseCode();
@@ -531,15 +532,22 @@ function buildRepeatsPrompt(transcriptText, knowledgeText) {
     '<div class="ai-title" style="background:#F9A825;color:#fff;border-left:4px solid #E65100;">&#128161; Overall Recommendation &amp; Coaching Summary</div>\n' +
     '<p contenteditable="true" style="font-size:13px;font-weight:700;margin-bottom:8px">&#128313; Summary: [2-3 sentence overall assessment of the agent performance on this call]</p>\n' +
     '<p contenteditable="true" style="font-size:13px;margin-bottom:8px">&#127919; Top Priority for Next Call: [The single most impactful action the agent must take immediately — be specific]</p>\n' +
-    '<p contenteditable="true" style="font-size:13px;margin-bottom:8px">&#128221; Coaching Focus Areas:<br/>1. [First priority — concrete action step]<br/>2. [Second priority — concrete action step]<br/>3. [Third priority — concrete action step]</p>\n' +
+    '<p style="font-size:12px;font-weight:700;color:#7B3F00;margin:0 0 4px">&#127919; SMART Coaching Focus Areas <em style="font-weight:400;font-size:11px">(Specific · Measurable · Attainable · Realistic · Time-bound)</em></p>\n' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px">\n' +
+    '<thead><tr style="background:#FDE8B0"><th style="padding:4px 8px;text-align:left;width:5%">#</th><th style="padding:4px 8px;text-align:left;width:20%">S — Specific Behavior</th><th style="padding:4px 8px;text-align:left;width:19%">M — How to Measure</th><th style="padding:4px 8px;text-align:left;width:16%">A — Attainable Target</th><th style="padding:4px 8px;text-align:left;width:16%">R — Realistic</th><th style="padding:4px 8px;text-align:left;width:24%">T — Timeline</th></tr></thead>\n' +
+    '<tbody>\n' +
+    '<tr><td style="padding:4px 8px;border-bottom:1px solid #fde">1</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Exact behavior to change]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[e.g. Repeat rate drops below 20%]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Achievable for this agent\'s current skill level]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Why this is realistic — e.g. low-effort change, already done on some calls]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[By next 1-on-1 / within 2 weeks]</td></tr>\n' +
+    '<tr><td style="padding:4px 8px;border-bottom:1px solid #fde">2</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Behavior 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Measurement 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Target 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Realistic 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Timeline 2]</td></tr>\n' +
+    '<tr><td style="padding:4px 8px">3</td><td contenteditable="true" style="padding:4px 8px">[Behavior 3]</td><td contenteditable="true" style="padding:4px 8px">[Measurement 3]</td><td contenteditable="true" style="padding:4px 8px">[Target 3]</td><td contenteditable="true" style="padding:4px 8px">[Realistic 3]</td><td contenteditable="true" style="padding:4px 8px">[Timeline 3]</td></tr>\n' +
+    '</tbody></table>\n' +
     '<p contenteditable="true" style="font-size:13px;">&#127775; Manager Coaching Tip: [Specific tip for the Team Leader on how to coach this agent — what to reinforce and what to redirect]</p>\n' +
     '</div>\n\n' +
     '<!-- COACHING TAKEAWAYS SUMMARY — APPEARS SECOND -->\n' +
     '<div class="ai-section" style="background:#E8F5E9;border:2px solid #2B8000;border-radius:8px;padding:14px 18px;margin-bottom:20px">\n' +
     '<div class="ai-title" style="background:#2B8000;color:#fff;border-left:4px solid #1B5E20;">&#127979; Key Coaching Takeaways</div>\n' +
     '<ol class="ai-coaching" style="padding-left:20px;font-size:13px;line-height:2.1">\n' +
-    '<li contenteditable="true">[Most impactful takeaway with specific verbatim example from this call]</li>\n' +
-    '<li contenteditable="true">[Second takeaway]</li>\n' +
+    '<li contenteditable="true">[Most impactful takeaway — cite a verbatim moment from this call and the SMART action to replace it]</li>\n' +
+    '<li contenteditable="true">[Second takeaway — specific, actionable, and measurable]</li>\n' +
     '<li contenteditable="true">[Third takeaway]</li>\n' +
     '</ol>\n' +
     '</div>\n\n' +
@@ -568,18 +576,18 @@ function buildRepeatsPrompt(transcriptText, knowledgeText) {
     '<div class="ai-section">\n' +
     '<div class="ai-title">&#128203; Analysis — Opportunities &amp; Recommendations</div>\n' +
     '<table class="ai-table">\n' +
-    '<thead><tr><th style="width:22%">Parameter</th><th style="width:39%">Finding / Detail</th><th style="width:39%">Recommendation</th></tr></thead>\n' +
+    '<thead><tr><th style="width:20%">Parameter</th><th style="width:28%">Finding / Detail</th><th style="width:52%">SMART Recommendation <span style="font-size:10px;font-weight:400">(Specific · Measurable · Attainable · Realistic · Time-bound)</span></th></tr></thead>\n' +
     '<tbody>\n' +
-    '<tr><td class="ai-label-col">Repeat Projection</td><td contenteditable="true">[% and drivers]</td><td contenteditable="true">[what to do]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Issue Resolution</td><td contenteditable="true">[what was/was not resolved]</td><td contenteditable="true">[recommendation]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Process / Policy Gaps</td><td contenteditable="true">[gaps found]</td><td contenteditable="true">[recommendation]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Missing Steps</td><td contenteditable="true">[steps agent skipped]</td><td contenteditable="true">[what steps to follow]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Callback Policy</td><td contenteditable="true">[followed or not]</td><td contenteditable="true">[recommendation]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Transfer Analysis</td><td contenteditable="true">[transfer occurred? valid?]</td><td contenteditable="true">[recommendation]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Probing Questions</td><td contenteditable="true">[questions used by agent]</td><td contenteditable="true">[better questions to use]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Agent Strengths</td><td contenteditable="true">[what agent did well]</td><td contenteditable="true">[reinforce this]</td></tr>\n' +
-    '<tr><td class="ai-label-col">FCR Assessment</td><td contenteditable="true">[could this be 1 call?]</td><td contenteditable="true">[best journey description]</td></tr>\n' +
-    '<tr><td class="ai-label-col">3 Actions to Resolve</td><td contenteditable="true" colspan="2">[1. action  2. action  3. action]</td></tr>\n' +
+    '<tr><td class="ai-label-col">Repeat Projection</td><td contenteditable="true">[% and drivers]</td><td contenteditable="true">[S: exact behavior to change · M: target repeat % · A: achievable step · R: realistic given agent\'s current skill · T: by next audit or 2 weeks]</td></tr>\n' +
+    '<tr><td class="ai-label-col">Issue Resolution</td><td contenteditable="true">[what was/was not resolved]</td><td contenteditable="true">[S: specific resolution step missed · M: measure by FCR rate · A: achievable · R: realistic — low effort to fix · T: apply from next call]</td></tr>\n' +
+    '<tr><td class="ai-label-col">Process / Policy Gaps</td><td contenteditable="true">[gaps found]</td><td contenteditable="true">[S: which policy step · M: zero policy misses on next 5 calls · A: achievable with coaching · R: realistic — agent has tools · T: within 1 week]</td></tr>\n' +
+    '<tr><td class="ai-label-col">Missing Steps</td><td contenteditable="true">[steps agent skipped]</td><td contenteditable="true">[S: name the exact missed step · M: applied on every relevant call · A: yes · R: realistic — already knows the step · T: immediately]</td></tr>\n' +
+    '<tr><td class="ai-label-col">Callback Policy</td><td contenteditable="true">[followed or not]</td><td contenteditable="true">[S: exact policy requirement · M: 100% compliance on next calls · A: yes · R: realistic — simple script change · T: next call]</td></tr>\n' +
+    '<tr><td class="ai-label-col">Transfer Analysis</td><td contenteditable="true">[transfer occurred? valid?]</td><td contenteditable="true">[S: correct transfer criteria · M: 0 invalid transfers next month · A: achievable · R: realistic — criteria are clear · T: by next QA review]</td></tr>\n' +
+    '<tr><td class="ai-label-col">Probing Questions</td><td contenteditable="true">[questions used by agent]</td><td contenteditable="true">[S: 2 specific open-ended questions · M: used on every call · A: easy to practice · R: realistic — short habit to build · T: next call]</td></tr>\n' +
+    '<tr><td class="ai-label-col">Agent Strengths</td><td contenteditable="true">[what agent did well]</td><td contenteditable="true">[S: keep doing X · M: maintain on 90% of calls · A: already demonstrated · R: natural strength · T: ongoing]</td></tr>\n' +
+    '<tr><td class="ai-label-col">FCR Assessment</td><td contenteditable="true">[could this be 1 call?]</td><td contenteditable="true">[S: what would make it 1-call · M: FCR rate target · A: achievable · R: realistic with coaching · T: within 2 weeks]</td></tr>\n' +
+    '<tr><td class="ai-label-col">3 SMART Actions</td><td contenteditable="true" colspan="2">[1. S:[action] M:[metric] A:[target] R:[why realistic] T:[timeline]   2. S:[action] M:[metric] A:[target] R:[why realistic] T:[timeline]   3. S:[action] M:[metric] A:[target] R:[why realistic] T:[timeline]]</td></tr>\n' +
     '</tbody>\n' +
     '</table>\n' +
     '</div>\n\n' +
@@ -589,9 +597,13 @@ function buildRepeatsPrompt(transcriptText, knowledgeText) {
     '[Repeat this block for EACH critical flag found:]\n' +
     '<div class="ai-flag">\n' +
     '  <div class="ai-flag-title">&#9888; [Name of missed parameter or behavior]</div>\n' +
-    '  <div class="ai-flag-detail">[Detailed explanation of what was missed and why it matters]</div>\n' +
+    '  <div class="ai-flag-detail">[Detailed explanation of what was missed and why it matters to the customer and FCR]</div>\n' +
+    '  <div style="background:#FFF3E0;border:1px solid #FFB74D;border-radius:4px;padding:8px 12px;margin:8px 0;font-size:12px">\n' +
+    '    <strong style="color:#E65100">&#127919; SMART Coaching Goal:</strong><br/>\n' +
+    '    <span contenteditable="true">S: [Specific behavior to change for this flag] | M: [How success is measured — e.g. 0 occurrences in next 5 calls] | A: [Achievable target] | R: [Why this is realistic — e.g. agent already has the knowledge, low-effort fix] | T: [Timeline — e.g. within 2 coaching sessions]</span>\n' +
+    '  </div>\n' +
     '  <div class="ai-flag-rl-label">&#127908; Sample Positioning Statement — Roleplay &amp; Practice</div>\n' +
-    '  <div class="ai-flag-stmt" contenteditable="true">"[A roleplay-ready statement the coach can use to practice this with the agent]"</div>\n' +
+    '  <div class="ai-flag-stmt" contenteditable="true">"[A complete, roleplay-ready statement the coach can say verbatim — e.g. \'[Agent name], when a customer asks X, try saying: [exact words]. This will help them feel Y and reduce repeat calls by Z%.\'  ]"</div>\n' +
     '</div>\n' +
     '</div>\n\n' +
     '</div>\n\n' +
@@ -613,12 +625,12 @@ function buildRepeatsPrompt(transcriptText, knowledgeText) {
     '<div class="ai-section">\n' +
     '<div class="ai-title">&#127979; Coaching Takeaways</div>\n' +
     '<ol class="ai-coaching">\n' +
-    '<li contenteditable="true">[coaching point 1]</li>\n' +
-    '<li contenteditable="true">[coaching point 2]</li>\n' +
-    '<li contenteditable="true">[coaching point 3]</li>\n' +
+    '<li contenteditable="true">[Most impactful SMART takeaway — cite verbatim from call. S:[exact behavior] M:[metric] A:[realistic] T:[timeline]]</li>\n' +
+    '<li contenteditable="true">[Second SMART takeaway — specific and measurable]</li>\n' +
+    '<li contenteditable="true">[Third SMART takeaway]</li>\n' +
     '</ol>\n' +
     '</div>\n\n' +
-    'REPLACE all [placeholder] text with actual analysis from the transcript.\n' +
+    'REPLACE all [placeholder] text with actual SMART analysis from the transcript.\n' +
     'Do NOT include any text outside the HTML tags.\n' +
     'Do NOT use markdown.\n' +
     'Make all contenteditable="true" attributes present on td and li elements.\n\n' +
@@ -644,15 +656,22 @@ function buildSalesPrompt(transcriptText, knowledgeText) {
     '<div class="ai-title" style="background:#F9A825;color:#fff;border-left:4px solid #E65100;">&#128161; Overall Recommendation &amp; Coaching Summary</div>\n' +
     '<p contenteditable="true" style="font-size:13px;font-weight:700;margin-bottom:8px">&#128313; Summary: [2-3 sentence overall assessment of the agent sales performance on this call]</p>\n' +
     '<p contenteditable="true" style="font-size:13px;margin-bottom:8px">&#127919; Top Priority for Next Call: [The single most impactful sales action the agent must apply immediately — be specific and actionable]</p>\n' +
-    '<p contenteditable="true" style="font-size:13px;margin-bottom:8px">&#128221; Coaching Focus Areas:<br/>1. [First priority — concrete sales action step]<br/>2. [Second priority — concrete action step]<br/>3. [Third priority — concrete action step]</p>\n' +
+    '<p style="font-size:12px;font-weight:700;color:#7B3F00;margin:0 0 4px">&#127919; SMART Coaching Focus Areas <em style="font-weight:400;font-size:11px">(Specific · Measurable · Attainable · Realistic · Time-bound)</em></p>\n' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px">\n' +
+    '<thead><tr style="background:#FDE8B0"><th style="padding:4px 8px;text-align:left;width:5%">#</th><th style="padding:4px 8px;text-align:left;width:20%">S — Specific Sales Behavior</th><th style="padding:4px 8px;text-align:left;width:19%">M — How to Measure</th><th style="padding:4px 8px;text-align:left;width:16%">A — Attainable Target</th><th style="padding:4px 8px;text-align:left;width:16%">R — Realistic</th><th style="padding:4px 8px;text-align:left;width:24%">T — Timeline</th></tr></thead>\n' +
+    '<tbody>\n' +
+    '<tr><td style="padding:4px 8px;border-bottom:1px solid #fde">1</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Exact sales behavior — e.g. Always present the bundle after identifying the need]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[e.g. Conversion rate or offer-made rate on next 5 calls]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Achievable step for this agent]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Why realistic — e.g. agent knows the product, small habit shift]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[By next 1-on-1 / within 2 weeks]</td></tr>\n' +
+    '<tr><td style="padding:4px 8px;border-bottom:1px solid #fde">2</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Sales behavior 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Measurement 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Target 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Realistic 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Timeline 2]</td></tr>\n' +
+    '<tr><td style="padding:4px 8px">3</td><td contenteditable="true" style="padding:4px 8px">[Sales behavior 3]</td><td contenteditable="true" style="padding:4px 8px">[Measurement 3]</td><td contenteditable="true" style="padding:4px 8px">[Target 3]</td><td contenteditable="true" style="padding:4px 8px">[Realistic 3]</td><td contenteditable="true" style="padding:4px 8px">[Timeline 3]</td></tr>\n' +
+    '</tbody></table>\n' +
     '<p contenteditable="true" style="font-size:13px;">&#127775; Manager Coaching Tip: [Specific tip for the Team Leader on how to coach this agent — what to reinforce and what to redirect]</p>\n' +
     '</div>\n\n' +
     '<!-- COACHING TAKEAWAYS SUMMARY — SECOND AT THE TOP -->\n' +
     '<div class="ai-section" style="background:#E8F5E9;border:2px solid #2B8000;border-radius:8px;padding:14px 18px;margin-bottom:20px">\n' +
     '<div class="ai-title" style="background:#2B8000;color:#fff;border-left:4px solid #1B5E20;">&#127979; Key Coaching Takeaways</div>\n' +
     '<ol class="ai-coaching" style="padding-left:20px;font-size:13px;line-height:2.1">\n' +
-    '<li contenteditable="true">[Most impactful sales coaching takeaway with specific verbatim example from this call]</li>\n' +
-    '<li contenteditable="true">[Second takeaway]</li>\n' +
+    '<li contenteditable="true">[Most impactful sales coaching takeaway — cite a verbatim moment from this call + the SMART action to replace it]</li>\n' +
+    '<li contenteditable="true">[Second takeaway — specific, actionable, and measurable]</li>\n' +
     '<li contenteditable="true">[Third takeaway]</li>\n' +
     '</ol>\n' +
     '</div>\n\n' +
@@ -690,11 +709,11 @@ function buildSalesPrompt(transcriptText, knowledgeText) {
     '<div class="ai-title">[Element Name]</div>\n' +
     '<table class="ai-table">\n' +
     '<thead><tr>\n' +
-    '  <th style="width:22%">Skill Name</th>\n' +
+    '  <th style="width:18%">Skill Name</th>\n' +
     '  <th style="width:6%">Score</th>\n' +
-    '  <th style="width:24%">Analysis &amp; Strengths</th>\n' +
-    '  <th style="width:24%">Areas of Opportunity</th>\n' +
-    '  <th style="width:24%">Recommendation &amp; Sample Positioning Statement</th>\n' +
+    '  <th style="width:20%">Analysis &amp; Strengths</th>\n' +
+    '  <th style="width:20%">Areas of Opportunity</th>\n' +
+    '  <th style="width:36%">SMART Recommendation &amp; Sample Positioning Statement</th>\n' +
     '</tr></thead>\n' +
     '<tbody>\n' +
     '[One row per subelement — fill all 5 cells with actual analysis:]\n' +
@@ -702,8 +721,8 @@ function buildSalesPrompt(transcriptText, knowledgeText) {
     '  <td class="ai-label-col">[subelement name]</td>\n' +
     '  <td><span class="ai-badge [class]">[0-5]/5</span></td>\n' +
     '  <td contenteditable="true">[analysis of what agent did well, with verbatim quote from transcript]</td>\n' +
-    '  <td contenteditable="true">[specific verbatim example of what the agent missed or could improve]</td>\n' +
-    '  <td contenteditable="true">[concrete coaching recommendation + a sample positioning statement the coach can use verbatim, in quotes, e.g. "James, next time try saying: \'Great question! Let me show you exactly how this can save you money every month\'"]</td>\n' +
+    '  <td contenteditable="true">[specific verbatim example of what agent missed or could improve]</td>\n' +
+    '  <td contenteditable="true">S: [exact behavior to add/change] | M: [measurable outcome — e.g. offer accepted on next 3 calls] | A: [achievable step] | R: [why realistic — e.g. agent already does this occasionally, low-effort habit] | T: [timeline — e.g. starting next call]<br/><br/>&#127908; <em>"[Complete roleplay-ready statement, e.g. \'[Name], next time after asking about their services, say: \'I noticed you\'re paying for X — did you know we can bundle Y and save you $Z per month? Want me to walk you through it?\'\']"</em></td>\n' +
     '</tr>\n' +
     '</tbody>\n' +
     '</table>\n' +
@@ -715,8 +734,12 @@ function buildSalesPrompt(transcriptText, knowledgeText) {
     '<div class="ai-flag">\n' +
     '  <div class="ai-flag-title">&#9888; [Missed parameter or behavior]</div>\n' +
     '  <div class="ai-flag-detail">[Detailed explanation of what was missed and why it matters to the customer and the sale]</div>\n' +
+    '  <div style="background:#FFF3E0;border:1px solid #FFB74D;border-radius:4px;padding:8px 12px;margin:8px 0;font-size:12px">\n' +
+    '    <strong style="color:#E65100">&#127919; SMART Coaching Goal:</strong><br/>\n' +
+    '    <span contenteditable="true">S: [Specific sales behavior to change] | M: [How success is measured — e.g. offer made on every eligible call] | A: [Achievable target] | R: [Why realistic — e.g. agent understands the product, simple technique to apply] | T: [Timeline — e.g. within 2 coaching sessions / by next QA review]</span>\n' +
+    '  </div>\n' +
     '  <div class="ai-flag-rl-label">&#127908; Sample Positioning Statement — Roleplay &amp; Practice</div>\n' +
-    '  <div class="ai-flag-stmt" contenteditable="true">"[A complete, roleplay-ready statement the coach can practice with the agent verbatim]"</div>\n' +
+    '  <div class="ai-flag-stmt" contenteditable="true">"[Complete, roleplay-ready statement the coach can say verbatim — e.g. \'[Agent], when the customer says X, try: [exact sales phrase]. This makes the offer feel relevant and personal — and it closes more naturally.\']"</div>\n' +
     '</div>\n' +
     '</div>\n\n' +
     '<!-- HIGHLIGHTS AND LOWLIGHTS -->\n' +
@@ -743,21 +766,24 @@ function buildSalesPrompt(transcriptText, knowledgeText) {
     '<br/>\n' +
     '<p contenteditable="true"><strong>Top Priority for Next Call:</strong> [The single most impactful thing the agent should focus on immediately — be specific and actionable]</p>\n' +
     '<br/>\n' +
-    '<p contenteditable="true"><strong>Coaching Focus Areas:</strong><br/>\n' +
-    '1. [First priority coaching area with a concrete action step]<br/>\n' +
-    '2. [Second priority coaching area with a concrete action step]<br/>\n' +
-    '3. [Third priority coaching area with a concrete action step]</p>\n' +
-    '<br/>\n' +
-    '<p contenteditable="true"><strong>Manager Coaching Tip:</strong> [A specific tip for the Team Leader on how to coach this agent effectively — what to reinforce and what to redirect]</p>\n' +
+    '<p><strong>SMART Coaching Focus Areas:</strong></p>\n' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">\n' +
+    '<thead><tr style="background:#F5F0FF"><th style="padding:4px 8px;text-align:left;width:5%">#</th><th style="padding:4px 8px;text-align:left;width:20%">S — Specific Behavior</th><th style="padding:4px 8px;text-align:left;width:18%">M — How to Measure</th><th style="padding:4px 8px;text-align:left;width:15%">A — Attainable</th><th style="padding:4px 8px;text-align:left;width:18%">R — Realistic</th><th style="padding:4px 8px;text-align:left;width:24%">T — Timeline</th></tr></thead>\n' +
+    '<tbody>\n' +
+    '<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">1</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Specific sales behavior]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Metric]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Attainable target]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Why realistic for this agent]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[By next session]</td></tr>\n' +
+    '<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">2</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Behavior 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Metric 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Target 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Realistic 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Timeline 2]</td></tr>\n' +
+    '<tr><td style="padding:4px 8px">3</td><td contenteditable="true" style="padding:4px 8px">[Behavior 3]</td><td contenteditable="true" style="padding:4px 8px">[Metric 3]</td><td contenteditable="true" style="padding:4px 8px">[Target 3]</td><td contenteditable="true" style="padding:4px 8px">[Realistic 3]</td><td contenteditable="true" style="padding:4px 8px">[Timeline 3]</td></tr>\n' +
+    '</tbody></table>\n' +
+    '<p contenteditable="true"><strong>Manager Coaching Tip:</strong> [A specific tip for the Team Leader on how to coach this agent — what to reinforce and what to redirect]</p>\n' +
     '</div>\n' +
     '</div>\n\n' +
     '<!-- COACHING TAKEAWAYS -->\n' +
     '<div class="ai-section">\n' +
     '<div class="ai-title">&#127979; Coaching Takeaways</div>\n' +
     '<ol class="ai-coaching">\n' +
-    '<li contenteditable="true">[Most impactful coaching point with specific example from this call]</li>\n' +
-    '<li contenteditable="true">[Second coaching point]</li>\n' +
-    '<li contenteditable="true">[Third coaching point]</li>\n' +
+    '<li contenteditable="true">[Most impactful coaching point — cite verbatim from call + SMART action: S:[behavior] M:[metric] T:[timeline]]</li>\n' +
+    '<li contenteditable="true">[Second SMART coaching point]</li>\n' +
+    '<li contenteditable="true">[Third SMART coaching point]</li>\n' +
     '</ol>\n' +
     '</div>\n\n' +
     'Badge class rules: score 3-5 = ai-badge-good (green), score 2-2.9 = ai-badge-mid (amber), score 1-1.9 = ai-badge-bad (red), score 0 = ai-badge-zero (grey)\n' +
