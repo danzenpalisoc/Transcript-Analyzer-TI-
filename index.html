@@ -1164,10 +1164,6 @@ body {
     <p>Quality Analyst Team</p>
   </div>
   <div style="display:flex;gap:10px;align-items:center">
-    <div id="email-mode-wrap" style="display:none;align-items:center;gap:7px">
-      <span style="font-size:10px;color:rgba(255,255,255,.65);font-weight:700;letter-spacing:.7px">EMAIL</span>
-      <button id="email-mode-btn" class="live" onclick="toggleEmailMode()" title="Toggle email mode: Live sends to real recipients, Test sends to Admin/Dev only">LIVE</button>
-    </div>
     <button onclick="openDashboard()"
        style="background:transparent;color:rgba(255,255,255,.85);font-size:12px;font-weight:600;
               border:1px solid rgba(255,255,255,.4);border-radius:4px;padding:8px 14px;
@@ -1202,6 +1198,10 @@ body {
           <span id="observer-display" style="font-size:13px;font-weight:600;color:#1A1A2E;white-space:nowrap">Loading…</span>
         </div>
         <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <div id="email-mode-wrap" style="display:none;align-items:center;gap:6px;margin-right:4px">
+            <span style="font-size:10px;font-weight:700;color:#54565A;text-transform:uppercase;letter-spacing:.5px">Email</span>
+            <button id="email-mode-btn" class="live" onclick="toggleEmailMode()" title="Live: sends to real recipients | Test: sends to Admin/Dev only">LIVE</button>
+          </div>
           <button onclick="saveAsDraft(this)"
             style="background:#fff;border:1.5px solid var(--telus-purple);color:var(--telus-purple);
                    border-radius:4px;padding:6px 14px;font-size:11px;font-weight:600;
