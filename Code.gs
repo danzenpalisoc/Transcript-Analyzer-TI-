@@ -2148,22 +2148,33 @@ function getRosterBySapId(sapId)      { return lookupBySapId(sapId); }
 function getRosterAll()               { return getAllRosterData(); }
 function getObserverInfo() {
   var obs = resolveObserver() || {};
+
+  // Step 1: get email — try both Session methods independently
+  var userEmail = '';
+  try { userEmail = Session.getActiveUser().getEmail()   || ''; } catch(e) {}
+  try { if (!userEmail) userEmail = Session.getEffectiveUser().getEmail() || ''; } catch(e) {}
+  userEmail = userEmail.toLowerCase().trim();
+  Logger.log('getObserverInfo detected email: ' + userEmail);
+
+  // Always populate email/name on obs so Observer display works
+  if (!obs.email && userEmail) obs.email = userEmail;
+  if (!obs.name  && userEmail) obs.name  = userEmail.split('@')[0];
+
+  // Step 2: admin check — separate try-catch so email/name are always set above
+  obs.isAdmin = false;
   try {
-    // getActiveUser() returns '' in USER_DEPLOYING web apps — use getEffectiveUser() as fallback
-    var userEmail = (Session.getActiveUser().getEmail() ||
-                     Session.getEffectiveUser().getEmail()).toLowerCase().trim();
-    obs.email    = obs.email || userEmail;  // ensure email is always set
-    obs.name     = obs.name  || (userEmail ? userEmail.split('@')[0] : '');
-    var adminList  = getRecipientsFromRoster('Admin/Dev');
-    var userLocal  = userEmail.split('@')[0];
-    obs.isAdmin    = !!userEmail && adminList.some(function(r) {
-      var adminEmail = (r.email || '').toLowerCase().trim();
-      // Exact match OR same username across @telus.com / @telusinternational.com
-      return adminEmail === userEmail || (userLocal && adminEmail.split('@')[0] === userLocal);
-    });
+    if (userEmail) {
+      var userLocal = userEmail.split('@')[0];
+      var adminList = getRecipientsFromRoster('Admin/Dev');
+      Logger.log('getObserverInfo adminList count: ' + adminList.length);
+      obs.isAdmin = adminList.some(function(r) {
+        var ae = (r.email || '').toLowerCase().trim();
+        return ae === userEmail || (userLocal && ae.split('@')[0] === userLocal);
+      });
+      Logger.log('getObserverInfo isAdmin: ' + obs.isAdmin);
+    }
   } catch(e) {
     Logger.log('getObserverInfo isAdmin check error: ' + e);
-    obs.isAdmin = false;
   }
   return obs;
 }
