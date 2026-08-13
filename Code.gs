@@ -2149,12 +2149,17 @@ function getRosterAll()               { return getAllRosterData(); }
 function getObserverInfo() {
   var obs = resolveObserver() || {};
   try {
-    var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    // getActiveUser() returns '' in USER_DEPLOYING web apps — use getEffectiveUser() as fallback
+    var userEmail = (Session.getActiveUser().getEmail() ||
+                     Session.getEffectiveUser().getEmail()).toLowerCase().trim();
+    obs.email    = obs.email || userEmail;  // ensure email is always set
+    obs.name     = obs.name  || (userEmail ? userEmail.split('@')[0] : '');
     var adminList = getRecipientsFromRoster('Admin/Dev');
-    obs.isAdmin = adminList.some(function(r) {
+    obs.isAdmin   = !!userEmail && adminList.some(function(r) {
       return (r.email || '').toLowerCase().trim() === userEmail;
     });
   } catch(e) {
+    Logger.log('getObserverInfo isAdmin check error: ' + e);
     obs.isAdmin = false;
   }
   return obs;
