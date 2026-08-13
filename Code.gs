@@ -2149,33 +2149,20 @@ function getRosterAll()               { return getAllRosterData(); }
 function getObserverInfo() {
   var obs = resolveObserver() || {};
 
-  // Step 1: get email — try both Session methods independently
+  // Get email — try both Session methods independently
   var userEmail = '';
-  try { userEmail = Session.getActiveUser().getEmail()   || ''; } catch(e) {}
+  try { userEmail = Session.getActiveUser().getEmail()  || ''; } catch(e) {}
   try { if (!userEmail) userEmail = Session.getEffectiveUser().getEmail() || ''; } catch(e) {}
   userEmail = userEmail.toLowerCase().trim();
-  Logger.log('getObserverInfo detected email: ' + userEmail);
 
-  // Always populate email/name on obs so Observer display works
+  // Always populate email/name so Observer display works
   if (!obs.email && userEmail) obs.email = userEmail;
   if (!obs.name  && userEmail) obs.name  = userEmail.split('@')[0];
 
-  // Step 2: admin check — separate try-catch so email/name are always set above
-  obs.isAdmin = false;
-  try {
-    if (userEmail) {
-      var userLocal = userEmail.split('@')[0];
-      var adminList = getRecipientsFromRoster('Admin/Dev');
-      Logger.log('getObserverInfo adminList count: ' + adminList.length);
-      obs.isAdmin = adminList.some(function(r) {
-        var ae = (r.email || '').toLowerCase().trim();
-        return ae === userEmail || (userLocal && ae.split('@')[0] === userLocal);
-      });
-      Logger.log('getObserverInfo isAdmin: ' + obs.isAdmin);
-    }
-  } catch(e) {
-    Logger.log('getObserverInfo isAdmin check error: ' + e);
-  }
+  // Admin check — compare username against hardcoded ADMIN_USERNAMES list (no external sheet needed)
+  var userLocal = userEmail.split('@')[0];
+  obs.isAdmin = !!userLocal && ADMIN_USERNAMES.indexOf(userLocal) !== -1;
+
   return obs;
 }
 function getAuditLogData()            { return readAuditLog(); }

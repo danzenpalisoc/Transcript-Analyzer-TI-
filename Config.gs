@@ -49,6 +49,14 @@ var AUDIT_TRACKING_SS_ID = '1wy65jF6bz15tIQs5uozxksA2z7yDwxWOszaOrVCGuaM';
 var QA_ROLE    = 'QA';
 var QA_TL_ROLE = 'QA Team Leader';
 
+// Admin/Dev usernames (part before @) — controls Live/Test toggle visibility
+var ADMIN_USERNAMES = [
+  'danzen.palisoc',
+  'lobell.bantaya',
+  'carlos.maldonado',
+  'robin.joseph'
+];
+
 // AT DATA GCP file — for VTID lookup
 var AT_DATA_GCP_SS_ID    = '1EQ1QDTgXukygNlt6mOJ92jFWP5sc-X0AWq8wreVy3ls';
 var AT_DATA_AGENT_COL    = 2;   // Column C (0-based) — Agent_Name
