@@ -2154,9 +2154,12 @@ function getObserverInfo() {
                      Session.getEffectiveUser().getEmail()).toLowerCase().trim();
     obs.email    = obs.email || userEmail;  // ensure email is always set
     obs.name     = obs.name  || (userEmail ? userEmail.split('@')[0] : '');
-    var adminList = getRecipientsFromRoster('Admin/Dev');
-    obs.isAdmin   = !!userEmail && adminList.some(function(r) {
-      return (r.email || '').toLowerCase().trim() === userEmail;
+    var adminList  = getRecipientsFromRoster('Admin/Dev');
+    var userLocal  = userEmail.split('@')[0];
+    obs.isAdmin    = !!userEmail && adminList.some(function(r) {
+      var adminEmail = (r.email || '').toLowerCase().trim();
+      // Exact match OR same username across @telus.com / @telusinternational.com
+      return adminEmail === userEmail || (userLocal && adminEmail.split('@')[0] === userLocal);
     });
   } catch(e) {
     Logger.log('getObserverInfo isAdmin check error: ' + e);
