@@ -278,6 +278,93 @@ function enrichDashboardData() {
   Logger.log('=== Enriched ' + enriched + ' rows ===');
 }
 
+// ── Fast HTML-only RCA extraction (no AI call — used in submitTranscript) ────────
+// Parses the AI-generated HTML directly instead of making a second API call.
+// Saves 5–30 seconds on every submission.
+function extractStructuredRCAFromHTML(html) {
+  if (!html) return null;
+  try {
+    var stripTags = function(s) {
+      return (s || '').replace(/<[^>]+>/g, ' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
+    };
+
+    // ── Critical flags (from ai-flag-title divs) ──────────────────────────────
+    var flags = [];
+    var flagRx = /<div[^>]*class="ai-flag-title"[^>]*>([\s\S]*?)<\/div>/gi;
+    var fm;
+    while ((fm = flagRx.exec(html)) !== null) {
+      var ft = stripTags(fm[1]).replace(/^[^a-zA-Z]+/, '').trim();
+      if (ft && ft.length < 200 && ft.toLowerCase() !== 'none') flags.push(ft);
+    }
+
+    // ── Repeat projection % ───────────────────────────────────────────────────
+    var repeatPct = '0';
+    var rpMatch = html.match(/Repeat(?:.*?)(\d{1,3})%/i) ||
+                  html.match(/(\d{1,3})%(?:.*?)repeat/i);
+    if (rpMatch) repeatPct = rpMatch[1];
+
+    // ── SMART table rows (amber header = FDE8B0 or SMART table) ──────────────
+    var smartS='', smartM='', smartA='', smartR='', smartT='';
+    var tbodyMatch = html.match(/FDE8B0[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i);
+    if (!tbodyMatch) tbodyMatch = html.match(/SMART[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i);
+    if (tbodyMatch) {
+      var rowRx = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+      var rm = rowRx.exec(tbodyMatch[1]);
+      if (rm) {
+        var cells = [];
+        var cellRx = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+        var cm;
+        while ((cm = cellRx.exec(rm[1])) !== null) cells.push(stripTags(cm[1]));
+        // cells[0] = #, [1]=S, [2]=M, [3]=A, [4]=R or T, [5]=T
+        if (cells.length >= 3) {
+          smartS = cells[1] || '';
+          smartM = cells[2] || '';
+          smartA = cells[3] || '';
+          smartR = cells.length >= 5 ? (cells[4] || '') : '';
+          smartT = cells.length >= 6 ? (cells[5] || '') : (cells[4] || '');
+        }
+      }
+    }
+
+    // ── Call summary (from ai-summary div or Summary: paragraph) ─────────────
+    var callSummary = '';
+    var sumDiv = html.match(/<div[^>]*class="ai-summary"[^>]*>([\s\S]*?)<\/div>/i);
+    if (sumDiv) { callSummary = stripTags(sumDiv[1]).substring(0, 250); }
+    if (!callSummary) {
+      var sumPara = html.match(/Summary[:\s]+([\s\S]*?)(?:<br|<p|<\/p|\n\n)/i);
+      if (sumPara) callSummary = stripTags(sumPara[1]).substring(0, 250);
+    }
+
+    // ── Top opportunity = first SMART S, or first flag ────────────────────────
+    var topOpp = (smartS || (flags[0] || '')).substring(0, 150);
+
+    // ── Call driver from Issue Resolution or first flag ───────────────────────
+    var callDriver = '';
+    var cdMatch = html.match(/Call (?:Reason|Driver)[^:]*[:\s]+([\s\S]{5,80}?)(?:<\/td>|<br|<\/p)/i);
+    if (cdMatch) callDriver = stripTags(cdMatch[1]).substring(0, 100);
+    if (!callDriver && flags[0]) callDriver = flags[0].substring(0, 100);
+
+    return {
+      callDriver:        callDriver,
+      rcaCategory:       '',   // requires AI — populated later by enrichDashboardData
+      rcaSubParameter:   flags.slice(0,2).join('; ').substring(0, 100),
+      topOpportunity:    topOpp,
+      productOpportunity:'',   // requires AI
+      callSummaryShort:  callSummary,
+      criticalFlags:     flags.slice(0, 5).join(', ').substring(0, 500),
+      repeatPct:         repeatPct,
+      smartS:            smartS.substring(0, 300),
+      smartM:            smartM.substring(0, 300),
+      smartA:            smartA.substring(0, 300),
+      smartR:            smartR.substring(0, 300),
+      smartT:            smartT.substring(0, 200)
+    };
+  } catch(e) {
+    Logger.log('extractStructuredRCAFromHTML error: ' + e);
+    return null;
+  }
+}
+
 // ── Call AI to extract structured RCA fields from cached HTML ─────────────────
 function extractStructuredRCA(html, analysisType, auditRef) {
   var isSales = (analysisType || '').indexOf('Sales') !== -1;
@@ -2477,9 +2564,9 @@ function submitTranscript(formData) {
       var issueResolved    = extractTextBlock(html, 'Issue Resolution')  || '';
       var transferOccurred = extractTextBlock(html, 'Transfer')          || '';
 
-      // Structured RCA fields — extracted via AI for new submissions
+      // Structured RCA fields — fast HTML parse (no second AI call; AI enrichment runs later)
       var structured = null;
-      try { structured = extractStructuredRCA(html, analysisLabel, auditRef); } catch(re) {}
+      try { structured = extractStructuredRCAFromHTML(html); } catch(re) {}
       var callDriver        = structured ? structured.callDriver        : '';
       var rcaCategory       = structured ? structured.rcaCategory       : '';
       var rcaSubParameter   = structured ? structured.rcaSubParameter   : '';
@@ -2832,58 +2919,68 @@ function buildEvalFormHTML(formData, auditRef, analysisResult) {
 
   return '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
   '<style>' +
-  /* ── Page & body ── */
-  'body{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:11px;color:#222;margin:0;padding:10px 14px;background:#fff;width:100%}' +
+  /* ── Page: force narrow margins so Google Docs PDF uses full width ── */
+  '@page{margin:7mm 6mm!important;size:A4}' +
+  /* ── Body ── */
+  'html,body{margin:0!important;padding:2px 3px!important;background:#fff;width:100%!important;' +
+    'font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:10.5px;color:#222}' +
   /* ── Header ── */
-  '.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;border-bottom:3px solid #4B286D;padding-bottom:10px}' +
-  '.hdr-left h1{font-size:17px;font-weight:800;color:#4B286D;margin:0 0 2px}' +
-  '.hdr-left p{font-size:10px;color:#555;margin:0}' +
-  '.hdr-logo{font-size:10px;font-weight:700;color:#4B286D;text-align:right;border:2px solid #4B286D;padding:5px 9px;border-radius:4px}' +
-  '.ref-bar{background:#4B286D;color:#fff;padding:5px 12px;border-radius:4px;font-size:10px;margin-bottom:12px;display:flex;justify-content:space-between}' +
+  '.hdr{display:flex;justify-content:space-between;align-items:flex-start;' +
+    'margin-bottom:10px;border-bottom:3px solid #4B286D;padding-bottom:8px}' +
+  '.hdr-left h1{font-size:15px;font-weight:800;color:#4B286D;margin:0 0 2px}' +
+  '.hdr-left p{font-size:9.5px;color:#555;margin:0}' +
+  '.hdr-logo{font-size:9.5px;font-weight:700;color:#4B286D;text-align:right;border:2px solid #4B286D;padding:4px 8px;border-radius:4px}' +
+  '.ref-bar{background:#4B286D;color:#fff;padding:4px 10px;border-radius:3px;font-size:9.5px;margin-bottom:9px;display:flex;justify-content:space-between}' +
   /* ── Sections ── */
-  '.section{margin-bottom:12px}' +
-  '.section-title{font-size:11px;font-weight:700;color:#4B286D;border-bottom:2px solid #4B286D;padding-bottom:3px;margin-bottom:8px}' +
+  '.section{margin-bottom:9px}' +
+  '.section-title{font-size:10px;font-weight:700;color:#4B286D;border-bottom:2px solid #4B286D;padding-bottom:2px;margin-bottom:6px}' +
   /* ── Detail grids ── */
   '.detail-grid{display:table;width:100%;border-collapse:collapse}' +
   '.detail-row{display:table-row}' +
-  '.detail-label{display:table-cell;font-weight:700;color:#555;padding:3px 12px 3px 0;width:120px;font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;vertical-align:top;white-space:nowrap}' +
-  '.detail-val{display:table-cell;padding:3px 0;font-size:10.5px;vertical-align:top;border-bottom:1px solid #F0F0F0;word-break:break-word}' +
+  '.detail-label{display:table-cell;font-weight:700;color:#555;padding:2px 10px 2px 0;width:110px;font-size:8.5px;text-transform:uppercase;letter-spacing:.3px;vertical-align:top;white-space:nowrap}' +
+  '.detail-val{display:table-cell;padding:2px 0;font-size:10px;vertical-align:top;border-bottom:1px solid #F0F0F0;word-break:break-word}' +
   '.two-col{display:table;width:100%;table-layout:fixed}' +
-  '.col-left{display:table-cell;width:50%;padding-right:8px;vertical-align:top}' +
-  '.col-right{display:table-cell;width:50%;padding-left:8px;vertical-align:top}' +
+  '.col-left{display:table-cell;width:50%;padding-right:6px;vertical-align:top}' +
+  '.col-right{display:table-cell;width:50%;padding-left:6px;vertical-align:top}' +
   /* ── Remarks boxes ── */
-  '.remarks-box{border:1px solid #D8D8D8;border-radius:4px;padding:8px 10px;background:#FAFAFA;font-size:10.5px;line-height:1.6;white-space:pre-wrap;min-height:60px;word-break:break-word}' +
-  '.remarks-label{font-size:9.5px;font-weight:700;color:#4B286D;text-transform:uppercase;margin-bottom:5px;letter-spacing:.3px}' +
+  '.remarks-box{border:1px solid #D8D8D8;border-radius:3px;padding:6px 8px;background:#FAFAFA;font-size:10px;line-height:1.55;white-space:pre-wrap;min-height:50px;word-break:break-word}' +
+  '.remarks-label{font-size:8.5px;font-weight:700;color:#4B286D;text-transform:uppercase;margin-bottom:4px;letter-spacing:.3px}' +
   '.highlight{color:#2B8000;font-weight:600}' +
   '.lowlight{color:#C12335;font-weight:600}' +
-  '.footer{margin-top:16px;border-top:1px solid #D8D8D8;padding-top:6px;font-size:8.5px;color:#888;text-align:center}' +
-  '.badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:9.5px;font-weight:700;background:#4B286D;color:#fff}' +
-  /* ── AI content overrides — maximize space for tables ── */
-  '.ai-section{margin-bottom:10px!important;padding:0!important}' +
-  '.ai-title{font-size:11px!important;padding:5px 10px!important;margin-bottom:6px!important}' +
-  '.ai-table{width:100%!important;table-layout:fixed!important;font-size:9.5px!important;border-collapse:collapse!important}' +
-  '.ai-table th,.ai-table td{padding:4px 6px!important;word-break:break-word!important;overflow-wrap:break-word!important;vertical-align:top!important;font-size:9.5px!important}' +
-  '.ai-table th{font-size:9px!important;white-space:normal!important}' +
-  '.ai-label-col{width:14%!important;font-size:9px!important}' +
-  '.ai-flag{padding:8px 10px!important;margin-bottom:6px!important}' +
-  '.ai-flag-title{font-size:10px!important}' +
-  '.ai-flag-detail{font-size:9.5px!important}' +
-  '.ai-flag-stmt{font-size:9.5px!important;padding:6px 8px!important}' +
-  '.ai-summary,.ai-perfect{font-size:10px!important;line-height:1.5!important}' +
+  '.footer{margin-top:12px;border-top:1px solid #D8D8D8;padding-top:5px;font-size:8px;color:#888;text-align:center}' +
+  '.badge{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;background:#4B286D;color:#fff}' +
+  /* ── AI content — full-width, tight tables ── */
+  '.ai-section{margin-bottom:8px!important;padding:0!important}' +
+  '.ai-title{font-size:10px!important;padding:4px 8px!important;margin-bottom:5px!important}' +
+  /* all tables: full width, fixed layout, small font, tight cells */
+  'table{width:100%!important;table-layout:fixed!important;border-collapse:collapse!important;font-size:8.5px!important}' +
+  'th,td{padding:2px 4px!important;word-break:break-word!important;overflow-wrap:break-word!important;vertical-align:top!important;font-size:8.5px!important}' +
+  'th{white-space:normal!important;font-size:8px!important}' +
+  '.ai-table{width:100%!important;table-layout:fixed!important;font-size:8.5px!important;border-collapse:collapse!important}' +
+  '.ai-table th,.ai-table td{padding:2px 4px!important;word-break:break-word!important;vertical-align:top!important;font-size:8.5px!important}' +
+  '.ai-table th{font-size:8px!important}' +
+  '.ai-label-col{width:12%!important;font-size:8px!important;white-space:normal!important}' +
+  '.ai-flag{padding:5px 8px!important;margin-bottom:5px!important}' +
+  '.ai-flag-title{font-size:9.5px!important}' +
+  '.ai-flag-detail{font-size:8.5px!important}' +
+  '.ai-flag-stmt{font-size:8.5px!important;padding:4px 6px!important}' +
+  '.ai-summary,.ai-perfect{font-size:9.5px!important;line-height:1.45!important}' +
   '.ai-hl-grid{display:table!important;width:100%!important}' +
-  '.ai-hl-box{display:table-cell!important;width:50%!important;padding:8px 10px!important}' +
-  '.ai-hl-box:first-child{padding-right:5px!important}' +
-  '.ai-hl-box:last-child{padding-left:5px!important}' +
-  '.ai-hl-box ul{font-size:9.5px!important;line-height:1.5!important}' +
-  '.ai-coaching{font-size:9.5px!important;line-height:1.6!important}' +
-  '.ai-score-panel{padding:8px 10px!important}' +
-  '.ai-score-row{font-size:10px!important;padding:4px 0!important}' +
-  '.ai-badge{font-size:9px!important;padding:2px 6px!important}' +
-  '.ai-info{font-size:9.5px!important;gap:4px!important;flex-wrap:wrap!important}' +
-  '.ai-chip{font-size:9px!important;padding:2px 6px!important}' +
-  /* ── SMART table specific ── keep wider columns ── */
-  'table[style*="FDE8B0"] th,table[style*="FDE8B0"] td{font-size:9px!important;padding:3px 5px!important}' +
-  '@media print{body{margin:0;padding:8px 12px}}' +
+  '.ai-hl-box{display:table-cell!important;width:50%!important;padding:5px 8px!important}' +
+  '.ai-hl-box:first-child{padding-right:4px!important}' +
+  '.ai-hl-box:last-child{padding-left:4px!important}' +
+  '.ai-hl-box ul{font-size:8.5px!important;line-height:1.45!important}' +
+  '.ai-coaching{font-size:8.5px!important;line-height:1.5!important}' +
+  '.ai-score-panel{padding:5px 8px!important}' +
+  '.ai-score-row{font-size:9.5px!important;padding:3px 0!important}' +
+  '.ai-badge{font-size:8.5px!important;padding:1px 5px!important;min-width:36px!important}' +
+  '.ai-info{font-size:8.5px!important;gap:3px!important;flex-wrap:wrap!important}' +
+  '.ai-chip{font-size:8px!important;padding:1px 5px!important}' +
+  '.ai-call-badge{font-size:10px!important;padding:3px 10px!important;margin-bottom:6px!important}' +
+  /* ── SMART tables (amber header) — even tighter ── */
+  'table[style*="FDE8B0"] th,table[style*="FDE8B0"] td,' +
+  'table[style*="F5F0FF"] th,table[style*="F5F0FF"] td{font-size:8px!important;padding:2px 3px!important}' +
+  '@media print{html,body{margin:0!important;padding:1px 2px!important}}' +
   '</style></head><body>' +
 
   // Header

@@ -244,12 +244,48 @@ var _auditRef = (function(){
 var _baseUrl = '';
 var _starVal = 0;
 
+// ── localStorage cache for eval view (5 min TTL) ─────────────────────────────
+var _EV_LS_KEY = 'nh_eval_cache_v1';
+var _EV_LS_TTL = 5 * 60 * 1000; // 5 minutes
+
+function _evLsGet(ref) {
+  try {
+    var store = JSON.parse(localStorage.getItem(_EV_LS_KEY) || '{}');
+    var item  = store[ref];
+    if (!item) return null;
+    if (Date.now() - item.ts > _EV_LS_TTL) { delete store[ref]; localStorage.setItem(_EV_LS_KEY, JSON.stringify(store)); return null; }
+    return item.data;
+  } catch(e) { return null; }
+}
+function _evLsSet(ref, data) {
+  try {
+    var store = JSON.parse(localStorage.getItem(_EV_LS_KEY) || '{}');
+    store[ref] = { ts: Date.now(), data: data };
+    // Keep only last 20 entries
+    var keys = Object.keys(store);
+    if (keys.length > 20) { keys.slice(0, keys.length - 20).forEach(function(k){ delete store[k]; }); }
+    localStorage.setItem(_EV_LS_KEY, JSON.stringify(store));
+  } catch(e) {}
+}
+
 window.onload = function() {
   if (!_auditRef) { showError('No audit reference in link. Check the email button.'); return; }
-  google.script.run
-    .withSuccessHandler(render)
-    .withFailureHandler(function(e){ showError('Failed to load: ' + (e.message||e)); })
-    .getEvalViewData(_auditRef);
+
+  // Show cached data instantly, then refresh in background
+  var cached = _evLsGet(_auditRef);
+  if (cached) {
+    render(cached);
+    // Silent background refresh
+    google.script.run
+      .withSuccessHandler(function(fresh){ if (fresh && fresh.success) { _evLsSet(_auditRef, fresh); } })
+      .withFailureHandler(function(){})
+      .getEvalViewData(_auditRef);
+  } else {
+    google.script.run
+      .withSuccessHandler(function(d){ _evLsSet(_auditRef, d); render(d); })
+      .withFailureHandler(function(e){ showError('Failed to load: ' + (e.message||e)); })
+      .getEvalViewData(_auditRef);
+  }
 };
 
 function render(d) {

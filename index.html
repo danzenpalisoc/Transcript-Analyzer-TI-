@@ -1811,8 +1811,16 @@ body {
 <div id="processing-overlay">
   <div class="processing-card">
     <div class="spinner"></div>
-    <h3>Analyzing Call Script</h3>
-    <p>Your transcript is being processed by AI.<br/>This usually takes 30&ndash;90 seconds&hellip;</p>
+    <h3 id="proc-title">Analyzing Call Script</h3>
+    <p id="proc-step" style="font-size:13px;color:#4B286D;font-weight:600;margin-bottom:4px">&#128269; Checking for existing analysis...</p>
+    <p style="font-size:11px;color:#888;margin:0">AI processing usually takes 20–60 seconds.</p>
+    <div id="proc-steps" style="margin-top:14px;text-align:left;font-size:11px;color:#555;line-height:2">
+      <div id="pstep-1" style="opacity:.4">&#9711; Checking interaction cache</div>
+      <div id="pstep-2" style="opacity:.4">&#9711; Parsing transcript metadata</div>
+      <div id="pstep-3" style="opacity:.4">&#9711; Running AI analysis</div>
+      <div id="pstep-4" style="opacity:.4">&#9711; Saving results</div>
+      <div id="pstep-5" style="opacity:.4">&#9711; Done!</div>
+    </div>
   </div>
 </div>
 
@@ -1888,28 +1896,43 @@ function setIfEmpty(id, val) {
 
 // Triggered when SAP ID is typed — looks up all roster fields.
 // Sets _sapResolvedParticipant so transcript autofill won't overwrite the name.
+function _applyRosterRow(row) {
+  if (!row) return;
+  if (row.participant) {
+    document.getElementById('participant').value = row.participant;
+    _sapResolvedParticipant = true;
+  }
+  if (row.lineOfBusiness) document.getElementById('lineOfBusiness').value = row.lineOfBusiness;
+  if (row.teamLeader)     document.getElementById('teamLeader').value     = row.teamLeader;
+  if (row.opsManager)     document.getElementById('opsManager').value     = row.opsManager;
+  if (row.locale)         document.getElementById('locale').value         = row.locale;
+  if (row.vtid)           document.getElementById('vtid').value           = row.vtid;
+}
+
 function debounceSapLookup() {
   clearTimeout(_sapTimer);
-  // If SAP ID is cleared, reset the lock so autofill can run again
   if (!document.getElementById('sapId').value.trim()) {
     _sapResolvedParticipant = false;
   }
   _sapTimer = setTimeout(function () {
     var sap = document.getElementById('sapId').value.trim();
     if (sap.length < 4) return;
+
+    // ── Check localStorage cache first (instant, no server call) ────────────
+    var sapCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
+    if (sapCache[sap]) {
+      _applyRosterRow(sapCache[sap]);
+      return; // done — no round-trip needed
+    }
+
+    // ── Cache miss — fetch from server ────────────────────────────────────────
     google.script.run
       .withSuccessHandler(function (row) {
         if (!row) return;
-        // SAP lookup wins — always set the name from the roster, overwriting anything
-        if (row.participant) {
-          document.getElementById('participant').value = row.participant;
-          _sapResolvedParticipant = true;  // lock: transcript autofill won't overwrite this
-        }
-        if (row.lineOfBusiness) document.getElementById('lineOfBusiness').value = row.lineOfBusiness;
-        if (row.teamLeader)     document.getElementById('teamLeader').value     = row.teamLeader;
-        if (row.opsManager)     document.getElementById('opsManager').value     = row.opsManager;
-        if (row.locale)         document.getElementById('locale').value         = row.locale;
-        if (row.vtid)           document.getElementById('vtid').value           = row.vtid;
+        _applyRosterRow(row);
+        // Save to localStorage so next lookup for this SAP is instant
+        sapCache[sap] = row;
+        lsSet(LS_SAP_KEY, sapCache);
       })
       .getRosterBySapId(sap);
   }, 600);
@@ -2125,9 +2148,51 @@ function handleSubmit() {
   document.getElementById('processing-overlay').classList.add('visible');
   document.getElementById('applied-section').classList.remove('visible');
 
+  // ── Animate progress steps to keep user informed ──────────────────────────
+  var _procStepIdx = 0;
+  var _procStepTimers = [];
+  var _procStepData = [
+    { id:'pstep-1', ms:200,   label:'&#9711; Checking interaction cache' },
+    { id:'pstep-2', ms:1500,  label:'&#9711; Parsing transcript metadata' },
+    { id:'pstep-3', ms:3000,  label:'&#9711; Running AI analysis (this is the slow part)' },
+    { id:'pstep-4', ms:0,     label:'&#9711; Saving results' },
+    { id:'pstep-5', ms:0,     label:'&#9711; Done!' }
+  ];
+  function _activateStep(idx) {
+    for (var i = 0; i < _procStepData.length; i++) {
+      var el = document.getElementById(_procStepData[i].id);
+      if (!el) continue;
+      if (i < idx)       { el.style.opacity='1'; el.innerHTML = el.innerHTML.replace('&#9711;','&#10003;').replace('⊙','✓'); el.style.color='#2B8000'; }
+      else if (i===idx)  { el.style.opacity='1'; el.style.color='#4B286D'; el.style.fontWeight='700'; }
+      else               { el.style.opacity='.35'; el.style.fontWeight=''; }
+    }
+    var stepEl = document.getElementById('proc-step');
+    if (stepEl && _procStepData[idx]) {
+      stepEl.innerHTML = _procStepData[idx].label.replace('&#9711; ','');
+    }
+  }
+  _activateStep(0);
+  var _stepsDelay = 0;
+  _procStepData.forEach(function(s, i) {
+    _stepsDelay += s.ms;
+    if (s.ms > 0) {
+      var timer = setTimeout(function(idx){ _activateStep(idx); }, _stepsDelay, i + 1);
+      _procStepTimers.push(timer);
+    }
+  });
+
   google.script.run
     .withSuccessHandler(function (result) {
-      document.getElementById('processing-overlay').classList.remove('visible');
+      _procStepTimers.forEach(clearTimeout);
+      _activateStep(4);
+      setTimeout(function(){
+        document.getElementById('processing-overlay').classList.remove('visible');
+        // reset steps for next run
+        _procStepData.forEach(function(s){
+          var el=document.getElementById(s.id);
+          if(el){el.style.opacity='.4';el.style.color='';el.style.fontWeight='';el.innerHTML=s.label;}
+        });
+      }, 500);
       document.getElementById('btn-process').disabled = false;
       if (!result.success) { showError('Error: ' + result.error); return; }
       if (result.sheetUrl) {
@@ -2170,6 +2235,7 @@ function handleSubmit() {
       openModal(document.getElementById('transcript').value, _lastHTML);
     })
     .withFailureHandler(function (err) {
+      _procStepTimers.forEach(clearTimeout);
       document.getElementById('processing-overlay').classList.remove('visible');
       document.getElementById('btn-process').disabled = false;
       showError('Unexpected error: ' + (err.message || err));
@@ -2415,23 +2481,32 @@ function dbSwitchTab(tab, btn) {
   document.getElementById('r-stats').style.display  = tab === 'repeats'   ? '' : 'none';
   document.getElementById('s-stats').style.display  = tab === 'sales'     ? '' : 'none';
   document.getElementById('al-stats').style.display = tab === 'auditlog'  ? '' : 'none';
-  // Render Overview when switched to
-  if (tab === 'overview' && _dbLoaded) { setTimeout(renderOverviewTab, 50); }
-  // Update FAB — hidden on Audit Log and Overview (no per-type analytics)
-  var fab = document.getElementById('analytics-fab');
-  if (fab) fab.style.display = (tab === 'auditlog' || tab === 'overview') ? 'none' : 'flex';
-  _lastAnalyticsType = (tab === 'sales') ? 's' : 'r';
+  // ── Memoized renders — only re-run if filtered data has actually changed ────
   if (_dbLoaded) {
+    if (tab === 'overview') {
+      var ovHash = 'ov_' + (_dbAllData||[]).length + '_' + JSON.stringify(_dbCurrentFilters||{});
+      if (_tabRenderHash.overview !== ovHash) {
+        _tabRenderHash.overview = ovHash;
+        setTimeout(renderOverviewTab, 50);
+      }
+    }
     if (tab === 'repeats' || tab === 'sales') {
-      setTimeout(function() {
-        dbDrawChart(tab === 'repeats' ? 'r' : 's',
-                    tab === 'repeats' ? _dbRFiltered : _dbSFiltered);
-      }, 50);
+      var pfx      = tab === 'repeats' ? 'r' : 's';
+      var filtered = tab === 'repeats' ? _dbRFiltered : _dbSFiltered;
+      var chHash   = pfx + '_' + (filtered||[]).length + '_' + JSON.stringify(_dbCurrentFilters||{});
+      if (_tabRenderHash[tab] !== chHash) {
+        _tabRenderHash[tab] = chHash;
+        setTimeout(function() { dbDrawChart(pfx, filtered); }, 50);
+      }
     }
     if (tab === 'auditlog' && !_dbAuditLog.length) {
       loadAuditLog();
     }
   }
+  // Update FAB — hidden on Audit Log and Overview (no per-type analytics)
+  var fab = document.getElementById('analytics-fab');
+  if (fab) fab.style.display = (tab === 'auditlog' || tab === 'overview') ? 'none' : 'flex';
+  _lastAnalyticsType = (tab === 'sales') ? 's' : 'r';
 }
 
 // ── Speed: localStorage pre-cache key ────────────────────────────────────────
@@ -2439,9 +2514,14 @@ function dbSwitchTab(tab, btn) {
 var LS_CACHE_KEY     = 'nh_dashboard_cache_v3';
 var LS_ROSTER_KEY    = 'nh_roster_cache_v2';
 var LS_AUDITLOG_KEY  = 'nh_auditlog_cache_v2';
-var LS_CACHE_MAX_AGE = 20 * 60 * 1000;   // 20 min — dashboard rows
-var LS_ROSTER_AGE    = 60 * 60 * 1000;   // 60 min — roster (changes rarely)
-var LS_AUDITLOG_AGE  = 10 * 60 * 1000;   // 10 min — audit log
+var LS_SAP_KEY       = 'nh_sap_cache_v1';    // SAP ID → roster row (per-agent)
+var LS_CACHE_MAX_AGE = 30 * 60 * 1000;   // 30 min — dashboard rows (extended)
+var LS_ROSTER_AGE    = 2  * 60 * 60 * 1000; // 2 h  — roster (extended)
+var LS_AUDITLOG_AGE  = 15 * 60 * 1000;   // 15 min — audit log (extended)
+var LS_SAP_AGE       = 2  * 60 * 60 * 1000; // 2 h  — SAP lookup results
+
+// ── Tab render memoization — skip re-render if data hasn't changed ────────────
+var _tabRenderHash = {};   // { overview: hash, repeats: hash, sales: hash }
 
 function lsGet(key, maxAge) {
   try {
@@ -3296,6 +3376,7 @@ function dbGetSharedFilters() {
 
 // ── Apply all tabs at once ────────────────────────────────────────────────────
 function dbApplyAll() {
+  _tabRenderHash = {};  // invalidate memoized tab renders when filters change
   var f = dbGetSharedFilters();
 
   // Count active filter groups for badge
