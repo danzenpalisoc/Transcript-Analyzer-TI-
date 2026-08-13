@@ -1366,10 +1366,9 @@ function getEvalViewData(auditRef) {
         var rSap = (r[logHeaders2.indexOf('SAP ID')]    || '').toString().trim();
         if (rSap === sapId && rRef !== auditRef.trim()) {
           recent.push({
-            ref:          rRef,
-            date:         (r[logHeaders2.indexOf('Submitted At')]  || '').toString().substring(0,10),
-            interactionId:(r[logHeaders2.indexOf('Interaction ID')] || '').toString().substring(0,50),
-            analysisType: (r[logHeaders2.indexOf('Analysis Type')]  || '').toString()
+            ref:  rRef,
+            date: (r[logHeaders2.indexOf('Submitted At')] || '').toString().substring(0,10),
+            ban:  (r[logHeaders2.indexOf('Interaction ID')] || '').toString()
           });
         }
       });
@@ -2060,7 +2059,19 @@ function chatAssistant(userMessage, recentHistory) {
 function getTranscriptMetadata(txt)   { return parseTranscriptMetadata(txt); }
 function getRosterBySapId(sapId)      { return lookupBySapId(sapId); }
 function getRosterAll()               { return getAllRosterData(); }
-function getObserverInfo()            { return resolveObserver(); }
+function getObserverInfo() {
+  var obs = resolveObserver() || {};
+  try {
+    var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    var adminList = getRecipientsFromRoster('Admin/Dev');
+    obs.isAdmin = adminList.some(function(r) {
+      return (r.email || '').toLowerCase().trim() === userEmail;
+    });
+  } catch(e) {
+    obs.isAdmin = false;
+  }
+  return obs;
+}
 function getAuditLogData()            { return readAuditLog(); }
 
 // ── Generate unique Audit Reference Number: NHA-YYYYMMDD-XXXX ────────────────
@@ -2523,7 +2534,10 @@ function submitTranscript(formData) {
       Logger.log('Audit_Log write error (non-fatal): ' + le);
     }
 
-    // ── 9. (Email is only sent when user clicks "Submit & Email Audit" — not here) ──
+    // ── 9. Notify Admin/Dev users (non-fatal — quota or email errors must not fail the submission) ──
+    try { notifyAdmins(formData, auditRef); } catch(ne) {
+      Logger.log('notifyAdmins failed (non-fatal): ' + ne);
+    }
 
     return {
       success:      true,
@@ -2654,6 +2668,20 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
 // ─────────────────────────────────────────────────────────────────────────────
 function sendAuditEmail(formData, htmlResult) {
   try {
+    var recipients;
+    if (formData.emailMode === 'test') {
+      var adminList = getRecipientsFromRoster('Admin/Dev');
+      recipients = adminList.map(function(r) { return r.email; }).filter(Boolean);
+    } else {
+      var teamLeaderEmail = resolveEmail(formData.teamLeader);
+      var opsMgrEmail     = resolveEmail(formData.opsManager);
+      recipients = [teamLeaderEmail, opsMgrEmail].filter(Boolean);
+    }
+
+    if (!recipients.length) {
+      return { success: false, error: 'Could not resolve recipient email addresses.' };
+    }
+
     var agentName     = formData.participant   || 'Agent';
     var sapId         = formData.sapId         || 'N/A';
     var interactionId = formData.interactionId || 'N/A';
@@ -2661,23 +2689,8 @@ function sendAuditEmail(formData, htmlResult) {
     var analysisLabel = formData.analysisType === 'sales' ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
     var firstName     = agentName.split(' ')[0];
     var evalTitle     = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
-    var subject       = 'Real Time Observation Audit Submitted — ' + auditRef + ' | ' + agentName;
-
-    // ── Build recipient list: Agent + Team Leader + Ops Manager ──────────────
-    var agentEmail      = lookupAgentEmail(agentName);
-    var teamLeaderEmail = resolveEmail(formData.teamLeader);
-    var opsMgrEmail     = resolveEmail(formData.opsManager);
-    var validRe         = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    var seen            = {};
-    var recipients      = [agentEmail, teamLeaderEmail, opsMgrEmail].filter(function(em) {
-      if (!em || !validRe.test(em) || seen[em.toLowerCase()]) return false;
-      seen[em.toLowerCase()] = true;
-      return true;
-    });
-
-    if (!recipients.length) {
-      return { success: false, error: 'Could not resolve email addresses. Make sure the agent name, Team Leader and Operations Manager match the roster.' };
-    }
+    var subject       = (formData.emailMode === 'test' ? '[TEST] ' : '') +
+                        'Real Time Feedback — ' + agentName + ' (' + sapId + ') | BAN: ' + (formData.customerBAN || 'N/A');
 
     // ── Plain-text body ───────────────────────────────────────────────────────
     var body =

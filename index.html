@@ -63,6 +63,16 @@ body {
 .btn-process:hover    { background: #ede6f6; }
 .btn-process:disabled { opacity: .45; cursor: not-allowed; }
 
+/* ── Live/Test email mode toggle (Admin/Dev only) ── */
+#email-mode-btn {
+  font-size: 11px; font-weight: 700; letter-spacing: .8px;
+  padding: 5px 13px; border-radius: 20px; border: none;
+  cursor: pointer; font-family: inherit;
+  transition: background .2s, color .2s;
+}
+#email-mode-btn.live { background: #2B8000; color: #fff; }
+#email-mode-btn.test { background: #F9A825; color: #1A1A2E; }
+
 /* ── Page ── */
 .page { max-width: 1080px; margin: 24px auto; padding: 0 18px; }
 
@@ -1154,6 +1164,10 @@ body {
     <p>Quality Analyst Team</p>
   </div>
   <div style="display:flex;gap:10px;align-items:center">
+    <div id="email-mode-wrap" style="display:none;align-items:center;gap:7px">
+      <span style="font-size:10px;color:rgba(255,255,255,.65);font-weight:700;letter-spacing:.7px">EMAIL</span>
+      <button id="email-mode-btn" class="live" onclick="toggleEmailMode()" title="Toggle email mode: Live sends to real recipients, Test sends to Admin/Dev only">LIVE</button>
+    </div>
     <button onclick="openDashboard()"
        style="background:transparent;color:rgba(255,255,255,.85);font-size:12px;font-weight:600;
               border:1px solid rgba(255,255,255,.4);border-radius:4px;padding:8px 14px;
@@ -2229,7 +2243,19 @@ var _dbAlFiltered  = [];
 
 // ── Audit meta init ───────────────────────────────────────────────────────────
 var _currentAuditRef  = '';
-var _currentObserver  = { name: '', sapId: '', email: '' };
+var _currentObserver  = { name: '', sapId: '', email: '', isAdmin: false };
+var _emailMode        = 'live'; // 'live' | 'test' — toggled by Admin/Dev only
+
+function toggleEmailMode() {
+  _emailMode = (_emailMode === 'live') ? 'test' : 'live';
+  _updateEmailModeBtn();
+}
+function _updateEmailModeBtn() {
+  var btn = document.getElementById('email-mode-btn');
+  if (!btn) return;
+  if (_emailMode === 'test') { btn.textContent = 'TEST'; btn.className = 'test'; }
+  else                       { btn.textContent = 'LIVE'; btn.className = 'live'; }
+}
 
 (function initAuditMeta() {
   var now = new Date();
@@ -2255,6 +2281,10 @@ var _currentObserver  = { name: '', sapId: '', email: '' };
         _currentObserver = obs || {};
         var displayName = _currentObserver.name || _currentObserver.email || 'Unknown';
         document.getElementById('observer-display').textContent = displayName;
+        if (_currentObserver.isAdmin) {
+          var modeWrap = document.getElementById('email-mode-wrap');
+          if (modeWrap) modeWrap.style.display = 'flex';
+        }
         try { sessionStorage.setItem('nh_observer', JSON.stringify(_currentObserver)); } catch(e) {}
       })
       .withFailureHandler(function() {
@@ -3669,6 +3699,7 @@ function handleSubmitEmail() {
   }
 
   var formData = getFormData();
+  formData.emailMode = _emailMode;
   document.getElementById('btn-submit').disabled = true;
   document.getElementById('email-overlay').classList.add('visible');
 
@@ -3680,7 +3711,8 @@ function handleSubmitEmail() {
         showError('Email error: ' + result.error);
         return;
       }
-      showSuccess('&#10003; Audit emailed successfully to: ' + result.recipients.join(', '));
+      var modeLabel = _emailMode === 'test' ? ' [TEST MODE]' : '';
+      showSuccess('&#10003; Audit emailed successfully to: ' + result.recipients.join(', ') + modeLabel);
       lockFormAfterSubmit(result.auditRef || _currentAuditRef);
     })
     .withFailureHandler(function (err) {
