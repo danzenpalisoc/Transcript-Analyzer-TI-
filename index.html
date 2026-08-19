@@ -1638,7 +1638,7 @@ body {
     <!-- Row 3: RCA Category breakdown donut -->
     <div class="ov-two-col">
       <div class="ov-section">
-        <div class="ov-section-title">&#128203; RCA Category Breakdown</div>
+        <div class="ov-section-title">&#128681; Flags / Violation Breakdown</div>
         <div id="ov-chart-rca" style="height:260px"></div>
       </div>
       <div class="ov-section">
@@ -4229,16 +4229,29 @@ function renderOverviewTab() {
       .slice(0,8).map(function(k){return[k,flagCounts[k]];});
     dbBarChart('ov-chart-flags', 'Critical Flag', flagData);
 
-    // RCA Category pie/bar
-    var rcaCounts = {};
-    all.forEach(function(r){ var c=r['RCA Category']||'Unknown'; rcaCounts[c]=(rcaCounts[c]||0)+1; });
+    // Flags / Violation donut — each distinct critical flag gets its own slice
+    var flagViolCounts = {};
+    all.forEach(function(r) {
+      var raw = (r['Critical Flags'] || '').trim();
+      if (!raw || /^none$/i.test(raw)) return;
+      raw.split(',').forEach(function(f) {
+        f = f.trim();
+        if (f) flagViolCounts[f] = (flagViolCounts[f] || 0) + 1;
+      });
+    });
+    var fvKeys = Object.keys(flagViolCounts).sort(function(a,b){ return flagViolCounts[b]-flagViolCounts[a]; });
     var rcaDt = new google.visualization.DataTable();
-    rcaDt.addColumn('string','RCA Category'); rcaDt.addColumn('number','Count');
-    Object.keys(rcaCounts).forEach(function(k){ rcaDt.addRow([k,rcaCounts[k]]); });
-    new google.visualization.PieChart(document.getElementById('ov-chart-rca')).draw(rcaDt,{
-      pieHole: 0.4, legend:{position:'right',textStyle:{fontSize:11}},
-      colors:['#C12335','#8C4A00','#2B8000','#4B286D','#888'],
-      chartArea:{left:10,top:10,width:'60%',height:'85%'}, backgroundColor:'transparent'
+    rcaDt.addColumn('string','Flag / Violation'); rcaDt.addColumn('number','Count');
+    // Show top 8 flags, group the rest as "Other"
+    var otherCount = 0;
+    fvKeys.forEach(function(k, i) { if (i < 8) rcaDt.addRow([k, flagViolCounts[k]]); else otherCount += flagViolCounts[k]; });
+    if (otherCount > 0) rcaDt.addRow(['Other', otherCount]);
+    if (rcaDt.getNumberOfRows() === 0) rcaDt.addRow(['No violations recorded', 1]);
+    new google.visualization.PieChart(document.getElementById('ov-chart-rca')).draw(rcaDt, {
+      pieHole: 0.4, legend:{position:'right',textStyle:{fontSize:10}},
+      colors:['#C12335','#8C4A00','#4B286D','#2B8000','#E65100','#6A1B9A','#00695C','#1565C0','#888'],
+      chartArea:{left:10,top:10,width:'55%',height:'85%'}, backgroundColor:'transparent',
+      tooltip:{textStyle:{fontSize:11}}
     });
 
     // Repeats vs Sales donut
