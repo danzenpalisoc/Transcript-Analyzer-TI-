@@ -4296,7 +4296,7 @@ function renderOverviewTab() {
   // ── 4. Team Member Progression table ─────────────────────────────────────
   var tmData = {};
   all.forEach(function(r){
-    var m=r['Team Member']||''; if(!m) return;
+    var m=(r['Team Member']||'').trim(); if(!m||m.length>80||m.indexOf('\n')!==-1) return;
     if(!tmData[m]) tmData[m]={ evals:0, repPcts:[], flags:[], violations:{}, tl:r['Team Leader']||'', rcaCats:{} };
     tmData[m].evals++;
     var rp=parseFloat(r['Repeat Projection %']); if(!isNaN(rp)&&rp>0) tmData[m].repPcts.push(rp);
