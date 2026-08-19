@@ -1876,11 +1876,11 @@ function scheduleAutofill() {
           else if (meta.customerName) document.getElementById('customerBAN').value = meta.customerName;
         }
 
-        // ONLY fill Team Member from transcript if the SAP ID lookup has NOT
-        // already resolved a specific person. This prevents the transcript's
-        // first participant from overwriting the observer's actual agent.
+        // Fill Team Member from transcript only if SAP ID is not yet resolved.
+        // Check sapId (not participant name) so re-pasting a transcript with the
+        // same agent still triggers the full roster lookup.
         if (!_sapResolvedParticipant && meta.participant &&
-            !document.getElementById('participant').value) {
+            !document.getElementById('sapId').value) {
           document.getElementById('participant').value = meta.participant;
           lookupSapFromName(meta.participant);
         }
@@ -1912,12 +1912,14 @@ function _applyRosterRow(row) {
 function lookupSapFromName(participantName) {
   if (!participantName) return;
   google.script.run
+    .withFailureHandler(function(err) { console.error('[AutoFill] getSapIdForParticipant failed:', err.message); })
     .withSuccessHandler(function(sapId) {
-      if (!sapId) return;
+      if (!sapId) { console.warn('[AutoFill] No SAP ID found for:', participantName); return; }
       document.getElementById('sapId').value = sapId;
       var sapCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
       if (sapCache[sapId]) { _applyRosterRow(sapCache[sapId]); return; }
       google.script.run
+        .withFailureHandler(function(err) { console.error('[AutoFill] getRosterBySapId failed:', err.message); })
         .withSuccessHandler(function(row) {
           if (!row) return;
           _applyRosterRow(row);
