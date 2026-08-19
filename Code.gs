@@ -2574,18 +2574,30 @@ function submitTranscript(formData) {
     var analysisLabel = analysisType === 'sales' ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
 
     // ── 3. Save transcript row ────────────────────────────────────────────────
-    var tSheet = getOrCreateSheet(spreadsheet, TRANSCRIPTS_SHEET);
-    ensureHeaders(tSheet, TRANSCRIPTS_HEADERS);
-    appendRow(tSheet, [
-      auditRef, now,
-      formData.sapId || '', participant,
-      formData.teamLeader || '', formData.opsManager || '',
-      formData.lineOfBusiness || '', formData.locale || '',
-      observerName,
-      startTime, customerBAN, interactionId,
-      direction, duration,
-      analysisLabel, formData.transcript
-    ]);
+    try {
+      var tSheet = getOrCreateSheet(spreadsheet, TRANSCRIPTS_SHEET);
+      ensureHeaders(tSheet, TRANSCRIPTS_HEADERS);
+      appendRow(tSheet, [
+        auditRef, now,
+        formData.sapId || '', participant,
+        formData.teamLeader || '', formData.opsManager || '',
+        formData.lineOfBusiness || '', formData.locale || '',
+        observerName,
+        startTime, customerBAN, interactionId,
+        direction, duration,
+        analysisLabel, formData.transcript
+      ]);
+    } catch(we) {
+      var msg = we.toString();
+      if (msg.indexOf('permission') !== -1 || msg.indexOf('document') !== -1 || msg.indexOf('access') !== -1) {
+        return {
+          success: false,
+          error: 'Access denied: You need Editor (not Viewer) access to the "' + SPREADSHEET_NAME + '" spreadsheet. ' +
+                 'Please ask your admin (danzen.palisoc@telusinternational.com) to update your sharing permissions.'
+        };
+      }
+      throw we;
+    }
 
     // ── 4. Run AI ─────────────────────────────────────────────────────────────
     var rawAI = analyzeTranscript(formData.transcript, analysisType);
