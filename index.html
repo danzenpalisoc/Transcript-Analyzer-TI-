@@ -1909,6 +1909,26 @@ function _applyRosterRow(row) {
   if (row.vtid)           document.getElementById('vtid').value           = row.vtid;
 }
 
+function lookupSapFromName(participantName) {
+  if (!participantName) return;
+  google.script.run
+    .withSuccessHandler(function(sapId) {
+      if (!sapId) return;
+      document.getElementById('sapId').value = sapId;
+      var sapCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
+      if (sapCache[sapId]) { _applyRosterRow(sapCache[sapId]); return; }
+      google.script.run
+        .withSuccessHandler(function(row) {
+          if (!row) return;
+          _applyRosterRow(row);
+          sapCache[sapId] = row;
+          lsSet(LS_SAP_KEY, sapCache);
+        })
+        .getRosterBySapId(sapId);
+    })
+    .getSapIdForParticipant(participantName);
+}
+
 function debounceSapLookup() {
   clearTimeout(_sapTimer);
   if (!document.getElementById('sapId').value.trim()) {
