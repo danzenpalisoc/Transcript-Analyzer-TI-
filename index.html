@@ -2693,7 +2693,7 @@ function dbHandleData(result, isLocalCache) {
           'Timestamp':             log['Submitted At']           || dash['Timestamp']             || '',
           'Interaction ID':        log['Interaction ID']         || dash['Interaction ID']         || '',
           'SAP ID':                log['SAP ID']                 || dash['SAP ID']                 || '',
-          'Team Member':           log['Team Member']            || dash['Team Member']            || '',
+          'Team Member':           log['Team Member']            || ((dash['Team Member'] && dash['Team Member'].length <= 80) ? dash['Team Member'] : '') || '',
           'Team Leader':           log['Team Leader']            || dash['Team Leader']            || '',
           'Operations Manager':    log['Operations Manager']     || dash['Operations Manager']     || '',
           'Line of Business':      log['Line of Business']       || dash['Line of Business']       || '',
@@ -4192,7 +4192,10 @@ function renderOverviewTab() {
   var salesAll   = all.filter(function(r){ return (r['Analysis Type']||'').indexOf('Sales')!==-1; });
   var repRows    = all.filter(function(r){ return parseFloat(r['Repeat Projection %'])>0; });
   var avgRep     = repRows.length ? Math.round(repRows.reduce(function(s,r){return s+(parseFloat(r['Repeat Projection %'])||0);},0)/repRows.length) : 0;
-  var agents     = dbUniq(all.map(function(r){return r['Team Member']||'';})).filter(Boolean);
+  var agents     = dbUniq(all.map(function(r){
+    var m = (r['Team Member']||'').trim();
+    return (m.length > 0 && m.length <= 80 && m.indexOf('\n') === -1) ? m : '';
+  })).filter(Boolean);
   var totalFlags = all.reduce(function(s,r){
     return s + (r['Critical Flags']||'').split(',').filter(function(f){return f.trim()&&f.trim()!=='None';}).length;
   },0);
