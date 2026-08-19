@@ -1654,6 +1654,62 @@ function getAIAnalytics(rows, filters, analysisType) {
   }
 }
 
+function getOverviewHighlightsLowlights(rows, filters) {
+  try {
+    if (!rows || !rows.length) return { success: false, error: 'No data.' };
+
+    var cacheKey = Utilities.base64Encode(
+      'overview_hl|' + rows.length + '|' + JSON.stringify(filters || {})
+    ).substring(0, 250);
+
+    var cached = readAnalyticsCache(cacheKey);
+    if (cached) {
+      try {
+        var parsed = JSON.parse(cached.html);
+        return { success: true, highlights: parsed.highlights, lowlights: parsed.lowlights,
+                 fromCache: true, generatedAt: cached.generatedAt };
+      } catch(e) {}
+    }
+
+    var context = buildAnalyticsContext(rows, filters || {}, 'repeats');
+    var prompt =
+      'You are a QA analytics expert for TELUS contact center operations. ' +
+      'Based on the data summary below, return ONLY a valid JSON object — no extra text:\n' +
+      '{\n' +
+      '  "highlights": ["Specific positive finding with supporting data (max 20 words)", "highlight 2", "highlight 3"],\n' +
+      '  "lowlights":  ["Specific gap or risk with supporting data (max 20 words)", "lowlight 2", "lowlight 3"]\n' +
+      '}\n\nDATA SUMMARY:\n' + context;
+
+    var payload = { model: FUELIX_CONFIG.model,
+                    messages: [{ role: 'user', content: prompt }], stream: false };
+    var options = {
+      method: 'post', contentType: 'application/json',
+      headers: { 'Authorization': 'Bearer ' + FUELIX_CONFIG.apiKey,
+                 'Content-Type': 'application/json' },
+      payload: JSON.stringify(payload), muteHttpExceptions: true, deadline: 120
+    };
+    var resp = UrlFetchApp.fetch(FUELIX_CONFIG.baseUrl + '/v1/chat/completions', options);
+    if (resp.getResponseCode() !== 200)
+      return { success: false, error: 'AI error ' + resp.getResponseCode() };
+
+    var content = JSON.parse(resp.getContentText()).choices[0].message.content.trim();
+    var match   = content.match(/\{[\s\S]*\}/);
+    if (!match) return { success: false, error: 'No JSON in response' };
+    var d       = JSON.parse(match[0]);
+
+    var genAt = new Date().toISOString();
+    writeAnalyticsCache(cacheKey,
+      JSON.stringify({ highlights: d.highlights || [], lowlights: d.lowlights || [] }),
+      genAt, rows.length, 'overview');
+
+    return { success: true, highlights: d.highlights || [], lowlights: d.lowlights || [],
+             fromCache: false, generatedAt: genAt };
+  } catch(e) {
+    Logger.log('getOverviewHighlightsLowlights error: ' + e);
+    return { success: false, error: e.toString() };
+  }
+}
+
 /** Build a rich text context from the filtered rows for the AI prompt */
 function buildAnalyticsContext(rows, filters, analysisType) {
   var isSales = analysisType === 'sales';

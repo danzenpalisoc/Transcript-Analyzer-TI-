@@ -4243,6 +4243,9 @@ function renderOverviewTab() {
     ? llList.map(function(l){return '<li>'+l+'</li>';}).join('')
     : '<li class="ov-empty">No lowlights identified</li>';
 
+  // Silently upgrade with AI-generated insights in the background
+  renderOverviewAIHighlights();
+
   // ── 3. Combined Call Drivers chart ────────────────────────────────────────
   if (typeof google !== 'undefined' && google.visualization) {
     var driverData = dbTopNByField(all, 'Call Driver', 8);
@@ -4373,6 +4376,22 @@ function renderOverviewTab() {
           '</tr>';
       }).join('')
     : '<tr><td colspan="7" style="text-align:center;padding:24px;color:#888">No flags recorded yet</td></tr>';
+}
+
+function renderOverviewAIHighlights() {
+  if (!_dbAllData || !_dbAllData.length) return;
+  google.script.run
+    .withFailureHandler(function(e) { console.warn('[H&L AI] failed:', e.message); })
+    .withSuccessHandler(function(result) {
+      if (!result || !result.success) return;
+      var hl = result.highlights || [];
+      var ll = result.lowlights  || [];
+      if (hl.length) document.getElementById('ov-highlights').innerHTML =
+        hl.map(function(h){ return '<li>' + escHtml(h) + '</li>'; }).join('');
+      if (ll.length) document.getElementById('ov-lowlights').innerHTML =
+        ll.map(function(l){ return '<li>' + escHtml(l) + '</li>'; }).join('');
+    })
+    .getOverviewHighlightsLowlights(_dbAllData, {});
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
