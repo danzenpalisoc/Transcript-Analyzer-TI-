@@ -2073,11 +2073,13 @@ function generateAndServePDF(formData, htmlResult) {
     // Save PDF to Drive and return link
     var folder   = DriveApp.getRootFolder();
     var pdfFile  = folder.createFile(pdf);
-    try { pdfFile.setSharing(DriveApp.Access.DOMAIN, DriveApp.Permission.VIEW); } catch(e) {}
+    var sharingOk = true;
+    try { pdfFile.setSharing(DriveApp.Access.DOMAIN, DriveApp.Permission.VIEW); }
+    catch(se) { sharingOk = false; Logger.log('PDF setSharing failed: ' + se); }
 
     // Note: Drive API v2 has no TTL/scheduled-trash. File persists until manually deleted.
 
-    return { success: true, url: pdfFile.getDownloadUrl() || pdfFile.getUrl(), name: pdfFile.getName() };
+    return { success: true, url: pdfFile.getDownloadUrl() || pdfFile.getUrl(), name: pdfFile.getName(), sharingFailed: !sharingOk };
   } catch(e) {
     Logger.log('generateAndServePDF error: ' + e);
     return { success: false, error: e.toString() };
@@ -2233,7 +2235,9 @@ function generateAuditRef() {
   var dateStr = '' + y + m + d;
   var cacheKey = 'audit_ref_seq_' + dateStr;
 
+  var lock = LockService.getScriptLock();
   try {
+    lock.waitLock(5000);
     var cache   = CacheService.getScriptCache();
     var current = parseInt(cache.get(cacheKey) || '0', 10);
     var seq     = current + 1;
@@ -2244,6 +2248,8 @@ function generateAuditRef() {
   } catch(e) {
     Logger.log('generateAuditRef error: ' + e);
     return 'NHA-' + dateStr + '-' + String(Math.floor(Math.random() * 9999)).padStart(4, '0');
+  } finally {
+    try { lock.releaseLock(); } catch(re) {}
   }
 }
 
@@ -2611,7 +2617,13 @@ function submitTranscript(formData) {
         .trim()
     );
 
-    // ── 5. Save to Analysis sheet (plain text only — no HTML) ─────────────────
+    // ── 5. Save to Cache sheet FIRST — so a retry after any downstream failure ──
+    //      hits the cache instead of re-running the paid AI call and duplicating rows.
+    if (interactionId) {
+      saveCachedResult(interactionId, analysisType, html);
+    }
+
+    // ── 6. Save to Analysis sheet (plain text only — no HTML) ─────────────────
     var aSheet = getOrCreateSheet(spreadsheet, ANALYSIS_SHEET);
     ensureHeaders(aSheet, ANALYSIS_HEADERS);
     appendRow(aSheet, [
@@ -2620,10 +2632,7 @@ function submitTranscript(formData) {
       observerName, analysisLabel, htmlToPlainText(html)
     ]);
 
-    // ── 6. Save to Cache sheet ────────────────────────────────────────────────
-    if (interactionId) {
-      saveCachedResult(interactionId, analysisType, html);
-    }
+    var warnings = [];
 
     // ── 7. Write to Dashboard_Data ────────────────────────────────────────────
     try {
@@ -2673,6 +2682,7 @@ function submitTranscript(formData) {
       invalidateDashboardCache();
     } catch(de) {
       Logger.log('Dashboard_Data write error (non-fatal): ' + de);
+      warnings.push('Dashboard entry failed to save — contact admin with ref ' + auditRef);
     }
 
     // ── 8. Write to Audit_Log ─────────────────────────────────────────────────
@@ -2693,6 +2703,7 @@ function submitTranscript(formData) {
       invalidateAuditLogCache(); // bust cache so next read is fresh
     } catch(le) {
       Logger.log('Audit_Log write error (non-fatal): ' + le);
+      warnings.push('Audit log entry failed to save — contact admin with ref ' + auditRef);
     }
 
     // ── 9. Notify Admin/Dev users (non-fatal — quota or email errors must not fail the submission) ──
@@ -2707,6 +2718,7 @@ function submitTranscript(formData) {
       fromCache:    false,
       auditRef:     auditRef,
       observerName: observerName,
+      warnings:     warnings,
       // Return resolved fields so client can backfill any blanks
       resolvedFields: {
         interactionId: interactionId,
@@ -2829,8 +2841,36 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
 // ─────────────────────────────────────────────────────────────────────────────
 function sendAuditEmail(formData, htmlResult) {
   try {
+    // ── Verify the audit actually exists before sending anything ──────────────
+    var auditRefCheck = (formData.auditRef || '').trim();
+    if (!auditRefCheck) {
+      return { success: false, error: 'Missing audit reference.' };
+    }
+    var auditLog = readAuditLog();
+    var auditRow = null;
+    for (var ai = 0; ai < auditLog.length; ai++) {
+      if ((auditLog[ai]['Audit Ref'] || '').toString().trim() === auditRefCheck) {
+        auditRow = auditLog[ai];
+        break;
+      }
+    }
+    if (!auditRow) {
+      return { success: false, error: 'Audit reference not found.' };
+    }
+
+    // ── Re-check admin status server-side — never trust the client's emailMode claim ──
+    var callerEmail = '';
+    try { callerEmail = Session.getActiveUser().getEmail() || ''; } catch(ee) {}
+    callerEmail = callerEmail.toLowerCase().trim();
+    var callerLocal  = callerEmail.split('@')[0];
+    var callerDomain = callerEmail.split('@')[1] || '';
+    var callerIsAdmin = !!callerLocal &&
+                        ADMIN_USERNAMES.indexOf(callerLocal) !== -1 &&
+                        callerDomain === ADMIN_DOMAIN.toLowerCase();
+    var effectiveMode = (formData.emailMode === 'test' && callerIsAdmin) ? 'test' : 'live';
+
     var recipients;
-    if (formData.emailMode === 'test') {
+    if (effectiveMode === 'test') {
       var adminList = getRecipientsFromRoster('Admin/Dev');
       recipients = adminList.map(function(r) { return r.email; }).filter(Boolean);
     } else {
@@ -2850,7 +2890,7 @@ function sendAuditEmail(formData, htmlResult) {
     var analysisLabel = formData.analysisType === 'sales' ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
     var firstName     = agentName.split(' ')[0];
     var evalTitle     = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
-    var subject       = (formData.emailMode === 'test' ? '[TEST] ' : '') +
+    var subject       = (effectiveMode === 'test' ? '[TEST] ' : '') +
                         'Real Time Feedback — ' + agentName + ' (' + sapId + ') | BAN: ' + (formData.customerBAN || 'N/A');
 
     // ── Plain-text body ───────────────────────────────────────────────────────

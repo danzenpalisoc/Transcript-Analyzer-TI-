@@ -323,7 +323,7 @@ function render(d) {
 
   var intId = m['Interaction ID'] || dash['Interaction ID'] || '—';
   var convoEl = document.getElementById('ev-convo');
-  if (intId.length > 8 && (intId.indexOf('http') === 0 || intId.indexOf('//') !== -1)) {
+  if (intId.length > 8 && /^https?:\/\//i.test(intId)) {
     convoEl.innerHTML = '<a href="' + esc(intId) + '" target="_blank" rel="noopener">' +
       esc(intId.length > 60 ? intId.substring(0,60)+'…' : intId) + '</a>';
   } else {
@@ -344,7 +344,7 @@ function render(d) {
   // AI Analysis (no transcript — already excluded from evalHtml)
   var analysisEl = document.getElementById('ev-analysis');
   if (d.evalHtml) {
-    analysisEl.innerHTML = d.evalHtml;
+    analysisEl.innerHTML = sanitiseResultHTML(d.evalHtml);
     // Strip any "Transcript:" sections if they appear
     analysisEl.querySelectorAll('.ai-section').forEach(function(sec) {
       var title = sec.querySelector('.ai-title');
@@ -427,6 +427,16 @@ function setText(id, v) {
 function esc(s) {
   return (s||'').toString()
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function sanitiseResultHTML(html) {
+  if (!html) return '';
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe[\s\S]*?>/gi, '')
+    .replace(/<object[\s\S]*?<\/object>/gi, '')
+    .replace(/<form[\s\S]*?<\/form>/gi, '')
+    .replace(/\s+on\w+="[^"]*"/gi, '')
+    .replace(/\s+on\w+='[^']*'/gi, '');
 }
 function formatDate(s) {
   try {

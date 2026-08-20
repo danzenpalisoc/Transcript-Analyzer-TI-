@@ -13,6 +13,8 @@ var FUELIX_CONFIG = (function () {
 })();
 
 var SPREADSHEET_NAME      = 'NH FCR, Transfer or Sales Call Analyzer';
+var MAIN_SPREADSHEET_ID   = '1wy65jF6bz15tIQs5uozxksA2z7yDwxWOszaOrVCGuaM';
+var ADMIN_DOMAIN          = 'telusinternational.com';
 var ROSTER_SHEET_ID       = '1-UIO2kTsIdx5oru_uvg0q9rtNM-1Hb5e_R_YgISoSh4';
 var REPEATS_FOLDER_ID     = '13gcW62ubbfZ-Zk-zxTozjcIvs5_55bD1';
 var SALES_FOLDER_ID       = '1zvFsLLse7X1UtfLtZ-ggSc5CNLd0ZrE0';

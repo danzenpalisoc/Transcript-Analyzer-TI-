@@ -4,9 +4,7 @@
  */
 
 function getOrCreateSpreadsheet() {
-  var files = DriveApp.getFilesByName(SPREADSHEET_NAME);
-  if (files.hasNext()) return SpreadsheetApp.open(files.next());
-  return SpreadsheetApp.create(SPREADSHEET_NAME);
+  return SpreadsheetApp.openById(MAIN_SPREADSHEET_ID);
 }
 
 function getOrCreateSheet(spreadsheet, sheetName) {
@@ -27,7 +25,11 @@ function ensureHeaders(sheet, headers) {
 }
 
 function appendRow(sheet, rowData) {
-  sheet.appendRow(rowData);
+  var safeRow = rowData.map(function(v) {
+    if (typeof v === 'string' && /^[=+\-@]/.test(v)) return "'" + v;
+    return v;
+  });
+  sheet.appendRow(safeRow);
 }
 
 function getSpreadsheetUrl() {
