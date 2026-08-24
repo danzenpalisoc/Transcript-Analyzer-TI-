@@ -2394,8 +2394,8 @@ function doGetDashboard() {
 }
 
 // ── Dashboard data cache keys ─────────────────────────────────────────────────
-var DB_CACHE_KEY      = 'dashboard_data_v1';
-var DB_CACHE_META_KEY = 'dashboard_data_meta_v1';
+var DB_CACHE_KEY      = 'dashboard_data_v2';
+var DB_CACHE_META_KEY = 'dashboard_data_meta_v2';
 var DB_CACHE_TTL      = 60 * 60;   // 60 minutes — extended since localStorage is the fast layer
 // CacheService limit is 100 KB per key — split into chunks if needed
 var DB_CACHE_CHUNK    = 90000;      // bytes per chunk (safe margin under 100 KB)
