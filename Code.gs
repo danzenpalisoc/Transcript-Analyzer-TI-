@@ -544,6 +544,27 @@ function addSalesAttemptedColumn() {
   Logger.log('Run enrichDashboardData() next to backfill values.');
 }
 
+// ── Run once from GAS editor to verify Sales Attempted column mapping ─────────
+function testSalesAttempted() {
+  var ss     = getOrCreateSpreadsheet();
+  var dSheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
+  var lastCol = dSheet.getLastColumn();
+  var headers = dSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var saCol = -1;
+  headers.forEach(function(h, i) { if (h === 'Sales Attempted') saCol = i + 1; });
+  Logger.log('Total columns: ' + lastCol);
+  Logger.log('Sales Attempted column (1-based): ' + saCol);
+  Logger.log('Header at index 28 (0-based): "' + headers[28] + '"');
+  Logger.log('Header at index 27 (0-based): "' + headers[27] + '"');
+  Logger.log('Header at index 29 (0-based): "' + headers[29] + '"');
+  if (saCol > 0) {
+    var data = dSheet.getRange(2, saCol, Math.min(10, dSheet.getLastRow()-1), 1).getValues();
+    Logger.log('First 10 Sales Attempted values: ' + JSON.stringify(data.map(function(r){return r[0];})));
+  } else {
+    Logger.log('ERROR: Sales Attempted column NOT FOUND in sheet header row!');
+  }
+}
+
 // ── Run once: add header notes/comments to Dashboard_Data columns ─────────────
 // ── One-time fix: extract Repeat % from Issue Resolved text and Audit_Log ──────
 // ── Backfill VTID into Audit_Log from Dashboard_Data ─────────────────────────
