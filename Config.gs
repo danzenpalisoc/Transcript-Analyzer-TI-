@@ -101,6 +101,7 @@ var DASHBOARD_HEADERS = [
   'RCA Sub-Parameter',        // Specific missed step or gap
   'Top SMART Opportunity',    // #1 coaching point in SMART format (short)
   'Product Opportunity',      // Missed upsell/product opportunity (Sales only)
+  'Sales Attempted',          // Yes | No | N/A — did agent make any offer/upsell (Sales only)
   // ── SMART Coaching Breakdown (from AI) ──
   'SMART S (Specific)',       // Exact behavior to change
   'SMART M (Measurable)',     // How success will be measured

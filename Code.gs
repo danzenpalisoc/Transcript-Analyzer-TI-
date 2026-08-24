@@ -194,12 +194,14 @@ function enrichDashboardData() {
     var ref    = (row[colOf['Audit Ref'] - 1] || '').toString().trim();
     var atype  = (row[colOf['Analysis Type'] - 1] || '').toString().trim();
 
-    // Skip only if ALL structured fields including RCA Category are already filled
-    var hasDriver  = colOf['Call Driver']         && (row[colOf['Call Driver']         - 1] || '').toString().trim();
-    var hasFlags   = colOf['Critical Flags']      && (row[colOf['Critical Flags']      - 1] || '').toString().trim();
-    var hasRepeat  = colOf['Repeat Projection %'] && (row[colOf['Repeat Projection %'] - 1] || '').toString().trim();
-    var hasRcaCat  = colOf['RCA Category']        && (row[colOf['RCA Category']        - 1] || '').toString().trim();
-    if (hasDriver && hasFlags && hasRepeat && hasRcaCat) continue;
+    // Skip only if ALL structured fields are already filled (including Sales Attempted for Sales rows)
+    var hasDriver       = colOf['Call Driver']         && (row[colOf['Call Driver']         - 1] || '').toString().trim();
+    var hasFlags        = colOf['Critical Flags']      && (row[colOf['Critical Flags']      - 1] || '').toString().trim();
+    var hasRepeat       = colOf['Repeat Projection %'] && (row[colOf['Repeat Projection %'] - 1] || '').toString().trim();
+    var hasRcaCat       = colOf['RCA Category']        && (row[colOf['RCA Category']        - 1] || '').toString().trim();
+    var isSalesRow      = (atype || '').indexOf('Sales') !== -1;
+    var hasSalesAttempt = !isSalesRow || (colOf['Sales Attempted'] && (row[colOf['Sales Attempted'] - 1] || '').toString().trim());
+    if (hasDriver && hasFlags && hasRepeat && hasRcaCat && hasSalesAttempt) continue;
 
     var id   = refToId[ref];
     var html = id ? idToHtml[id] : '';
@@ -252,6 +254,7 @@ function enrichDashboardData() {
         var topOppCol = colOf['Top SMART Opportunity'] || colOf['Top Opportunity'];
         if (topOppCol)                        dSheet.getRange(i+2, topOppCol).setValue(structured.topOpportunity);
         if (colOf['Product Opportunity'])     dSheet.getRange(i+2, colOf['Product Opportunity']).setValue(structured.productOpportunity);
+        if (colOf['Sales Attempted'])         dSheet.getRange(i+2, colOf['Sales Attempted']).setValue(structured.salesAttempted);
         if (colOf['SMART S (Specific)']   && structured.smartS) dSheet.getRange(i+2, colOf['SMART S (Specific)']).setValue(structured.smartS);
         if (colOf['SMART M (Measurable)'] && structured.smartM) dSheet.getRange(i+2, colOf['SMART M (Measurable)']).setValue(structured.smartM);
         if (colOf['SMART A (Attainable)'] && structured.smartA) dSheet.getRange(i+2, colOf['SMART A (Attainable)']).setValue(structured.smartA);
@@ -383,8 +386,10 @@ function extractStructuredRCA(html, analysisType, auditRef) {
     '  "rcaSubParameter": "The specific missed step or policy gap in 10 words or less. Examples: Missed callback policy, Incomplete authentication, No retention attempt, Invalid transfer",\n' +
     '  "topOpportunity": "The single most impactful coaching opportunity in 12 words or less. Be specific to this call.",\n' +
     (isSales
-      ? '  "productOpportunity": "Name the specific product or service the agent could have offered but did not. If a sale was made, write what was sold.",\n'
-      : '  "productOpportunity": "N/A",\n'
+      ? '  "productOpportunity": "Name the specific product or service the agent could have offered but did not. If a sale was made, write what was sold.",\n' +
+        '  "salesAttempted": "Yes or No — did the agent make any sales offer, upsell attempt, or product recommendation during this call?",\n'
+      : '  "productOpportunity": "N/A",\n' +
+        '  "salesAttempted": "N/A",\n'
     ) +
     '  "callSummaryShort": "One sentence (max 20 words) describing what happened on this call.",\n' +
     '  "criticalFlags": "Comma-separated list of specific critical behaviors flagged in this evaluation. Use the exact flag names from the text (e.g. Missed callback policy, Incomplete authentication, No retention attempt). Max 5 flags. If none, write None.",\n' +
@@ -433,6 +438,7 @@ function extractStructuredRCA(html, analysisType, auditRef) {
       rcaSubParameter:   (obj.rcaSubParameter    || '').substring(0, 100),
       topOpportunity:    (obj.topOpportunity      || '').substring(0, 150),
       productOpportunity:(obj.productOpportunity  || '').substring(0, 100),
+      salesAttempted:    (obj.salesAttempted      || '').substring(0, 10),
       callSummaryShort:  (obj.callSummaryShort    || '').substring(0, 200),
       criticalFlags:     (obj.criticalFlags       || 'None').replace(/^None$/i, '').substring(0, 500),
       repeatPct:         (obj.repeatPct           || '0').toString().replace(/[^0-9]/g,'').substring(0, 5),
@@ -2657,12 +2663,14 @@ function submitTranscript(formData) {
       var rcaSubParameter   = structured ? structured.rcaSubParameter   : '';
       var topOpportunity    = structured ? structured.topOpportunity    : '';
       var productOpportunity= structured ? structured.productOpportunity: '';
+      var salesAttempted    = '';
 
       // AI-backed RCA category extraction (adds ~3-5s but populates RCA Category immediately)
       try {
         var aiRca = extractStructuredRCA(html, analysisLabel, auditRef);
-        if (aiRca && aiRca.rcaCategory)    rcaCategory       = aiRca.rcaCategory;
+        if (aiRca && aiRca.rcaCategory)        rcaCategory        = aiRca.rcaCategory;
         if (aiRca && aiRca.productOpportunity) productOpportunity = aiRca.productOpportunity;
+        if (aiRca && aiRca.salesAttempted)     salesAttempted     = aiRca.salesAttempted;
       } catch(rcaErr) {
         Logger.log('RCA category extraction failed (non-fatal): ' + rcaErr);
       }
@@ -2686,7 +2694,7 @@ function submitTranscript(formData) {
         analysisLabel,
         callReason, callSummary, opportunities, recommendations,
         criticalFlags, repeatPct, issueResolved, transferOccurred,
-        callDriver, rcaCategory, rcaSubParameter, topOpportunity, productOpportunity,
+        callDriver, rcaCategory, rcaSubParameter, topOpportunity, productOpportunity, salesAttempted,
         smartS, smartM, smartA, smartR, smartT,
         'Pending', 'Not Sent', formData.agentEmail || ''
       ]);
