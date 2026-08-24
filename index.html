@@ -3747,14 +3747,20 @@ function dbDrawChart(pfx, rows, _retries) {
         if (v === 'yes') attempted++;
         else if (v === 'no') notAttempted++;
       });
-      var saDt = new google.visualization.DataTable();
-      saDt.addColumn('string','Status'); saDt.addColumn('number','Count');
-      saDt.addRows([['Sales Attempted', attempted], ['No Sales Attempt', notAttempted]]);
-      new google.visualization.PieChart(saEl).draw(saDt, {
-        pieHole: 0.4, legend:{position:'right',textStyle:{fontSize:12}},
-        colors:['#2B8000','#C12335'],
-        chartArea:{left:60,top:10,width:'50%',height:'85%'}, backgroundColor:'transparent'
-      });
+      if (attempted === 0 && notAttempted === 0) {
+        saEl.innerHTML = '<div style="text-align:center;padding:60px 20px;color:#888;font-size:12px">' +
+          'No Sales Attempted data yet.<br>Run <strong>enrichDashboardData()</strong> from GAS to populate.' +
+          '</div>';
+      } else {
+        var saDt = new google.visualization.DataTable();
+        saDt.addColumn('string','Status'); saDt.addColumn('number','Count');
+        saDt.addRows([['Sales Attempted', attempted], ['No Sales Attempt', notAttempted]]);
+        new google.visualization.PieChart(saEl).draw(saDt, {
+          pieHole: 0.4, legend:{position:'right',textStyle:{fontSize:12}},
+          colors:['#2B8000','#C12335'],
+          chartArea:{left:60,top:10,width:'50%',height:'85%'}, backgroundColor:'transparent'
+        });
+      }
     }
   }
 }
