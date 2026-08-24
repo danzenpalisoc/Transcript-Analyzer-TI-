@@ -156,6 +156,7 @@ function diagnoseATDataColumns() {
 // ── VTID lookup ───────────────────────────────────────────────────────────────
 // ── Shared: load AT Data GCP sheet once, cache for 2 hours ──────────────────
 var _atDataInMemory = null;
+var _globalRosterDataInMemory = null;
 
 function _getATDataGCPSheetData() {
   if (_atDataInMemory) return _atDataInMemory;
@@ -183,6 +184,30 @@ function _getATDataGCPSheetData() {
     Logger.log('AT Data GCP loaded from sheet: ' + rows.length + ' rows');
     return _atDataInMemory;
   } catch(e) { Logger.log('_getATDataGCPSheetData: ' + e); return [[]]; }
+}
+
+// ── Shared: load Global Roster sheet data (cached 4h) ────────────────────────
+function _getGlobalRosterData() {
+  if (_globalRosterDataInMemory) return _globalRosterDataInMemory;
+  try {
+    var cache    = CacheService.getScriptCache();
+    var cacheKey = 'global_roster_v1';
+    var cached   = cache.get(cacheKey);
+    if (cached) {
+      try {
+        _globalRosterDataInMemory = JSON.parse(cached);
+        return _globalRosterDataInMemory;
+      } catch(e) {}
+    }
+    var ss    = SpreadsheetApp.openById(GLOBAL_ROSTER_SS_ID);
+    var sheet = ss.getSheetByName('Global Roster');
+    if (!sheet) return { header: [], rows: [] };
+    var data    = sheet.getDataRange().getValues();
+    var payload = { header: data[0] || [], rows: data.slice(1) };
+    try { cache.put(cacheKey, JSON.stringify(payload).substring(0, 95000), 4 * 60 * 60); } catch(e) {}
+    _globalRosterDataInMemory = payload;
+    return payload;
+  } catch(e) { Logger.log('_getGlobalRosterData: ' + e); return { header: [], rows: [] }; }
 }
 
 // AT Data GCP file → "Roster" tab
@@ -261,12 +286,57 @@ function lookupBySapId(sapId) {
           teamLeader:     (rosterRows[i][ROSTER_COL_TEAM_MGR]    || '').toString().trim(),
           opsManager:     (rosterRows[i][ROSTER_COL_OPS_MGR]     || '').toString().trim(),
           locale:         (rosterRows[i][ROSTER_COL_LOCALE]       || '').toString().trim(),
-          vtid:           lookupVTID(targetStr)
+          vtid:           lookupVTID(targetStr),
+          agentEmail:     ''
         };
       }
     }
-    Logger.log('SAP ' + targetStr + ' not in roster — trying AT Data GCP');
+    Logger.log('SAP ' + targetStr + ' not in roster — trying Global Roster');
   } catch(e) { Logger.log('Roster lookup error: ' + e); }
+
+  // ── 1.5. Try Global Roster ────────────────────────────────────────────────
+  try {
+    var gData  = _getGlobalRosterData();
+    var gHdr   = gData.header;
+    var gRows  = gData.rows;
+    var gSapCol = -1, gNameCol = -1, gTLCol = -1, gOMCol = -1, gEmailCol = -1, gLOBCol = -1, gLocaleCol = -1;
+    gHdr.forEach(function(h, i) {
+      var hl = h.toString().toLowerCase().trim();
+      if (hl === 'sap id' || hl === 'sap_id')          gSapCol    = i;
+      if (hl === 'member full name')                    gNameCol   = i;
+      if (hl === 'tl full name fixed')                  gTLCol     = i;
+      if (hl === 'om full name fixed')                  gOMCol     = i;
+      if (hl === 'email address' || hl === 'email')     gEmailCol  = i;
+      if (hl === 'domain name')                         gLOBCol    = i;
+      if (hl === 'campus name')                         gLocaleCol = i;
+    });
+    if (gSapCol !== -1) {
+      for (var g = 0; g < gRows.length; g++) {
+        var gCell = gRows[g][gSapCol];
+        if (gCell === null || gCell === undefined || gCell === '') continue;
+        if (gCell.toString().trim() === targetStr ||
+            (!isNaN(targetNum) && Number(gCell) === targetNum)) {
+          var gName   = gNameCol   > -1 ? (gRows[g][gNameCol]   || '').toString().trim() : '';
+          var gTL     = gTLCol     > -1 ? (gRows[g][gTLCol]     || '').toString().trim() : '';
+          var gOM     = gOMCol     > -1 ? (gRows[g][gOMCol]     || '').toString().trim() : '';
+          var gEmail  = gEmailCol  > -1 ? (gRows[g][gEmailCol]  || '').toString().trim() : '';
+          var gLOB    = gLOBCol    > -1 ? (gRows[g][gLOBCol]    || '').toString().trim() : '';
+          var gLocale = gLocaleCol > -1 ? (gRows[g][gLocaleCol] || '').toString().trim() : '';
+          Logger.log('Global Roster match for SAP ' + targetStr + ' → ' + gName);
+          return {
+            participant:    gName,
+            lineOfBusiness: gLOB,
+            teamLeader:     gTL,
+            opsManager:     gOM,
+            locale:         gLocale,
+            vtid:           lookupVTID(targetStr),
+            agentEmail:     gEmail
+          };
+        }
+      }
+    }
+    Logger.log('SAP ' + targetStr + ' not in Global Roster — trying AT Data GCP');
+  } catch(e) { Logger.log('Global Roster lookup error: ' + e); }
 
   // ── 2. Fall back to AT Data GCP (uses cached data — no sheet read) ────────
   try {
@@ -314,7 +384,8 @@ function lookupBySapId(sapId) {
           teamLeader:     facilitator,
           opsManager:     '',
           locale:         loc,
-          vtid:           vtid
+          vtid:           vtid,
+          agentEmail:     ''
         };
 
         // Try to enrich Team Leader / Ops Manager from FCR Dashboard Data

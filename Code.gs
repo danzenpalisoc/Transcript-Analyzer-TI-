@@ -2591,7 +2591,8 @@ function submitTranscript(formData) {
         observerName,
         startTime, customerBAN, interactionId,
         direction, duration,
-        analysisLabel, formData.transcript
+        analysisLabel, formData.transcript,
+        formData.agentEmail || ''
       ]);
     } catch(we) {
       var msg = we.toString();
@@ -2599,7 +2600,7 @@ function submitTranscript(formData) {
         return {
           success: false,
           error: 'Access denied: You need Editor (not Viewer) access to the "' + SPREADSHEET_NAME + '" spreadsheet. ' +
-                 'Please ask your admin (danzen.palisoc@telusinternational.com) to update your sharing permissions.'
+                 'Please ask your admin (danzen.palisoc@telus.com) to update your sharing permissions.'
         };
       }
       throw we;
@@ -2677,7 +2678,7 @@ function submitTranscript(formData) {
         criticalFlags, repeatPct, issueResolved, transferOccurred,
         callDriver, rcaCategory, rcaSubParameter, topOpportunity, productOpportunity,
         smartS, smartM, smartA, smartR, smartT,
-        'Pending', 'Not Sent'
+        'Pending', 'Not Sent', formData.agentEmail || ''
       ]);
       invalidateDashboardCache();
     } catch(de) {
@@ -2698,17 +2699,12 @@ function submitTranscript(formData) {
         observerName, analysisLabel,
         direction, duration,
         repeatPct || '', issueResolved || '', transferOccurred || '',
-        'Not Sent', ''
+        'Not Sent', '', formData.agentEmail || ''
       ]);
       invalidateAuditLogCache(); // bust cache so next read is fresh
     } catch(le) {
       Logger.log('Audit_Log write error (non-fatal): ' + le);
       warnings.push('Audit log entry failed to save — contact admin with ref ' + auditRef);
-    }
-
-    // ── 9. Notify Admin/Dev users (non-fatal — quota or email errors must not fail the submission) ──
-    try { notifyAdmins(formData, auditRef); } catch(ne) {
-      Logger.log('notifyAdmins failed (non-fatal): ' + ne);
     }
 
     return {
@@ -2830,6 +2826,7 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
 
     Logger.log('Submission email sent to: ' + recipients.join(', '));
     updateDashboardPDFLink(interactionId, 'Auto-sent', recipients, auditRef);
+    try { notifyAdmins(formData, auditRef); } catch(ne) { Logger.log('notifyAdmins failed: ' + ne); }
 
   } catch(e) {
     Logger.log('sendSubmissionEmail error: ' + e.toString());
@@ -2940,6 +2937,7 @@ function sendAuditEmail(formData, htmlResult) {
     updateDashboardPDFLink(interactionId, 'Sent via email', recipients, auditRef);
 
     Logger.log('Audit email sent to: ' + recipients.join(', '));
+    try { notifyAdmins(formData, auditRefCheck); } catch(ne) { Logger.log('notifyAdmins failed: ' + ne); }
     return { success: true, recipients: recipients, auditRef: auditRef };
 
   } catch(e) {
@@ -2948,37 +2946,48 @@ function sendAuditEmail(formData, htmlResult) {
   }
 }
 
-// ── Resolve email from name via roster ────────────────────────────────────────
+// ── Resolve email from name — checks Primary Roster then Global Roster ────────
 function resolveEmail(name) {
   if (!name) return '';
   try {
+    var nameLower = name.trim().toLowerCase();
+
+    // 1. Primary Roster — match on Agent_Name column only (col C, index 2)
     var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
     var sheet = ss.getSheetByName('roster');
-    if (!sheet) return '';
-    var data      = sheet.getDataRange().getValues();
-    var nameLower = name.trim().toLowerCase();
-    for (var i = 1; i < data.length; i++) {
-      // Check columns C (Agent_Name=2), I (Team_Mgr_Name=8), K (Ops_Mgr_Name=10)
-      for (var j = 2; j < data[i].length; j++) {
-        if (data[i][j] && data[i][j].toString().trim().toLowerCase() === nameLower) {
-          // Look for email column — try common header names
+    if (sheet) {
+      var data = sheet.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (data[i][2] && data[i][2].toString().trim().toLowerCase() === nameLower) {
           for (var k = 0; k < data[0].length; k++) {
             var h = data[0][k].toString().toLowerCase();
             if (h.indexOf('email') !== -1 || h.indexOf('mail') !== -1) {
               if (data[i][k]) return data[i][k].toString().trim();
             }
           }
-          // Fallback: construct from name (firstname.lastname@telus.com)
-          var parts = name.trim().split(/\s+/);
-          if (parts.length >= 2) {
-            return (parts[0] + '.' + parts[parts.length - 1] + '@telus.com').toLowerCase();
-          }
         }
       }
     }
-    // Last resort: construct email from name
-    var p = name.trim().split(/\s+/);
-    if (p.length >= 2) return (p[0] + '.' + p[p.length - 1] + '@telus.com').toLowerCase();
+
+    // 2. Global Roster — covers TL/OM who are also tracked as agents there
+    var gData = _getGlobalRosterData();
+    var gHdr  = gData.header;
+    var gRows = gData.rows;
+    var gNameCol = -1, gEmailCol = -1;
+    gHdr.forEach(function(h, idx) {
+      var hl = h.toString().toLowerCase().trim();
+      if (hl === 'member full name')                gNameCol  = idx;
+      if (hl === 'email address' || hl === 'email') gEmailCol = idx;
+    });
+    if (gNameCol !== -1 && gEmailCol !== -1) {
+      for (var g = 0; g < gRows.length; g++) {
+        if (gRows[g][gNameCol] && gRows[g][gNameCol].toString().trim().toLowerCase() === nameLower) {
+          var gEmail = gRows[g][gEmailCol] ? gRows[g][gEmailCol].toString().trim() : '';
+          if (gEmail) return gEmail;
+        }
+      }
+    }
+
     return '';
   } catch(e) {
     Logger.log('resolveEmail error: ' + e);

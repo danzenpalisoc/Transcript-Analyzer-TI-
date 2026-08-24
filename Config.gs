@@ -14,8 +14,9 @@ var FUELIX_CONFIG = (function () {
 
 var SPREADSHEET_NAME      = 'NH FCR, Transfer or Sales Call Analyzer';
 var MAIN_SPREADSHEET_ID   = '1wy65jF6bz15tIQs5uozxksA2z7yDwxWOszaOrVCGuaM';
-var ADMIN_DOMAIN          = 'telusinternational.com';
+var ADMIN_DOMAIN          = 'telus.com';
 var ROSTER_SHEET_ID       = '1-UIO2kTsIdx5oru_uvg0q9rtNM-1Hb5e_R_YgISoSh4';
+var GLOBAL_ROSTER_SS_ID   = '18bB1ZIb_Qkn8Kt1UwVtswYhFqQ5MdWXZolei2MoT6Yg';
 var REPEATS_FOLDER_ID     = '13gcW62ubbfZ-Zk-zxTozjcIvs5_55bD1';
 var SALES_FOLDER_ID       = '1zvFsLLse7X1UtfLtZ-ggSc5CNLd0ZrE0';
 var PDF_CACHE_KEY_REPEATS = 'pdf_knowledge_repeats';
@@ -71,7 +72,8 @@ var TRANSCRIPTS_HEADERS = [
   'Audit Ref', 'Timestamp', 'SAP ID', 'Team Member', 'Team Leader',
   'Operations Manager', 'Line of Business', 'Locale', 'Observer Name',
   'Transcript Start Time', 'Customer BAN', 'Interaction ID',
-  'Direction', 'Transcript Duration', 'Analysis Type', 'Transcript'
+  'Direction', 'Transcript Duration', 'Analysis Type', 'Transcript',
+  'Agent Email'
 ];
 
 var ANALYSIS_HEADERS = [
@@ -106,7 +108,7 @@ var DASHBOARD_HEADERS = [
   'SMART R (Realistic)',      // Why this is realistic for this agent now
   'SMART T (Time-bound)',     // Timeline for achieving the goal
   // ── Status ──
-  'PDF Email Link', 'Email Status'
+  'PDF Email Link', 'Email Status', 'Agent Email'
 ];
 
 // Audit_Log headers — permanent archive of every submitted evaluation
@@ -115,6 +117,6 @@ var AUDIT_LOG_HEADERS = [
   'Team Leader', 'Operations Manager', 'Line of Business', 'Locale', 'VTID',
   'Observer Name', 'Analysis Type', 'Direction', 'Duration',
   'Repeat Projection %', 'Issue Resolved', 'Transfer Occurred',
-  'Email Status', 'Recipients'
+  'Email Status', 'Recipients', 'Agent Email'
 ];
 

@@ -1247,6 +1247,7 @@ body {
           <label>VTID</label>
           <input type="text" id="vtid" placeholder="Auto-filled from AT Data GCP..."/>
         </div>
+        <input type="hidden" id="agentEmail" value=""/>
       </div>
     </div>
   </div>
@@ -1907,6 +1908,7 @@ function _applyRosterRow(row) {
   if (row.opsManager)     document.getElementById('opsManager').value     = row.opsManager;
   if (row.locale)         document.getElementById('locale').value         = row.locale;
   if (row.vtid)           document.getElementById('vtid').value           = row.vtid;
+  document.getElementById('agentEmail').value = row.agentEmail || '';
 }
 
 function lookupSapFromName(participantName) {
@@ -2161,7 +2163,8 @@ function handleSubmit() {
     direction:      document.getElementById('direction').value,
     duration:       document.getElementById('duration').value.trim(),
     analysisType:   document.querySelector('input[name="analysisType"]:checked').value,
-    transcript:     document.getElementById('transcript').value.trim()
+    transcript:     document.getElementById('transcript').value.trim(),
+    agentEmail:     document.getElementById('agentEmail').value.trim()
   };
   if (!formData.sapId)      { showError('Please fill in: SAP ID'); return; }
   if (!formData.transcript) { showError('Please paste a call transcript'); return; }
@@ -3882,7 +3885,8 @@ function getFormData() {
     duration:       document.getElementById('duration').value.trim(),
     analysisType:   document.querySelector('input[name="analysisType"]:checked').value,
     auditRef:       _currentAuditRef,
-    observerName:   _currentObserver.name || _currentObserver.email || ''
+    observerName:   _currentObserver.name || _currentObserver.email || '',
+    agentEmail:     document.getElementById('agentEmail').value.trim()
   };
 }
 
