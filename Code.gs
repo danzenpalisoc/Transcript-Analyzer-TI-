@@ -2406,12 +2406,16 @@ function readDashboardSheet() {
   var sheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
   ensureHeaders(sheet, DASHBOARD_HEADERS);
   var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
-  var data = sheet.getRange(2, 1, lastRow - 1, DASHBOARD_HEADERS.length).getValues();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return [];
+  // Read actual headers from the sheet so any added columns (e.g. Sales Attempted)
+  // are always mapped correctly regardless of DASHBOARD_HEADERS index order.
+  var actualHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
   return data.map(function(row) {
     var obj = {};
-    DASHBOARD_HEADERS.forEach(function(h, i) {
-      obj[h] = row[i] !== undefined ? row[i].toString() : '';
+    actualHeaders.forEach(function(h, i) {
+      if (h) obj[h] = row[i] !== undefined ? row[i].toString() : '';
     });
     return obj;
   });
