@@ -1368,9 +1368,9 @@ body {
         <!-- Date range -->
         <div style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#4B286D">
           <span>Date:</span>
-          <input type="date" id="an-date-from" style="border:1px solid #D1B8E8;border-radius:4px;padding:4px 7px;font-size:11px;font-family:inherit;background:#fff" onchange="anApplyFilters()"/>
+          <input type="date" id="an-date-from" style="border:1px solid #D1B8E8;border-radius:4px;padding:4px 7px;font-size:11px;font-family:inherit;background:#fff" onchange="anApplyFilters();anRunAnalytics()"/>
           <span style="color:#888">→</span>
-          <input type="date" id="an-date-to"   style="border:1px solid #D1B8E8;border-radius:4px;padding:4px 7px;font-size:11px;font-family:inherit;background:#fff" onchange="anApplyFilters()"/>
+          <input type="date" id="an-date-to"   style="border:1px solid #D1B8E8;border-radius:4px;padding:4px 7px;font-size:11px;font-family:inherit;background:#fff" onchange="anApplyFilters();anRunAnalytics()"/>
         </div>
 
         <!-- Team Member -->
@@ -1414,20 +1414,55 @@ body {
           <div class="an-pill-drop" id="an-drop-locale"></div>
         </div>
 
+        <!-- Ops Manager -->
+        <div style="position:relative">
+          <div class="an-filter-pill" id="an-pill-ops" onclick="anTogglePill('ops')">
+            <span class="an-pill-lbl">Ops Manager</span>
+            <span id="an-pill-ops-val" class="an-pill-val">All</span>
+            <span>▼</span>
+          </div>
+          <div class="an-pill-drop" id="an-drop-ops"></div>
+        </div>
+
+        <!-- VTID -->
+        <div style="position:relative">
+          <div class="an-filter-pill" id="an-pill-vtid" onclick="anTogglePill('vtid')">
+            <span class="an-pill-lbl">VTID</span>
+            <span id="an-pill-vtid-val" class="an-pill-val">All</span>
+            <span>▼</span>
+          </div>
+          <div class="an-pill-drop" id="an-drop-vtid"></div>
+        </div>
+
+        <!-- Analysis Type -->
+        <div style="position:relative">
+          <div class="an-filter-pill" id="an-pill-atype" onclick="anTogglePill('atype')">
+            <span class="an-pill-lbl">Analysis Type</span>
+            <span id="an-pill-atype-val" class="an-pill-val">All</span>
+            <span>▼</span>
+          </div>
+          <div class="an-pill-drop" id="an-drop-atype"></div>
+        </div>
+
+        <!-- Audit Ref -->
+        <div style="position:relative">
+          <div class="an-filter-pill" id="an-pill-ref" onclick="anTogglePill('ref')">
+            <span class="an-pill-lbl">Audit Ref</span>
+            <span id="an-pill-ref-val" class="an-pill-val">All</span>
+            <span>▼</span>
+          </div>
+          <div class="an-pill-drop" id="an-drop-ref"></div>
+        </div>
+
         <!-- SAP ID search -->
         <input type="text" id="an-sap-q" placeholder="&#128269; SAP ID…"
           style="border:1px solid #D1B8E8;border-radius:16px;padding:4px 12px;font-size:11px;font-family:inherit;background:#fff;width:110px"
-          oninput="anApplyFilters()"/>
+          oninput="anSapDebounce()"/>
 
         <button onclick="anClearFilters()"
           style="background:var(--telus-green);color:#fff;border:none;border-radius:4px;
                  padding:5px 12px;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;margin-left:4px">
-          Clear
-        </button>
-        <button onclick="anRunAnalytics()"
-          style="background:#4B286D;color:#fff;border:none;border-radius:4px;
-                 padding:5px 14px;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer">
-          &#129302; Run
+          Clear All
         </button>
       </div>
     </div>
@@ -3899,8 +3934,12 @@ var _anOpenDrop = null;
 var _anFilters  = {};   // current state of analytics panel filters
 
 // ── Analytics inline filter pills ────────────────────────────────────────────
-var AN_PILL_KEYS = ['member','leader','lob','locale'];
-var AN_PILL_FIELDS = { member:'Team Member', leader:'Team Leader', lob:'Line of Business', locale:'Locale' };
+var AN_PILL_KEYS = ['member','leader','ops','lob','locale','vtid','atype','ref'];
+var AN_PILL_FIELDS = {
+  member: 'Team Member', leader: 'Team Leader', ops: 'Operations Manager',
+  lob: 'Line of Business', locale: 'Locale', vtid: 'VTID',
+  atype: 'Analysis Type', ref: 'Audit Ref'
+};
 
 function anInitFilters(pfx) {
   // Seed from main dashboard filters
@@ -3910,8 +3949,12 @@ function anInitFilters(pfx) {
     sapQ: f.sapQ || '',
     member:  f.members  || [],
     leader:  f.leaders  || [],
+    ops:     f.ops      || [],
     lob:     f.lobs     || [],
-    locale:  f.locales  || []
+    locale:  f.locales  || [],
+    vtid:    f.vtids    || [],
+    atype:   f.atypes   || [],
+    ref:     f.refs     || []
   };
 
   // Restore date inputs
@@ -3920,8 +3963,7 @@ function anInitFilters(pfx) {
   document.getElementById('an-sap-q').value      = _anFilters.sapQ;
 
   // Build pill dropdowns from all data
-  var rows = pfx === 's' ? _dbSFiltered.concat(_dbRFiltered) : _dbRFiltered.concat(_dbSFiltered);
-  var all  = _dbAllData;
+  var all = _dbAllData;
 
   AN_PILL_KEYS.forEach(function(key) {
     var field  = AN_PILL_FIELDS[key];
@@ -4008,10 +4050,12 @@ function anTogglePill(key) {
   if (!drop) return;
   if (_anOpenDrop && _anOpenDrop !== key) {
     document.getElementById('an-drop-' + _anOpenDrop).classList.remove('open');
+    anRunAnalytics();
   }
   if (drop.classList.contains('open')) {
     drop.classList.remove('open');
     _anOpenDrop = null;
+    anRunAnalytics();
   } else {
     var pill = document.getElementById('an-pill-' + key);
     var rect = pill.getBoundingClientRect();
@@ -4036,7 +4080,8 @@ function anClearFilters() {
   document.getElementById('an-date-to').value   = '';
   document.getElementById('an-sap-q').value      = '';
   AN_PILL_KEYS.forEach(function(key){ anClearPill(key); });
-  _anFilters = { dateFrom:'', dateTo:'', sapQ:'', member:[], leader:[], lob:[], locale:[] };
+  _anFilters = { dateFrom:'', dateTo:'', sapQ:'', member:[], leader:[], ops:[], lob:[], locale:[], vtid:[], atype:[], ref:[] };
+  anRunAnalytics();
 }
 
 function anApplyFilters() {
@@ -4045,7 +4090,14 @@ function anApplyFilters() {
   _anFilters.sapQ     = (document.getElementById('an-sap-q').value||'').trim().toLowerCase();
 }
 
-// Close open drop on outside click
+var _anSapTimer = null;
+function anSapDebounce() {
+  anApplyFilters();
+  clearTimeout(_anSapTimer);
+  _anSapTimer = setTimeout(function(){ anRunAnalytics(); }, 600);
+}
+
+// Close open drop on outside click, then auto-apply
 document.addEventListener('click', function(e) {
   if (!_anOpenDrop) return;
   var drop = document.getElementById('an-drop-' + _anOpenDrop);
@@ -4053,6 +4105,7 @@ document.addEventListener('click', function(e) {
   if (drop && !drop.contains(e.target) && pill && !pill.contains(e.target)) {
     drop.classList.remove('open');
     _anOpenDrop = null;
+    anRunAnalytics();
   }
 });
 
@@ -4067,8 +4120,12 @@ function anGetFilteredRows() {
     if (sapQ && (r['SAP ID']||'').toLowerCase().indexOf(sapQ)===-1) return false;
     if (_anFilters.member.length && _anFilters.member.indexOf(r['Team Member']||'')===-1) return false;
     if (_anFilters.leader.length && _anFilters.leader.indexOf(r['Team Leader']||'')===-1) return false;
+    if (_anFilters.ops.length    && _anFilters.ops.indexOf(r['Operations Manager']||'')===-1) return false;
     if (_anFilters.lob.length    && _anFilters.lob.indexOf(r['Line of Business']||'')===-1) return false;
     if (_anFilters.locale.length && _anFilters.locale.indexOf(r['Locale']||'')===-1) return false;
+    if (_anFilters.vtid.length   && _anFilters.vtid.indexOf(r['VTID']||'')===-1) return false;
+    if (_anFilters.atype.length  && _anFilters.atype.indexOf(r['Analysis Type']||'')===-1) return false;
+    if (_anFilters.ref.length    && _anFilters.ref.indexOf(r['Audit Ref']||'')===-1) return false;
     return true;
   });
 }
@@ -4082,7 +4139,8 @@ function anRunAnalytics() {
   var filters = {
     dateFrom: _anFilters.dateFrom, dateTo: _anFilters.dateTo,
     members: _anFilters.member, leaders: _anFilters.leader,
-    lobs: _anFilters.lob, locales: _anFilters.locale,
+    ops: _anFilters.ops, lobs: _anFilters.lob, locales: _anFilters.locale,
+    vtids: _anFilters.vtid, atypes: _anFilters.atype, refs: _anFilters.ref,
     sapQ: _anFilters.sapQ
   };
 
