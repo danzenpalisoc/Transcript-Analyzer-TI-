@@ -4120,12 +4120,12 @@ function anGetFilteredRows() {
     if (sapQ && (r['SAP ID']||'').toLowerCase().indexOf(sapQ)===-1) return false;
     if (_anFilters.member.length && _anFilters.member.indexOf(r['Team Member']||'')===-1) return false;
     if (_anFilters.leader.length && _anFilters.leader.indexOf(r['Team Leader']||'')===-1) return false;
-    if (_anFilters.ops.length    && _anFilters.ops.indexOf(r['Operations Manager']||'')===-1) return false;
-    if (_anFilters.lob.length    && _anFilters.lob.indexOf(r['Line of Business']||'')===-1) return false;
-    if (_anFilters.locale.length && _anFilters.locale.indexOf(r['Locale']||'')===-1) return false;
-    if (_anFilters.vtid.length   && _anFilters.vtid.indexOf(r['VTID']||'')===-1) return false;
-    if (_anFilters.atype.length  && _anFilters.atype.indexOf(r['Analysis Type']||'')===-1) return false;
-    if (_anFilters.ref.length    && _anFilters.ref.indexOf(r['Audit Ref']||'')===-1) return false;
+    if ((_anFilters.ops||[]).length    && (_anFilters.ops||[]).indexOf(r['Operations Manager']||'')===-1) return false;
+    if ((_anFilters.lob||[]).length    && (_anFilters.lob||[]).indexOf(r['Line of Business']||'')===-1) return false;
+    if ((_anFilters.locale||[]).length && (_anFilters.locale||[]).indexOf(r['Locale']||'')===-1) return false;
+    if ((_anFilters.vtid||[]).length   && (_anFilters.vtid||[]).indexOf(r['VTID']||'')===-1) return false;
+    if ((_anFilters.atype||[]).length  && (_anFilters.atype||[]).indexOf(r['Analysis Type']||'')===-1) return false;
+    if ((_anFilters.ref||[]).length    && (_anFilters.ref||[]).indexOf(r['Audit Ref']||'')===-1) return false;
     return true;
   });
 }
@@ -4137,11 +4137,11 @@ function anRunAnalytics() {
 
   // Build filters object for AI context
   var filters = {
-    dateFrom: _anFilters.dateFrom, dateTo: _anFilters.dateTo,
-    members: _anFilters.member, leaders: _anFilters.leader,
-    ops: _anFilters.ops, lobs: _anFilters.lob, locales: _anFilters.locale,
-    vtids: _anFilters.vtid, atypes: _anFilters.atype, refs: _anFilters.ref,
-    sapQ: _anFilters.sapQ
+    dateFrom: _anFilters.dateFrom||'', dateTo: _anFilters.dateTo||'',
+    members: _anFilters.member||[], leaders: _anFilters.leader||[],
+    ops: _anFilters.ops||[], lobs: _anFilters.lob||[], locales: _anFilters.locale||[],
+    vtids: _anFilters.vtid||[], atypes: _anFilters.atype||[], refs: _anFilters.ref||[],
+    sapQ: _anFilters.sapQ||''
   };
 
   document.getElementById('an-panel-body').innerHTML =
