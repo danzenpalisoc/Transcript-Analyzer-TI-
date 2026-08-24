@@ -511,6 +511,39 @@ function updateSpreadsheetSMARTFormat() {
   Logger.log('updateSpreadsheetSMARTFormat complete.');
 }
 
+// ── Run ONCE: insert 'Sales Attempted' column after 'Product Opportunity' ────────
+function addSalesAttemptedColumn() {
+  var ss     = getOrCreateSpreadsheet();
+  var dSheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
+  if (dSheet.getLastRow() < 1) { Logger.log('Sheet is empty — nothing to update'); return; }
+
+  var headers = dSheet.getRange(1, 1, 1, dSheet.getLastColumn()).getValues()[0];
+
+  // Already exists — skip
+  if (headers.indexOf('Sales Attempted') !== -1) {
+    Logger.log('Sales Attempted column already exists — nothing to do');
+    return;
+  }
+
+  // Find insertion point: right after 'Product Opportunity'
+  var afterIdx = headers.indexOf('Product Opportunity');
+  if (afterIdx === -1) {
+    Logger.log('Product Opportunity column not found — appending Sales Attempted at end');
+    afterIdx = headers.length - 1;
+  }
+
+  var insertCol = afterIdx + 2; // 1-based, insert AFTER Product Opportunity
+  dSheet.insertColumnBefore(insertCol);
+  var cell = dSheet.getRange(1, insertCol);
+  cell.setValue('Sales Attempted')
+    .setFontWeight('bold')
+    .setBackground('#4B286D')
+    .setFontColor('#ffffff');
+
+  Logger.log('Sales Attempted column inserted at column ' + insertCol);
+  Logger.log('Run enrichDashboardData() next to backfill values.');
+}
+
 // ── Run once: add header notes/comments to Dashboard_Data columns ─────────────
 // ── One-time fix: extract Repeat % from Issue Resolved text and Audit_Log ──────
 // ── Backfill VTID into Audit_Log from Dashboard_Data ─────────────────────────
