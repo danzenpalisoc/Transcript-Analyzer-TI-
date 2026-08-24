@@ -194,11 +194,12 @@ function enrichDashboardData() {
     var ref    = (row[colOf['Audit Ref'] - 1] || '').toString().trim();
     var atype  = (row[colOf['Analysis Type'] - 1] || '').toString().trim();
 
-    // Skip only if BOTH structured fields AND critical flags are already filled
-    var hasDriver  = colOf['Call Driver']       && (row[colOf['Call Driver']       - 1] || '').toString().trim();
-    var hasFlags   = colOf['Critical Flags']    && (row[colOf['Critical Flags']    - 1] || '').toString().trim();
+    // Skip only if ALL structured fields including RCA Category are already filled
+    var hasDriver  = colOf['Call Driver']         && (row[colOf['Call Driver']         - 1] || '').toString().trim();
+    var hasFlags   = colOf['Critical Flags']      && (row[colOf['Critical Flags']      - 1] || '').toString().trim();
     var hasRepeat  = colOf['Repeat Projection %'] && (row[colOf['Repeat Projection %'] - 1] || '').toString().trim();
-    if (hasDriver && hasFlags && hasRepeat) continue;
+    var hasRcaCat  = colOf['RCA Category']        && (row[colOf['RCA Category']        - 1] || '').toString().trim();
+    if (hasDriver && hasFlags && hasRepeat && hasRcaCat) continue;
 
     var id   = refToId[ref];
     var html = id ? idToHtml[id] : '';
@@ -2648,7 +2649,7 @@ function submitTranscript(formData) {
       var issueResolved    = extractTextBlock(html, 'Issue Resolution')  || '';
       var transferOccurred = extractTextBlock(html, 'Transfer')          || '';
 
-      // Structured RCA fields — fast HTML parse (no second AI call; AI enrichment runs later)
+      // Structured RCA fields — fast HTML parse for flags/SMART, then AI call for RCA category
       var structured = null;
       try { structured = extractStructuredRCAFromHTML(html); } catch(re) {}
       var callDriver        = structured ? structured.callDriver        : '';
@@ -2656,6 +2657,15 @@ function submitTranscript(formData) {
       var rcaSubParameter   = structured ? structured.rcaSubParameter   : '';
       var topOpportunity    = structured ? structured.topOpportunity    : '';
       var productOpportunity= structured ? structured.productOpportunity: '';
+
+      // AI-backed RCA category extraction (adds ~3-5s but populates RCA Category immediately)
+      try {
+        var aiRca = extractStructuredRCA(html, analysisLabel, auditRef);
+        if (aiRca && aiRca.rcaCategory)    rcaCategory       = aiRca.rcaCategory;
+        if (aiRca && aiRca.productOpportunity) productOpportunity = aiRca.productOpportunity;
+      } catch(rcaErr) {
+        Logger.log('RCA category extraction failed (non-fatal): ' + rcaErr);
+      }
       var smartS            = structured ? structured.smartS            : '';
       var smartM            = structured ? structured.smartM            : '';
       var smartA            = structured ? structured.smartA            : '';
