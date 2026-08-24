@@ -1738,6 +1738,40 @@ body {
   <!-- ── REPEATS TAB ── -->
   <div class="db-body">
   <div class="db-tab-panel" id="db-tab-repeats">
+
+    <!-- H&L -->
+    <div class="ov-section">
+      <div class="ov-section-title">&#9733; Highlights &amp; Lowlights — Repeats &amp; Transfer</div>
+      <div class="ov-hl-grid">
+        <div class="ov-hl-box ov-hl-high">
+          <div class="ov-hl-title">&#10003; Highlights</div>
+          <ul id="r-highlights"><li class="ov-empty">Load data to see highlights</li></ul>
+        </div>
+        <div class="ov-hl-box ov-hl-low">
+          <div class="ov-hl-title">&#10007; Lowlights</div>
+          <ul id="r-lowlights"><li class="ov-empty">Load data to see lowlights</li></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Critical Flags + Flags Distribution -->
+    <div class="ov-two-col">
+      <div class="ov-section">
+        <div class="ov-section-title">&#128681; Top Critical Flags</div>
+        <div class="db-chart-box" id="r-chart-flags" style="height:260px"></div>
+      </div>
+      <div class="ov-section">
+        <div class="ov-section-title">&#128681; Flags / Violation Breakdown</div>
+        <div id="r-chart-flagdist" style="height:260px"></div>
+      </div>
+    </div>
+
+    <!-- Issue Resolved vs Unresolved donut -->
+    <div class="ov-section">
+      <div class="ov-section-title">&#9989; Issue Resolved vs Unresolved</div>
+      <div id="r-chart-resolution" style="height:240px"></div>
+    </div>
+
     <div class="db-chart-row">
       <div class="db-chart-card"><h3>Top 5 Call Drivers</h3><div class="db-chart-box" id="r-chart-drivers"></div></div>
       <div class="db-chart-card"><h3>Top 5 Opportunities</h3><div class="db-chart-box" id="r-chart-opps"></div></div>
@@ -1768,6 +1802,40 @@ body {
 
   <!-- ── SALES TAB ── -->
   <div class="db-tab-panel" id="db-tab-sales">
+
+    <!-- H&L -->
+    <div class="ov-section">
+      <div class="ov-section-title">&#9733; Highlights &amp; Lowlights — Sales Analyzer</div>
+      <div class="ov-hl-grid">
+        <div class="ov-hl-box ov-hl-high">
+          <div class="ov-hl-title">&#10003; Highlights</div>
+          <ul id="s-highlights"><li class="ov-empty">Load data to see highlights</li></ul>
+        </div>
+        <div class="ov-hl-box ov-hl-low">
+          <div class="ov-hl-title">&#10007; Lowlights</div>
+          <ul id="s-lowlights"><li class="ov-empty">Load data to see lowlights</li></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Critical Flags + Flags Distribution -->
+    <div class="ov-two-col">
+      <div class="ov-section">
+        <div class="ov-section-title">&#128681; Top Critical Flags</div>
+        <div class="db-chart-box" id="s-chart-flags" style="height:260px"></div>
+      </div>
+      <div class="ov-section">
+        <div class="ov-section-title">&#128681; Flags / Violation Breakdown</div>
+        <div id="s-chart-flagdist" style="height:260px"></div>
+      </div>
+    </div>
+
+    <!-- Sales Attempted vs No Sales Attempt donut -->
+    <div class="ov-section">
+      <div class="ov-section-title">&#128200; Sales Attempted vs No Sales Attempt</div>
+      <div id="s-chart-salesattempted" style="height:240px"></div>
+    </div>
+
     <div class="db-chart-row">
       <div class="db-chart-card"><h3>Top 5 Call Drivers</h3><div class="db-chart-box" id="s-chart-drivers"></div></div>
       <div class="db-chart-card"><h3>Top 5 Opportunities</h3><div class="db-chart-box" id="s-chart-opps"></div></div>
@@ -2559,6 +2627,7 @@ function dbSwitchTab(tab, btn) {
       if (_tabRenderHash[tab] !== chHash) {
         _tabRenderHash[tab] = chHash;
         setTimeout(function() { dbDrawChart(pfx, filtered); }, 50);
+        setTimeout(function() { renderTabAIHighlights(pfx, filtered); }, 100);
       }
     }
     if (tab === 'auditlog' && !_dbAuditLog.length) {
@@ -3604,21 +3673,88 @@ function dbDrawChart(pfx, rows, _retries) {
   if (typeof google === 'undefined' || !google.visualization) {
     var attempts = (_retries || 0) + 1;
     if (attempts > 15) {
-      // After ~6s give up gracefully — don't loop forever
-      [pfx + '-chart-drivers', pfx + '-chart-opps'].forEach(function(id) {
+      [pfx + '-chart-drivers', pfx + '-chart-opps', pfx + '-chart-flags'].forEach(function(id) {
         var el = document.getElementById(id);
-        if (el) el.innerHTML = '<div style="text-align:center;padding:40px;color:#888;font-size:12px">Charts unavailable — could not load Google Charts library.</div>';
+        if (el) el.innerHTML = '<div style="text-align:center;padding:40px;color:#888;font-size:12px">Charts unavailable.</div>';
       });
       return;
     }
     setTimeout(function(){ dbDrawChart(pfx, rows, attempts); }, 400);
     return;
   }
-  // Top 5 Call Drivers — column X (Call Driver)
-  dbBarChart(pfx + '-chart-drivers', 'Call Driver', dbTopNByField(rows, 'Call Driver', 5));
 
-  // Top 5 Opportunities — column Z (RCA Sub-Parameter)
+  // Existing: Top 5 Call Drivers + Top 5 Opportunities
+  dbBarChart(pfx + '-chart-drivers', 'Call Driver', dbTopNByField(rows, 'Call Driver', 5));
   dbBarChart(pfx + '-chart-opps', 'RCA Sub-Parameter', dbTopNByField(rows, 'RCA Sub-Parameter', 5));
+
+  // ── New: Top Critical Flags bar ───────────────────────────────────────────
+  var flagCounts = {};
+  rows.forEach(function(r) {
+    (r['Critical Flags']||'').split(',').forEach(function(f) {
+      f = f.trim(); if (f && f !== 'None') flagCounts[f] = (flagCounts[f]||0) + 1;
+    });
+  });
+  var flagData = Object.keys(flagCounts)
+    .sort(function(a,b){ return flagCounts[b]-flagCounts[a]; })
+    .slice(0,8).map(function(k){ return [k, flagCounts[k]]; });
+  dbBarChart(pfx + '-chart-flags', 'Critical Flag', flagData);
+
+  // ── New: Flags / Violation Breakdown donut ────────────────────────────────
+  var fdEl = document.getElementById(pfx + '-chart-flagdist');
+  if (fdEl) {
+    var fdDt = new google.visualization.DataTable();
+    fdDt.addColumn('string','Flag'); fdDt.addColumn('number','Count');
+    var fvKeys = Object.keys(flagCounts).sort(function(a,b){ return flagCounts[b]-flagCounts[a]; });
+    var otherCount = 0;
+    fvKeys.forEach(function(k,i){ if(i<8) fdDt.addRow([k,flagCounts[k]]); else otherCount+=flagCounts[k]; });
+    if (otherCount > 0) fdDt.addRow(['Other', otherCount]);
+    if (fdDt.getNumberOfRows() === 0) fdDt.addRow(['No violations recorded', 1]);
+    new google.visualization.PieChart(fdEl).draw(fdDt, {
+      pieHole: 0.4, legend:{position:'right',textStyle:{fontSize:10}},
+      colors:['#C12335','#8C4A00','#4B286D','#2B8000','#E65100','#6A1B9A','#00695C','#1565C0','#888'],
+      chartArea:{left:10,top:10,width:'55%',height:'85%'}, backgroundColor:'transparent',
+      tooltip:{textStyle:{fontSize:11}}
+    });
+  }
+
+  // ── New: Resolution donut (Repeats) or Sales Attempted donut (Sales) ──────
+  if (pfx === 'r') {
+    var resEl = document.getElementById('r-chart-resolution');
+    if (resEl) {
+      var resolved = 0, unresolved = 0;
+      rows.forEach(function(r) {
+        var v = (r['Issue Resolved']||'').toLowerCase();
+        if (v.indexOf('yes') !== -1) resolved++;
+        else if (v.indexOf('no') !== -1) unresolved++;
+      });
+      var resDt = new google.visualization.DataTable();
+      resDt.addColumn('string','Status'); resDt.addColumn('number','Count');
+      resDt.addRows([['Resolved', resolved], ['Unresolved', unresolved]]);
+      new google.visualization.PieChart(resEl).draw(resDt, {
+        pieHole: 0.4, legend:{position:'right',textStyle:{fontSize:12}},
+        colors:['#2B8000','#C12335'],
+        chartArea:{left:60,top:10,width:'50%',height:'85%'}, backgroundColor:'transparent'
+      });
+    }
+  } else if (pfx === 's') {
+    var saEl = document.getElementById('s-chart-salesattempted');
+    if (saEl) {
+      var attempted = 0, notAttempted = 0;
+      rows.forEach(function(r) {
+        var v = (r['Sales Attempted']||'').toLowerCase();
+        if (v === 'yes') attempted++;
+        else if (v === 'no') notAttempted++;
+      });
+      var saDt = new google.visualization.DataTable();
+      saDt.addColumn('string','Status'); saDt.addColumn('number','Count');
+      saDt.addRows([['Sales Attempted', attempted], ['No Sales Attempt', notAttempted]]);
+      new google.visualization.PieChart(saEl).draw(saDt, {
+        pieHole: 0.4, legend:{position:'right',textStyle:{fontSize:12}},
+        colors:['#2B8000','#C12335'],
+        chartArea:{left:60,top:10,width:'50%',height:'85%'}, backgroundColor:'transparent'
+      });
+    }
+  }
 }
 
 // Count occurrences of a field value — used for Call Reason chart
@@ -4440,6 +4576,33 @@ function renderOverviewTab() {
           '</tr>';
       }).join('')
     : '<tr><td colspan="7" style="text-align:center;padding:24px;color:#888">No flags recorded yet</td></tr>';
+}
+
+function renderTabAIHighlights(pfx, rows) {
+  if (!rows || !rows.length) return;
+  var hlEl = document.getElementById(pfx + '-highlights');
+  var llEl = document.getElementById(pfx + '-lowlights');
+  if (!hlEl || !llEl) return;
+  hlEl.innerHTML = '<li class="ov-empty" style="color:#888;font-style:italic">Generating AI insights…</li>';
+  llEl.innerHTML = '<li class="ov-empty" style="color:#888;font-style:italic">Generating AI insights…</li>';
+  var atype = pfx === 's' ? 'sales' : 'repeats';
+  google.script.run
+    .withFailureHandler(function(e) {
+      hlEl.innerHTML = '<li class="ov-empty">Could not load AI insights.</li>';
+      llEl.innerHTML = '<li class="ov-empty">Could not load AI insights.</li>';
+    })
+    .withSuccessHandler(function(result) {
+      if (!result || !result.success) return;
+      var hl = result.highlights || [];
+      var ll = result.lowlights  || [];
+      hlEl.innerHTML = hl.length
+        ? hl.map(function(h){ return '<li>' + escHtml(h) + '</li>'; }).join('')
+        : '<li class="ov-empty">No highlights identified</li>';
+      llEl.innerHTML = ll.length
+        ? ll.map(function(l){ return '<li>' + escHtml(l) + '</li>'; }).join('')
+        : '<li class="ov-empty">No lowlights identified</li>';
+    })
+    .getOverviewHighlightsLowlights(rows, { analysisType: atype });
 }
 
 function renderOverviewAIHighlights() {
