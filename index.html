@@ -1832,7 +1832,7 @@ body {
 
     <!-- Sales Attempted vs No Sales Attempt donut -->
     <div class="ov-section">
-      <div class="ov-section-title">&#128200; Sales Attempted vs No Sales Attempt</div>
+      <div class="ov-section-title" id="s-chart-salesattempted-title">&#128200; Sales Attempted vs No Sales Attempt</div>
       <div id="s-chart-salesattempted" style="height:240px"></div>
     </div>
 
@@ -3740,16 +3740,19 @@ function dbDrawChart(pfx, rows, _retries) {
     }
   } else if (pfx === 's') {
     var saEl = document.getElementById('s-chart-salesattempted');
+    var saTitleEl = document.getElementById('s-chart-salesattempted-title');
     if (saEl) {
-      var attempted = 0, notAttempted = 0;
+      var attempted = 0, notAttempted = 0, naCount = 0;
       rows.forEach(function(r) {
-        var v = (r['Sales Attempted']||'').toLowerCase();
+        var v = (r['Sales Attempted']||'').trim().toLowerCase();
         if (v === 'yes') attempted++;
         else if (v === 'no') notAttempted++;
+        else if (v) naCount++;
       });
+      if (saTitleEl) saTitleEl.textContent = '📈 Sales Attempted vs No Sales Attempt (' + attempted + ' yes · ' + notAttempted + ' no · ' + naCount + ' other · ' + rows.length + ' rows)';
       if (attempted === 0 && notAttempted === 0) {
         saEl.innerHTML = '<div style="text-align:center;padding:60px 20px;color:#888;font-size:12px">' +
-          'No Sales Attempted data yet.<br>Run <strong>enrichDashboardData()</strong> from GAS to populate.' +
+          'No Sales Attempted data yet — run <strong>enrichDashboardData()</strong> from GAS editor to populate, then Force Refresh.' +
           '</div>';
       } else {
         var saDt = new google.visualization.DataTable();
