@@ -3750,7 +3750,8 @@ function dbDrawChart(pfx, rows, _retries) {
         else if (v) naCount++;
       });
       var firstVal = rows.length ? JSON.stringify(rows[0]['Sales Attempted']) : 'no rows';
-      if (saTitleEl) saTitleEl.textContent = '📈 Sales Attempted vs No Sales Attempt (' + attempted + ' yes · ' + notAttempted + ' no · ' + naCount + ' other · ' + rows.length + ' rows) — first row val: ' + firstVal;
+      var keys = rows.length ? Object.keys(rows[0]).filter(function(k){ return k.indexOf('Sales')!==-1||k.indexOf('Product')!==-1||k.indexOf('SMART S')!==-1; }).join(' | ') : '';
+      if (saTitleEl) saTitleEl.textContent = '📈 Sales Attempted (' + attempted + 'y · ' + notAttempted + 'n · ' + rows.length + ' rows) val=' + firstVal + ' | keys near col28: ' + keys;
       if (attempted === 0 && notAttempted === 0) {
         saEl.innerHTML = '<div style="text-align:center;padding:60px 20px;color:#888;font-size:12px">' +
           'No Sales Attempted data yet — run <strong>enrichDashboardData()</strong> from GAS editor to populate, then Force Refresh.' +
