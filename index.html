@@ -3555,6 +3555,7 @@ function dbApplyAll() {
   dbRenderStats('r', _dbRFiltered);
   dbRenderTable('r', _dbRFiltered);
   dbDrawChart('r', _dbRFiltered);
+  renderTabAIHighlights('r', _dbRFiltered);
 
   // Sales tab
   _dbSFiltered = _dbAllData.filter(function(r) {
@@ -3565,6 +3566,7 @@ function dbApplyAll() {
   dbRenderStats('s', _dbSFiltered);
   dbRenderTable('s', _dbSFiltered);
   dbDrawChart('s', _dbSFiltered);
+  renderTabAIHighlights('s', _dbSFiltered);
 
   // Audit Log tab
   _dbAlFiltered = _dbAuditLog.filter(function(r) {
