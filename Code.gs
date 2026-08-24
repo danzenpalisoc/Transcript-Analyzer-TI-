@@ -544,6 +544,37 @@ function addSalesAttemptedColumn() {
   Logger.log('Run enrichDashboardData() next to backfill values.');
 }
 
+// ── Direct read of Sales Attempted counts — bypasses all caching ─────────────
+function getSalesAttemptedCounts() {
+  try {
+    var ss     = getOrCreateSpreadsheet();
+    var dSheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
+    var lastRow = dSheet.getLastRow();
+    var lastCol = dSheet.getLastColumn();
+    if (lastRow < 2) return { yes: 0, no: 0 };
+    var headers = dSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var saCol   = -1, atCol = -1;
+    headers.forEach(function(h, i) {
+      if (h === 'Sales Attempted') saCol = i + 1;
+      if (h === 'Analysis Type')  atCol = i + 1;
+    });
+    if (saCol < 1 || atCol < 1) return { yes: 0, no: 0 };
+    var data = dSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    var yes = 0, no = 0;
+    data.forEach(function(row) {
+      var atype = (row[atCol - 1] || '').toString().toLowerCase();
+      if (atype.indexOf('sales') === -1) return;
+      var v = (row[saCol - 1] || '').toString().trim().toLowerCase();
+      if (v === 'yes') yes++;
+      else if (v === 'no') no++;
+    });
+    return { yes: yes, no: no };
+  } catch(e) {
+    Logger.log('getSalesAttemptedCounts error: ' + e);
+    return { yes: 0, no: 0 };
+  }
+}
+
 // ── Run once from GAS editor to verify Sales Attempted column mapping ─────────
 function testSalesAttempted() {
   var ss     = getOrCreateSpreadsheet();
