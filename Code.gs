@@ -3,6 +3,205 @@
  * Web app entry point and server-side handlers.
  */
 
+// ── Run from GAS editor: find + repair truncated Sales evaluation HTML ────────
+// Step 1 — diagnose: shows which Sales cache entries look truncated
+function diagnoseSalesEvaluations() {
+  var ss         = getOrCreateSpreadsheet();
+  var cacheSheet = getOrCreateSheet(ss, CACHE_SHEET);
+  var lastRow    = cacheSheet.getLastRow();
+  if (lastRow < 2) { Logger.log('Cache sheet is empty.'); return; }
+
+  var data      = cacheSheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  var truncated = [];
+  var complete  = [];
+
+  // Build a lookup of chunk rows: key = interactionId + '|' + chunkType → html
+  var chunkMap = {};
+  data.forEach(function(row) {
+    var id        = (row[0] || '').toString().trim();
+    var atype     = (row[1] || '').toString().trim().toLowerCase();
+    var chunkHtml = (row[3] || '').toString();
+    if (/^sales_\d+$/.test(atype) && chunkHtml) {
+      chunkMap[id + '|' + atype] = chunkHtml;
+    }
+  });
+
+  data.forEach(function(row, idx) {
+    var interactionId = (row[0] || '').toString().trim();
+    var atype         = (row[1] || '').toString().trim().toLowerCase();
+    var html          = (row[3] || '').toString();
+    if (atype !== 'sales') return;
+    if (!html) return; // skip cleared/deleted ghost rows
+
+    // Assemble chunks
+    var ckNum = 2;
+    while (true) {
+      var ckKey = interactionId + '|sales_' + ckNum;
+      if (chunkMap[ckKey] === undefined) break;
+      html += chunkMap[ckKey];
+      ckNum++;
+    }
+
+    var trimmed       = html.trim();
+    var tail          = trimmed.slice(-120);  // last 120 chars
+    var hasCallSum    = html.indexOf('Call Summary') !== -1 || html.indexOf('call-summary') !== -1;
+    var endsClean     = /(<\/div>|<\/section>|<\/html>|<\/p>|<\/ul>|<\/ol>|<\/table>|<\/span>)\s*$/.test(trimmed);
+    var looksComplete = html.length > 500 && hasCallSum && endsClean;
+
+    var entry = {
+      row: idx + 2,
+      interactionId: interactionId,
+      htmlLength: html.length,
+      hasCallSummary: hasCallSum,
+      endsClean: endsClean,
+      tail: tail
+    };
+
+    if (looksComplete) {
+      complete.push(entry);
+    } else {
+      truncated.push(entry);
+    }
+  });
+
+  Logger.log('=== Sales Evaluation Diagnosis ===');
+  Logger.log('Complete : ' + complete.length);
+  Logger.log('Truncated: ' + truncated.length);
+  truncated.forEach(function(e) {
+    Logger.log('ROW=' + e.row + ' id=' + e.interactionId.substring(0,8) + '...' +
+               ' len=' + e.htmlLength +
+               ' hasCallSum=' + e.hasCallSummary +
+               ' endsClean=' + e.endsClean);
+    Logger.log('  ...tail: [' + e.tail.replace(/\n/g,' ') + ']');
+  });
+  return { complete: complete.length, truncated: truncated.length, truncatedList: truncated };
+}
+
+// Step 2a — repair ONE entry at a time (safe for 6-min GAS timeout).
+// Run this function repeatedly until diagnoseSalesEvaluations() shows Truncated: 0.
+function repairNextTruncated() {
+  var diagnosis = diagnoseSalesEvaluations();
+  if (!diagnosis || !diagnosis.truncatedList || !diagnosis.truncatedList.length) {
+    Logger.log('✅ All Sales evaluations complete — nothing left to repair.');
+    return;
+  }
+
+  var entry = diagnosis.truncatedList[0];
+  Logger.log('Repairing: row=' + entry.row + ' id=' + entry.interactionId.substring(0,8) + '... ('+
+             diagnosis.truncatedList.length + ' remaining)');
+
+  var ss = getOrCreateSpreadsheet();
+  var cacheSheet  = getOrCreateSheet(ss, CACHE_SHEET);
+  var transcripts = getOrCreateSheet(ss, TRANSCRIPTS_SHEET);
+
+  var tLast = transcripts.getLastRow();
+  if (tLast < 2) { Logger.log('No transcripts found.'); return; }
+  var tHeaders = transcripts.getRange(1, 1, 1, transcripts.getLastColumn()).getValues()[0];
+  var tData    = transcripts.getRange(2, 1, tLast - 1, tHeaders.length).getValues();
+  var tIdIdx   = tHeaders.indexOf('Interaction ID');
+  var tTxtIdx  = tHeaders.indexOf('Transcript');
+
+  var transcript = '';
+  for (var i = 0; i < tData.length; i++) {
+    var tid = (tData[i][tIdIdx] || '').toString().trim();
+    if (tid === entry.interactionId.trim()) {
+      transcript = tData[i][tTxtIdx] ? tData[i][tTxtIdx].toString() : '';
+      break;
+    }
+  }
+
+  if (!transcript) {
+    Logger.log('SKIP — transcript not found for row=' + entry.row);
+    return;
+  }
+
+  var newHtml = analyzeTranscript(transcript, 'sales');
+  newHtml = fixBadgeClasses(
+    newHtml.replace(/^```html\s*/i,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim()
+  );
+
+  // Delete all old rows for this interaction ID (main + chunks) bottom-to-top
+  // so row numbers stay valid while deleting, and no ghost empty rows remain
+  var deleteFinder = cacheSheet.getRange('A:A').createTextFinder(entry.interactionId.trim()).matchEntireCell(true);
+  var rowsToDelete = [];
+  deleteFinder.findAll().forEach(function(match) {
+    var rowType = (cacheSheet.getRange(match.getRow(), 2).getValue() || '').toString().toLowerCase();
+    if (rowType === 'sales' || /^sales_\d+$/.test(rowType)) {
+      rowsToDelete.push(match.getRow());
+    }
+  });
+  rowsToDelete.sort(function(a, b) { return b - a; }); // delete bottom-to-top
+  rowsToDelete.forEach(function(rowNum) { cacheSheet.deleteRow(rowNum); });
+  SpreadsheetApp.flush();
+
+  // Save with chunking — handles HTML > 48k chars transparently
+  saveCachedResult(entry.interactionId.trim(), 'sales', newHtml);
+  SpreadsheetApp.flush();
+
+  var chunks = Math.ceil(newHtml.length / 48000);
+  Logger.log('✅ Repaired id=' + entry.interactionId.substring(0,8) + '...' +
+             ' len=' + newHtml.length + ' chunks=' + chunks +
+             ' (' + (diagnosis.truncatedList.length - 1) + ' remaining)');
+}
+
+// Step 2b — bulk repair (legacy — use repairNextTruncated() to avoid timeout).
+function repairTruncatedSalesEvaluations() {
+  var diagnosis = diagnoseSalesEvaluations();
+  if (!diagnosis || !diagnosis.truncatedList || !diagnosis.truncatedList.length) {
+    Logger.log('Nothing to repair — all Sales evaluations look complete.');
+    return;
+  }
+
+  var ss          = getOrCreateSpreadsheet();
+  var cacheSheet  = getOrCreateSheet(ss, CACHE_SHEET);
+  var transcripts = getOrCreateSheet(ss, TRANSCRIPTS_SHEET);
+  var analysisSheet = getOrCreateSheet(ss, ANALYSIS_SHEET);
+
+  // Build Interaction ID → transcript row map
+  var tLast = transcripts.getLastRow();
+  var tMap  = {};
+  if (tLast >= 2) {
+    var tHeaders = transcripts.getRange(1, 1, 1, transcripts.getLastColumn()).getValues()[0];
+    var tData    = transcripts.getRange(2, 1, tLast - 1, tHeaders.length).getValues();
+    var tIdIdx   = tHeaders.indexOf('Interaction ID');
+    var tTxtIdx  = tHeaders.indexOf('Transcript');
+    tData.forEach(function(row) {
+      var id = (row[tIdIdx] || '').toString().trim();
+      if (id) tMap[id] = row[tTxtIdx] ? row[tTxtIdx].toString() : '';
+    });
+  }
+
+  var repaired = 0, failed = 0;
+  diagnosis.truncatedList.forEach(function(entry) {
+    var transcript = tMap[entry.interactionId] || '';
+    if (!transcript) {
+      Logger.log('SKIP ' + entry.interactionId + ' — transcript not found');
+      failed++;
+      return;
+    }
+    try {
+      Logger.log('Re-running AI for: ' + entry.interactionId);
+      var newHtml = analyzeTranscript(transcript, 'sales');
+      newHtml = fixBadgeClasses(newHtml
+        .replace(/^```html\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim());
+
+      // Update Cache sheet cell
+      cacheSheet.getRange(entry.row, 4).setValue(newHtml);
+
+      // Invalidate ev2_ CacheService entry for all audits referencing this interaction
+      var sc = CacheService.getScriptCache();
+      Logger.log('Repaired: ' + entry.interactionId + ' (new len=' + newHtml.length + ')');
+      repaired++;
+      Utilities.sleep(2000); // avoid rate limiting between AI calls
+    } catch(e) {
+      Logger.log('FAILED ' + entry.interactionId + ': ' + e);
+      failed++;
+    }
+  });
+
+  Logger.log('=== Repair complete: ' + repaired + ' repaired, ' + failed + ' failed ===');
+}
+
 // Run once from editor to confirm exact Locale column in roster
 function diagnoseRosterColumns() {
   var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
@@ -1476,8 +1675,20 @@ function doGet(e) {
   var page = e && e.parameter && e.parameter.page;
   if (page === 'dashboard') return doGetDashboard();
   if (page === 'eval') {
-    return HtmlService
-      .createHtmlOutputFromFile('EvalView')
+    var ref = (e && e.parameter && e.parameter.ref) || '';
+    var tmpl = HtmlService.createTemplateFromFile('EvalView');
+    tmpl.auditRef = ref;
+    tmpl.preloadedData = 'null';
+    if (ref) {
+      try {
+        var evalData = getEvalViewData(ref);
+        if (evalData && evalData.success) {
+          // Escape </script> to prevent HTML parser from closing the JS block early
+          tmpl.preloadedData = JSON.stringify(evalData).replace(/<\/script/gi, '<\\/script');
+        }
+      } catch(er) { Logger.log('EvalView preload failed: ' + er); }
+    }
+    return tmpl.evaluate()
       .setTitle('Real Time Feedback — Evaluation View')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
@@ -1490,6 +1701,12 @@ function doGet(e) {
 // ── Evaluation view — fetch all data for a single audit ref ──────────────────
 function getEvalViewData(auditRef) {
   try {
+    // ── Fast path: CacheService (avoids all sheet reads on repeat visits) ────────
+    var sc       = CacheService.getScriptCache();
+    var evKey    = 'ev2_' + Utilities.base64Encode(auditRef.trim()).substring(0, 200);
+    var evCached = sc.get(evKey);
+    if (evCached) { try { return JSON.parse(evCached); } catch(pe) {} }
+
     var ss = getOrCreateSpreadsheet();
 
     // 1. Audit_Log → metadata
@@ -1527,11 +1744,47 @@ function getEvalViewData(auditRef) {
     }
 
     // 3. Cache sheet → AI HTML (keyed by Interaction ID)
+    // Read directly from the sheet — bypasses CacheService which truncates at 95KB
     var interactionId = meta['Interaction ID'] || dash['Interaction ID'] || '';
     var evalHtml = '';
     if (interactionId) {
-      var cached = findCachedResult(interactionId, meta['Analysis Type'] || '');
-      if (cached) evalHtml = sharedCSS() + fixBadgeClasses(cached);
+      var rawType = (meta['Analysis Type'] || dash['Analysis Type'] || '').toLowerCase();
+      var normalizedType = rawType.indexOf('sales') !== -1 ? 'sales' : 'repeats';
+      try {
+        var cSheet   = getOrCreateSheet(ss, CACHE_SHEET);
+        var cfinder  = cSheet.getRange('A:A').createTextFinder(interactionId.trim()).matchEntireCell(true);
+        var cmatches = cfinder.findAll();
+        for (var ci = 0; ci < cmatches.length; ci++) {
+          var crow  = cmatches[ci].getRow();
+          if (crow < 2) continue;
+          var cdata = cSheet.getRange(crow, 1, 1, 4).getValues()[0];
+          var ctype = (cdata[1] || '').toString().trim().toLowerCase();
+          if (ctype === normalizedType) {
+            var chtml = cdata[3] ? cdata[3].toString() : '';
+            if (!chtml) break;
+            // Assemble continuation chunks (sales_2, repeats_2, etc.)
+            var ckNum = 2;
+            while (true) {
+              var ckType = normalizedType + '_' + ckNum;
+              var ckFound = false;
+              for (var ck = 0; ck < cmatches.length; ck++) {
+                var ckRow  = cmatches[ck].getRow();
+                if (ckRow < 2) continue;
+                var ckData = cSheet.getRange(ckRow, 1, 1, 4).getValues()[0];
+                if ((ckData[1] || '').toString().trim().toLowerCase() === ckType) {
+                  chtml += (ckData[3] || '').toString();
+                  ckFound = true;
+                  break;
+                }
+              }
+              if (!ckFound) break;
+              ckNum++;
+            }
+            evalHtml = sharedCSS() + fixBadgeClasses(chtml);
+            break;
+          }
+        }
+      } catch(ce) { Logger.log('Cache sheet read error: ' + ce); }
     }
 
     // 4. Recent evaluations by same SAP ID (last 5, excluding this one)
@@ -1557,7 +1810,7 @@ function getEvalViewData(auditRef) {
     // 5. Web app base URL for links
     var baseUrl = ScriptApp.getService().getUrl();
 
-    return {
+    var result = {
       success: true,
       auditRef: auditRef,
       meta: meta,
@@ -1566,6 +1819,16 @@ function getEvalViewData(auditRef) {
       recent: recent,
       baseUrl: baseUrl
     };
+
+    // Cache for 6 hours so repeat visits (and doGet injection) skip sheet reads
+    try {
+      var resultJson = JSON.stringify(result);
+      if (resultJson.length < 90000) {
+        sc.put(evKey, resultJson, 21600);
+      }
+    } catch(ce) {}
+
+    return result;
   } catch(e) {
     Logger.log('getEvalViewData error: ' + e);
     return { success: false, error: e.toString() };
@@ -1750,9 +2013,19 @@ function getOverviewHighlightsLowlights(rows, filters) {
   try {
     if (!rows || !rows.length) return { success: false, error: 'No data.' };
 
-    var cacheKey = Utilities.base64Encode(
-      'overview_hl|' + rows.length + '|' + JSON.stringify(filters || {})
-    ).substring(0, 250);
+    // Include content fingerprint so different locale/member filters with equal row counts
+    // don't collide on the same cache key
+    var rowFingerprint = rows.map(function(r) {
+      return r['Interaction ID'] || r['Audit Ref'] || '';
+    }).sort().join('|');
+    var digestBytes = Utilities.computeDigest(
+      Utilities.DigestAlgorithm.MD5,
+      rowFingerprint + '|' + JSON.stringify(filters || {})
+    );
+    var digestHex = digestBytes.map(function(b) {
+      return (b < 0 ? b + 256 : b).toString(16).padStart(2, '0');
+    }).join('');
+    var cacheKey = 'ov_hl|' + rows.length + '|' + digestHex;
 
     var cached = readAnalyticsCache(cacheKey);
     if (cached) {

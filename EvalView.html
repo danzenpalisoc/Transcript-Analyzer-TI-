@@ -237,10 +237,13 @@ body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:#F0EBF8;
 </div><!-- end content -->
 
 <script>
-var _auditRef = (function(){
-  var m = window.location.search.match(/[?&]ref=([^&]+)/);
-  return m ? decodeURIComponent(m[1]) : '';
-})();
+var _auditRef = <?!= JSON.stringify(auditRef || '') ?>;
+// Fallback: URL param (for direct navigation / bookmarked links)
+if (!_auditRef) {
+  var _m = window.location.search.match(/[?&]ref=([^&]+)/);
+  if (_m) _auditRef = decodeURIComponent(_m[1]);
+}
+var _preloadedData = <?!= preloadedData ?>;
 var _baseUrl = '';
 var _starVal = 0;
 
@@ -271,21 +274,30 @@ function _evLsSet(ref, data) {
 window.onload = function() {
   if (!_auditRef) { showError('No audit reference in link. Check the email button.'); return; }
 
-  // Show cached data instantly, then refresh in background
+  // 1. Server-injected data (fastest — zero round trip, rendered before page reaches browser)
+  if (_preloadedData && _preloadedData.success) {
+    render(_preloadedData);
+    _evLsSet(_auditRef, _preloadedData);
+    return;
+  }
+
+  // 2. localStorage cache (fast on revisit from same browser)
   var cached = _evLsGet(_auditRef);
   if (cached) {
     render(cached);
-    // Silent background refresh
+    // Silent background refresh to keep cache warm
     google.script.run
       .withSuccessHandler(function(fresh){ if (fresh && fresh.success) { _evLsSet(_auditRef, fresh); } })
       .withFailureHandler(function(){})
       .getEvalViewData(_auditRef);
-  } else {
-    google.script.run
-      .withSuccessHandler(function(d){ _evLsSet(_auditRef, d); render(d); })
-      .withFailureHandler(function(e){ showError('Failed to load: ' + (e.message||e)); })
-      .getEvalViewData(_auditRef);
+    return;
   }
+
+  // 3. Fallback: fetch via google.script.run
+  google.script.run
+    .withSuccessHandler(function(d){ _evLsSet(_auditRef, d); render(d); })
+    .withFailureHandler(function(e){ showError('Failed to load: ' + (e.message||e)); })
+    .getEvalViewData(_auditRef);
 };
 
 function render(d) {

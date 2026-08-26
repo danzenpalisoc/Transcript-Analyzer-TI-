@@ -73,11 +73,30 @@ function findCachedResult(interactionId, analysisType) {
       var rowType = (rowData[1] || '').toString().trim().toLowerCase();
       if (rowType === typeLower) {
         var html = rowData[3] ? rowData[3].toString() : null;
-        Logger.log('Cache HIT (sheet) for: ' + target);
-        // Promote to CacheService for next lookup
-        if (html) {
-          try { CacheService.getScriptCache().put(csKey, html.substring(0, 95000), _RESULT_CS_TTL); } catch(ce) {}
+        if (!html) continue;
+
+        // Assemble any continuation chunks (sales_2, sales_3, repeats_2, etc.)
+        var chunkNum = 2;
+        while (true) {
+          var chunkType = typeLower + '_' + chunkNum;
+          var chunkFound = false;
+          for (var j = 0; j < matches.length; j++) {
+            var cRow  = matches[j].getRow();
+            if (cRow < 2) continue;
+            var cData = sheet.getRange(cRow, 1, 1, 4).getValues()[0];
+            if ((cData[1] || '').toString().trim().toLowerCase() === chunkType) {
+              html += (cData[3] || '').toString();
+              chunkFound = true;
+              break;
+            }
+          }
+          if (!chunkFound) break;
+          chunkNum++;
         }
+
+        Logger.log('Cache HIT (sheet) for: ' + target + ' (assembled ' + html.length + ' chars)');
+        // Promote to CacheService for next lookup
+        try { CacheService.getScriptCache().put(csKey, html.substring(0, 95000), _RESULT_CS_TTL); } catch(ce) {}
         return html;
       }
     }
@@ -90,25 +109,32 @@ function findCachedResult(interactionId, analysisType) {
   }
 }
 
-// ── Cache: save a new result ──────────────────────────────────────────────────
+// ── Cache: save a new result — chunks HTML > 48k chars across multiple rows ───
+var _CACHE_CHUNK_SIZE = 48000; // safe margin under Google Sheets 50k cell limit
+
 function saveCachedResult(interactionId, analysisType, htmlResult) {
   if (!interactionId) return;
   try {
-    // Write to CacheService immediately (next lookup will be O(1))
-    var csKey = _RESULT_CS_PREFIX + interactionId.trim() + '_' + (analysisType || '').trim().toLowerCase();
-    try { CacheService.getScriptCache().put(csKey, (htmlResult || '').substring(0, 95000), _RESULT_CS_TTL); } catch(ce) {}
+    var html  = htmlResult || '';
+    var atype = (analysisType || '').trim();
+    var id    = interactionId.trim();
 
-    // Write to Cache sheet (permanent storage)
+    // Write to CacheService immediately (next lookup will be O(1))
+    var csKey = _RESULT_CS_PREFIX + id + '_' + atype.toLowerCase();
+    try { CacheService.getScriptCache().put(csKey, html.substring(0, 95000), _RESULT_CS_TTL); } catch(ce) {}
+
+    // Write to Cache sheet — split into chunks if needed
     var ss    = getOrCreateSpreadsheet();
     var sheet = getOrCreateSheet(ss, CACHE_SHEET);
     ensureHeaders(sheet, CACHE_HEADERS);
-    sheet.appendRow([
-      interactionId.trim(),
-      (analysisType || '').trim(),
-      new Date(),
-      htmlResult
-    ]);
-    Logger.log('Cached result for: ' + interactionId);
+
+    var chunkCount = Math.ceil(html.length / _CACHE_CHUNK_SIZE) || 1;
+    for (var c = 0; c < chunkCount; c++) {
+      var chunk    = html.substring(c * _CACHE_CHUNK_SIZE, (c + 1) * _CACHE_CHUNK_SIZE);
+      var rowType  = c === 0 ? atype : atype + '_' + (c + 1);
+      sheet.appendRow([id, rowType, new Date(), chunk]);
+    }
+    Logger.log('Cached result for: ' + id + ' (' + html.length + ' chars, ' + chunkCount + ' chunk(s))');
   } catch(e) {
     Logger.log('saveCachedResult error: ' + e);
   }

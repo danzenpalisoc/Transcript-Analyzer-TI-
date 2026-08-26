@@ -3739,7 +3739,27 @@ function dbDrawChart(pfx, rows, _retries) {
       });
     }
   } else if (pfx === 's') {
-    renderSalesAttemptedDonut();
+    var saEl = document.getElementById('s-chart-salesattempted');
+    if (saEl) {
+      var attempted = 0, notAttempted = 0;
+      rows.forEach(function(r) {
+        var v = (r['Sales Attempted']||'').toString().trim().toLowerCase();
+        if (v === 'yes') attempted++;
+        else if (v === 'no') notAttempted++;
+      });
+      if (attempted === 0 && notAttempted === 0) {
+        saEl.innerHTML = '<div style="text-align:center;padding:60px 20px;color:#888;font-size:12px">No Sales Attempted data in filtered records.</div>';
+      } else {
+        var saDt = new google.visualization.DataTable();
+        saDt.addColumn('string','Status'); saDt.addColumn('number','Count');
+        saDt.addRows([['Sales Attempted', attempted], ['No Sales Attempt', notAttempted]]);
+        new google.visualization.PieChart(saEl).draw(saDt, {
+          pieHole: 0.4, legend:{position:'right',textStyle:{fontSize:12}},
+          colors:['#2B8000','#C12335'],
+          chartArea:{left:60,top:10,width:'50%',height:'85%'}, backgroundColor:'transparent'
+        });
+      }
+    }
   }
 }
 
@@ -4365,7 +4385,7 @@ function sendAnalyticsBriefingFromUI() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function renderOverviewTab() {
-  var all = _dbAllData; // all rows — both Repeats and Sales
+  var all = _dbRFiltered.concat(_dbSFiltered); // use filtered rows — both Repeats and Sales
   if (!all || !all.length) {
     document.getElementById('ov-highlights').innerHTML = '<li class="ov-empty">No data loaded yet. Click ⟳ Refresh.</li>';
     document.getElementById('ov-lowlights').innerHTML  = '<li class="ov-empty">No data loaded yet.</li>';
@@ -4622,7 +4642,8 @@ function renderTabAIHighlights(pfx, rows) {
 }
 
 function renderOverviewAIHighlights() {
-  if (!_dbAllData || !_dbAllData.length) return;
+  var _ovFiltered = _dbRFiltered.concat(_dbSFiltered);
+  if (!_ovFiltered.length) return;
   google.script.run
     .withFailureHandler(function(e) { console.warn('[H&L AI] failed:', e.message); })
     .withSuccessHandler(function(result) {
@@ -4634,7 +4655,7 @@ function renderOverviewAIHighlights() {
       if (ll.length) document.getElementById('ov-lowlights').innerHTML =
         ll.map(function(l){ return '<li>' + escHtml(l) + '</li>'; }).join('');
     })
-    .getOverviewHighlightsLowlights(_dbAllData, {});
+    .getOverviewHighlightsLowlights(_ovFiltered, {});
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────

@@ -6,9 +6,10 @@
 function callFuelIX(prompt) {
   var endpoint = FUELIX_CONFIG.baseUrl + '/v1/chat/completions';
   var payload  = {
-    model:    FUELIX_CONFIG.model,
-    messages: [{ role: 'user', content: prompt }],
-    stream:   false
+    model:      FUELIX_CONFIG.model,
+    messages:   [{ role: 'user', content: prompt }],
+    stream:     false,
+    max_tokens: 20000   // raise ceiling — some Sales evals need ~17-18k tokens to complete
   };
   var options = {
     method:         'post',
@@ -28,6 +29,10 @@ function callFuelIX(prompt) {
   var data = JSON.parse(text);
   if (!data.choices || !data.choices[0] || !data.choices[0].message)
     throw new Error('Unexpected AI response structure');
+  var finishReason = (data.choices[0].finish_reason || '').toString();
+  if (finishReason === 'length' || finishReason === 'max_tokens') {
+    Logger.log('WARNING: AI response truncated by token limit (finish_reason=' + finishReason + '). Consider increasing max_tokens further.');
+  }
   return data.choices[0].message.content.trim();
 }
 
@@ -692,15 +697,6 @@ function buildRepeatsPrompt(transcriptText, knowledgeText) {
     '</ul></div>\n' +
     '</div>\n' +
     '</div>\n\n' +
-    '<!-- COACHING TAKEAWAYS -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#127979; Coaching Takeaways</div>\n' +
-    '<ol class="ai-coaching">\n' +
-    '<li contenteditable="true">[Most impactful SMART takeaway — cite verbatim from call. S:[exact behavior] M:[metric] A:[realistic] T:[timeline]]</li>\n' +
-    '<li contenteditable="true">[Second SMART takeaway — specific and measurable]</li>\n' +
-    '<li contenteditable="true">[Third SMART takeaway]</li>\n' +
-    '</ol>\n' +
-    '</div>\n\n' +
     'REPLACE all [placeholder] text with actual SMART analysis from the transcript.\n' +
     'Do NOT include any text outside the HTML tags.\n' +
     'Do NOT use markdown.\n' +
@@ -791,9 +787,9 @@ function buildSalesPrompt(transcriptText, knowledgeText) {
     '<tr>\n' +
     '  <td class="ai-label-col">[subelement name]</td>\n' +
     '  <td><span class="ai-badge [class]">[0-5]/5</span></td>\n' +
-    '  <td contenteditable="true">[analysis of what agent did well, with verbatim quote from transcript]</td>\n' +
-    '  <td contenteditable="true">[specific verbatim example of what agent missed or could improve]</td>\n' +
-    '  <td contenteditable="true">S: [exact behavior to add/change] | M: [measurable outcome — e.g. offer accepted on next 3 calls] | A: [achievable step] | R: [why realistic — e.g. agent already does this occasionally, low-effort habit] | T: [timeline — e.g. starting next call]<br/><br/>&#127908; <em>"[Complete roleplay-ready statement, e.g. \'[Name], next time after asking about their services, say: \'I noticed you\'re paying for X — did you know we can bundle Y and save you $Z per month? Want me to walk you through it?\'\']"</em></td>\n' +
+    '  <td contenteditable="true">[what agent did well + verbatim quote]</td>\n' +
+    '  <td contenteditable="true">[specific gap + verbatim missed moment]</td>\n' +
+    '  <td contenteditable="true"><strong>Coaching:</strong> [1-sentence SMART action — exact behavior, how to measure, by when]<br/>&#127908; <em>"[Roleplay — max 25 words]"</em></td>\n' +
     '</tr>\n' +
     '</tbody>\n' +
     '</table>\n' +
@@ -828,34 +824,6 @@ function buildSalesPrompt(transcriptText, knowledgeText) {
     '<li contenteditable="true">[Third lowlight]</li>\n' +
     '</ul></div>\n' +
     '</div>\n' +
-    '</div>\n\n' +
-    '<!-- OVERALL RECOMMENDATION -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#128161; Overall Recommendation</div>\n' +
-    '<div style="background:#F9F9F9;border:1px solid #D8D8D8;border-radius:4px;padding:14px 16px;font-size:13px;line-height:1.75;font-family:Helvetica Neue,Helvetica,Arial,sans-serif">\n' +
-    '<p contenteditable="true"><strong>Summary:</strong> [2-3 sentence overall assessment of the agent\'s sales performance on this specific call]</p>\n' +
-    '<br/>\n' +
-    '<p contenteditable="true"><strong>Top Priority for Next Call:</strong> [The single most impactful thing the agent should focus on immediately — be specific and actionable]</p>\n' +
-    '<br/>\n' +
-    '<p><strong>SMART Coaching Focus Areas:</strong></p>\n' +
-    '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">\n' +
-    '<thead><tr style="background:#F5F0FF"><th style="padding:4px 8px;text-align:left;width:5%">#</th><th style="padding:4px 8px;text-align:left;width:20%">S — Specific Behavior</th><th style="padding:4px 8px;text-align:left;width:18%">M — How to Measure</th><th style="padding:4px 8px;text-align:left;width:15%">A — Attainable</th><th style="padding:4px 8px;text-align:left;width:18%">R — Realistic</th><th style="padding:4px 8px;text-align:left;width:24%">T — Timeline</th></tr></thead>\n' +
-    '<tbody>\n' +
-    '<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">1</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Specific sales behavior]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Metric]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Attainable target]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Why realistic for this agent]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[By next session]</td></tr>\n' +
-    '<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">2</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Behavior 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Metric 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Target 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Realistic 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #eee">[Timeline 2]</td></tr>\n' +
-    '<tr><td style="padding:4px 8px">3</td><td contenteditable="true" style="padding:4px 8px">[Behavior 3]</td><td contenteditable="true" style="padding:4px 8px">[Metric 3]</td><td contenteditable="true" style="padding:4px 8px">[Target 3]</td><td contenteditable="true" style="padding:4px 8px">[Realistic 3]</td><td contenteditable="true" style="padding:4px 8px">[Timeline 3]</td></tr>\n' +
-    '</tbody></table>\n' +
-    '<p contenteditable="true"><strong>Manager Coaching Tip:</strong> [A specific tip for the Team Leader on how to coach this agent — what to reinforce and what to redirect]</p>\n' +
-    '</div>\n' +
-    '</div>\n\n' +
-    '<!-- COACHING TAKEAWAYS -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#127979; Coaching Takeaways</div>\n' +
-    '<ol class="ai-coaching">\n' +
-    '<li contenteditable="true">[Most impactful coaching point — cite verbatim from call + SMART action: S:[behavior] M:[metric] T:[timeline]]</li>\n' +
-    '<li contenteditable="true">[Second SMART coaching point]</li>\n' +
-    '<li contenteditable="true">[Third SMART coaching point]</li>\n' +
-    '</ol>\n' +
     '</div>\n\n' +
     'Badge class rules: score 3-5 = ai-badge-good (green), score 2-2.9 = ai-badge-mid (amber), score 1-1.9 = ai-badge-bad (red), score 0 = ai-badge-zero (grey)\n' +
     'CRITICAL: Every framework table MUST have 5 columns including the Recommendation & Sample Positioning Statement column.\n' +
