@@ -749,6 +749,46 @@ function enrichDashboardRCA(auditRef, analysisType, html) {
   }
 }
 
+// ── Translate a transcript to English using FuelIX ───────────────────────────
+function translateTranscriptText(text) {
+  if (!text || !text.trim()) return null;
+  var prompt =
+    'Translate the following call center transcript to English.\n' +
+    'Rules:\n' +
+    '- Preserve all speaker labels, timestamps, and metadata tags exactly as they appear.\n' +
+    '- Translate ONLY the spoken dialogue — do not translate system metadata, IDs, or timestamps.\n' +
+    '- Keep the same formatting and line structure.\n' +
+    '- Return ONLY the translated transcript with no commentary, preamble, or explanation.\n\n' +
+    'TRANSCRIPT:\n\n' + text;
+
+  var payload = {
+    model:      FUELIX_CONFIG.model,
+    messages:   [{ role: 'user', content: prompt }],
+    stream:     false,
+    max_tokens: 8000
+  };
+  var options = {
+    method: 'post', contentType: 'application/json',
+    headers: { 'Authorization': 'Bearer ' + FUELIX_CONFIG.apiKey, 'Content-Type': 'application/json' },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true, deadline: 120
+  };
+
+  try {
+    var response = UrlFetchApp.fetch(FUELIX_CONFIG.baseUrl + '/v1/chat/completions', options);
+    if (response.getResponseCode() !== 200) {
+      Logger.log('translateTranscriptText HTTP error: ' + response.getResponseCode());
+      return null;
+    }
+    var content = JSON.parse(response.getContentText()).choices[0].message.content.trim();
+    Logger.log('Translation complete: ' + content.length + ' chars (original: ' + text.length + ')');
+    return content || null;
+  } catch(e) {
+    Logger.log('translateTranscriptText error: ' + e);
+    return null;
+  }
+}
+
 // ── Admin: run once from GAS editor to fix manually-typed locale values ──
 // Fixes bad Locale values in both Dashboard_Data and Audit_Log sheets.
 function fixTruncatedLocale() {
@@ -3129,8 +3169,24 @@ function submitTranscript(formData) {
       throw we;
     }
 
+    // ── 3.5 Translate transcript to English if requested ─────────────────────
+    var transcriptForAnalysis = formData.transcript;
+    if (formData.translateToEnglish && transcriptForAnalysis.trim()) {
+      try {
+        Logger.log('translateToEnglish=true — translating transcript for ' + (interactionId || 'unknown'));
+        var translated = translateTranscriptText(transcriptForAnalysis);
+        if (translated) {
+          transcriptForAnalysis = translated;
+        } else {
+          Logger.log('Translation returned null — proceeding with original transcript');
+        }
+      } catch(te) {
+        Logger.log('Translation step failed (non-fatal, using original): ' + te);
+      }
+    }
+
     // ── 4. Run AI ─────────────────────────────────────────────────────────────
-    var rawAI = analyzeTranscript(formData.transcript, analysisType);
+    var rawAI = analyzeTranscript(transcriptForAnalysis, analysisType);
     Logger.log('AI response length: ' + rawAI.length);
 
     var html = fixBadgeClasses(

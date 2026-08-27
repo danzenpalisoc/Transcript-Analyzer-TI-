@@ -1314,15 +1314,29 @@ body {
 
   <!-- Transcript -->
   <div class="card">
-    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <h2>Paste Call Script Here</h2>
-      <button onclick="clearTranscript()"
-        style="background:var(--telus-green);border:none;color:#fff;
-               border-radius:4px;padding:5px 12px;font-size:11px;font-weight:600;
-               font-family:inherit;cursor:pointer"
-        title="Clear transcript and reset auto-filled fields">
-        &#10005; Clear
-      </button>
+      <div style="display:flex;align-items:center;gap:10px">
+        <!-- Translate to English toggle -->
+        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none" title="Translate the pasted transcript to English before AI analysis">
+          <div id="translate-track" onclick="toggleTranslate()"
+            style="width:36px;height:20px;border-radius:10px;background:#ccc;position:relative;
+                   transition:background .25s;cursor:pointer;flex-shrink:0">
+            <div id="translate-thumb"
+              style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;
+                     top:2px;left:2px;transition:left .25s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>
+          </div>
+          <span id="translate-label" style="font-size:11px;font-weight:600;color:#54565A">Translate to English</span>
+          <input type="checkbox" id="translate-toggle" style="display:none">
+        </label>
+        <button onclick="clearTranscript()"
+          style="background:var(--telus-green);border:none;color:#fff;
+                 border-radius:4px;padding:5px 12px;font-size:11px;font-weight:600;
+                 font-family:inherit;cursor:pointer"
+          title="Clear transcript and reset auto-filled fields">
+          &#10005; Clear
+        </button>
+      </div>
     </div>
     <div class="card-body">
       <div class="form-group">
@@ -1918,6 +1932,7 @@ body {
     <h3 id="proc-title">Analyzing Call Script</h3>
     <p id="proc-step" style="font-size:13px;color:#4B286D;font-weight:600;margin-bottom:4px">&#128269; Checking for existing analysis...</p>
     <p style="font-size:11px;color:#888;margin:0">AI processing usually takes 20–60 seconds.</p>
+    <div id="proc-translate-notice" style="display:none;margin-top:10px;padding:6px 14px;background:#f0ebf7;border-radius:6px;font-size:11px;color:#4B286D;font-weight:600;text-align:center"></div>
     <div id="proc-steps" style="margin-top:14px;text-align:left;font-size:11px;color:#555;line-height:2">
       <div id="pstep-1" style="opacity:.4">&#9711; Checking interaction cache</div>
       <div id="pstep-2" style="opacity:.4">&#9711; Parsing transcript metadata</div>
@@ -2173,6 +2188,23 @@ if (typeof google !== 'undefined' && google.script) {
 }
 
 // ── Clear transcript only (button on transcript card) ────────────────────────
+function toggleTranslate() {
+  var cb    = document.getElementById('translate-toggle');
+  var track = document.getElementById('translate-track');
+  var thumb = document.getElementById('translate-thumb');
+  var label = document.getElementById('translate-label');
+  cb.checked = !cb.checked;
+  if (cb.checked) {
+    track.style.background = '#4B286D';
+    thumb.style.left       = '18px';
+    label.style.color      = '#4B286D';
+  } else {
+    track.style.background = '#ccc';
+    thumb.style.left       = '2px';
+    label.style.color      = '#54565A';
+  }
+}
+
 function clearTranscript() {
   document.getElementById('transcript').value        = '';
   document.getElementById('interactionId').value     = '';
@@ -2268,7 +2300,8 @@ function handleSubmit() {
     duration:       document.getElementById('duration').value.trim(),
     analysisType:   document.querySelector('input[name="analysisType"]:checked').value,
     transcript:     document.getElementById('transcript').value.trim(),
-    agentEmail:     document.getElementById('agentEmail').value.trim()
+    agentEmail:        document.getElementById('agentEmail').value.trim(),
+    translateToEnglish: document.getElementById('translate-toggle').checked
   };
   if (!formData.sapId)      { showError('Please fill in: SAP ID'); return; }
   if (!formData.transcript) { showError('Please paste a call transcript'); return; }
@@ -2276,6 +2309,19 @@ function handleSubmit() {
   document.getElementById('btn-process').disabled = true;
   document.getElementById('processing-overlay').classList.add('visible');
   document.getElementById('applied-section').classList.remove('visible');
+
+  // ── Translate notice (shown only when toggle is ON) ───────────────────────
+  var _translateNotice = document.getElementById('proc-translate-notice');
+  var _translateNoticeTimer = null;
+  if (formData.translateToEnglish && _translateNotice) {
+    _translateNotice.textContent = '🌐 Translating transcript to English...';
+    _translateNotice.style.display = 'block';
+    _translateNoticeTimer = setTimeout(function() {
+      if (_translateNotice) {
+        _translateNotice.textContent = '✓ Translation complete — running AI analysis...';
+      }
+    }, 20000);
+  }
 
   // ── Elapsed time counter + progressive reassurance ────────────────────────
   var _procElapsedSecs  = 0;
@@ -2338,6 +2384,8 @@ function handleSubmit() {
     .withSuccessHandler(function (result) {
       _procStepTimers.forEach(clearTimeout);
       clearInterval(_procElapsedTimer);
+      if (_translateNoticeTimer) clearTimeout(_translateNoticeTimer);
+      if (_translateNotice) { _translateNotice.style.display = 'none'; _translateNotice.textContent = ''; }
       _activateStep(4);
       setTimeout(function(){
         document.getElementById('processing-overlay').classList.remove('visible');
@@ -2402,6 +2450,8 @@ function handleSubmit() {
     .withFailureHandler(function (err) {
       _procStepTimers.forEach(clearTimeout);
       clearInterval(_procElapsedTimer);
+      if (_translateNoticeTimer) clearTimeout(_translateNoticeTimer);
+      if (_translateNotice) { _translateNotice.style.display = 'none'; _translateNotice.textContent = ''; }
       var _eaFail = document.getElementById('proc-elapsed-area');
       if (_eaFail) _eaFail.innerHTML = '';
       document.getElementById('processing-overlay').classList.remove('visible');
