@@ -481,6 +481,53 @@ function enrichDashboardData() {
   Logger.log('=== Enriched ' + enriched + ' rows ===');
 }
 
+// ── Backfill blank Locale values in Dashboard_Data using roster lookup ────────
+// Run ONCE from the Apps Script editor: open Code.gs → Run → backfillLocaleInDashboard
+// Safe to re-run — only patches rows where Locale is currently blank.
+function backfillLocaleInDashboard() {
+  var ss    = getOrCreateSpreadsheet();
+  var sheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) { Logger.log('backfillLocale: sheet is empty'); return; }
+
+  var headers  = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var localeCol = headers.indexOf('Locale') + 1;   // 1-based
+  var sapCol    = headers.indexOf('SAP ID') + 1;
+  if (localeCol < 1 || sapCol < 1) {
+    Logger.log('backfillLocale: could not find Locale or SAP ID column'); return;
+  }
+
+  var data    = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  var patched = 0;
+  var skipped = 0;
+
+  for (var i = 0; i < data.length; i++) {
+    var locale = (data[i][localeCol - 1] || '').toString().trim();
+    if (locale) { skipped++; continue; }   // already has a locale
+
+    var sapId = (data[i][sapCol - 1] || '').toString().trim();
+    if (!sapId) { skipped++; continue; }   // no SAP ID to look up
+
+    try {
+      var rosterRow = lookupBySapId(sapId);
+      if (rosterRow && rosterRow.locale) {
+        sheet.getRange(i + 2, localeCol).setValue(rosterRow.locale);
+        patched++;
+        Logger.log('backfillLocale: row ' + (i + 2) + ' SAP ' + sapId + ' → ' + rosterRow.locale);
+      } else {
+        skipped++;
+        Logger.log('backfillLocale: no locale found for SAP ' + sapId);
+      }
+    } catch(e) {
+      skipped++;
+      Logger.log('backfillLocale: lookup failed for SAP ' + sapId + ': ' + e);
+    }
+  }
+
+  invalidateDashboardCache();
+  Logger.log('=== backfillLocale done: ' + patched + ' patched, ' + skipped + ' skipped ===');
+}
+
 // ── Fast HTML-only RCA extraction (no AI call — used in submitTranscript) ────────
 // Parses the AI-generated HTML directly instead of making a second API call.
 // Saves 5–30 seconds on every submission.
@@ -650,6 +697,55 @@ function extractStructuredRCA(html, analysisType, auditRef) {
   } catch(e) {
     Logger.log('JSON parse error for ' + auditRef + ': ' + e);
     return null;
+  }
+}
+
+// ── Deferred RCA enrichment — called by client after submitTranscript returns ─
+// Runs the second AI call in the background and patches the 3 AI-only cells
+// in the Dashboard_Data row for this auditRef. Errors are non-fatal.
+function enrichDashboardRCA(auditRef, analysisType, html) {
+  try {
+    if (!auditRef || !html) return;
+
+    var aiRca = extractStructuredRCA(html, analysisType, auditRef);
+    if (!aiRca) {
+      Logger.log('enrichDashboardRCA: AI returned null for ' + auditRef);
+      return;
+    }
+
+    var ss    = getOrCreateSpreadsheet();
+    var sheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
+    if (sheet.getLastRow() < 2) return;
+
+    // Find the row by auditRef using TextFinder (same pattern as findCachedResult)
+    var finder  = sheet.getRange('A:A').createTextFinder(auditRef.trim()).matchEntireCell(true);
+    var matches = finder.findAll();
+    if (!matches || !matches.length) {
+      Logger.log('enrichDashboardRCA: auditRef not found: ' + auditRef);
+      return;
+    }
+    var targetRow = matches[matches.length - 1].getRow();
+
+    // Resolve column numbers by header name — safe against column-order changes
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var colOf   = function(name) {
+      var idx = headers.indexOf(name);
+      return idx >= 0 ? idx + 1 : -1;
+    };
+
+    var rcaCatCol  = colOf('RCA Category');
+    var prodOppCol = colOf('Product Opportunity');
+    var salesAttCol= colOf('Sales Attempted');
+
+    if (rcaCatCol   > 0 && aiRca.rcaCategory)        sheet.getRange(targetRow, rcaCatCol).setValue(aiRca.rcaCategory);
+    if (prodOppCol  > 0 && aiRca.productOpportunity) sheet.getRange(targetRow, prodOppCol).setValue(aiRca.productOpportunity);
+    if (salesAttCol > 0 && aiRca.salesAttempted)     sheet.getRange(targetRow, salesAttCol).setValue(aiRca.salesAttempted);
+
+    invalidateDashboardCache();
+    Logger.log('enrichDashboardRCA: patched row ' + targetRow + ' for ' + auditRef);
+  } catch(e) {
+    Logger.log('enrichDashboardRCA error (non-fatal): ' + e);
   }
 }
 
@@ -2948,6 +3044,15 @@ function submitTranscript(formData) {
     var observerName = (formData.observerName || '').trim();
     var analysisLabel = analysisType === 'sales' ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
 
+    // Resolve locale — fall back to roster lookup if the form field was blank
+    var resolvedLocale = (formData.locale || '').trim();
+    if (!resolvedLocale && formData.sapId) {
+      try {
+        var rosterRow = lookupBySapId(formData.sapId.trim());
+        if (rosterRow && rosterRow.locale) resolvedLocale = rosterRow.locale;
+      } catch(le) { Logger.log('Locale fallback lookup failed (non-fatal): ' + le); }
+    }
+
     // ── 3. Save transcript row ────────────────────────────────────────────────
     try {
       var tSheet = getOrCreateSheet(spreadsheet, TRANSCRIPTS_SHEET);
@@ -2956,7 +3061,7 @@ function submitTranscript(formData) {
         auditRef, now,
         formData.sapId || '', participant,
         formData.teamLeader || '', formData.opsManager || '',
-        formData.lineOfBusiness || '', formData.locale || '',
+        formData.lineOfBusiness || '', resolvedLocale,
         observerName,
         startTime, customerBAN, interactionId,
         direction, duration,
@@ -3027,15 +3132,7 @@ function submitTranscript(formData) {
       var productOpportunity= structured ? structured.productOpportunity: '';
       var salesAttempted    = '';
 
-      // AI-backed RCA category extraction (adds ~3-5s but populates RCA Category immediately)
-      try {
-        var aiRca = extractStructuredRCA(html, analysisLabel, auditRef);
-        if (aiRca && aiRca.rcaCategory)        rcaCategory        = aiRca.rcaCategory;
-        if (aiRca && aiRca.productOpportunity) productOpportunity = aiRca.productOpportunity;
-        if (aiRca && aiRca.salesAttempted)     salesAttempted     = aiRca.salesAttempted;
-      } catch(rcaErr) {
-        Logger.log('RCA category extraction failed (non-fatal): ' + rcaErr);
-      }
+
       var smartS            = structured ? structured.smartS            : '';
       var smartM            = structured ? structured.smartM            : '';
       var smartA            = structured ? structured.smartA            : '';
@@ -3048,7 +3145,7 @@ function submitTranscript(formData) {
         auditRef, now, interactionId,
         formData.sapId || '', participant,
         formData.teamLeader || '', formData.opsManager || '',
-        formData.lineOfBusiness || '', formData.locale || '',
+        formData.lineOfBusiness || '', resolvedLocale,
         formData.vtid || '',
         observerName,
         '',               // Department
@@ -3074,7 +3171,7 @@ function submitTranscript(formData) {
         auditRef, now, interactionId,
         formData.sapId || '', participant,
         formData.teamLeader || '', formData.opsManager || '',
-        formData.lineOfBusiness || '', formData.locale || '',
+        formData.lineOfBusiness || '', resolvedLocale,
         formData.vtid || '',
         observerName, analysisLabel,
         direction, duration,
@@ -3318,6 +3415,19 @@ function sendAuditEmail(formData, htmlResult) {
 
     Logger.log('Audit email sent to: ' + recipients.join(', '));
     try { notifyAdmins(formData, auditRefCheck); } catch(ne) { Logger.log('notifyAdmins failed: ' + ne); }
+
+    // Update Cache Sheet with user-edited HTML so EvalView shows the edited version
+    try {
+      var intId = (formData.interactionId || '').trim();
+      var aType = (formData.analysisType  || 'repeats').trim();
+      if (intId && htmlResult) {
+        updateCachedResult(intId, aType, htmlResult);
+        // Clear the EvalView CacheService entry so the next visit re-reads the updated sheet
+        var evKey = 'ev2_' + Utilities.base64Encode(auditRefCheck).substring(0, 200);
+        CacheService.getScriptCache().remove(evKey);
+      }
+    } catch(ue) { Logger.log('updateCachedResult in sendAuditEmail failed: ' + ue); }
+
     return { success: true, recipients: recipients, auditRef: auditRef };
 
   } catch(e) {

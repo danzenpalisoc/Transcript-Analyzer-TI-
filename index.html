@@ -1924,6 +1924,7 @@ body {
       <div id="pstep-3" style="opacity:.4">&#9711; Running AI analysis</div>
       <div id="pstep-4" style="opacity:.4">&#9711; Saving results</div>
       <div id="pstep-5" style="opacity:.4">&#9711; Done!</div>
+      <div id="proc-elapsed-area"></div>
     </div>
   </div>
 </div>
@@ -2276,6 +2277,30 @@ function handleSubmit() {
   document.getElementById('processing-overlay').classList.add('visible');
   document.getElementById('applied-section').classList.remove('visible');
 
+  // ── Elapsed time counter + progressive reassurance ────────────────────────
+  var _procElapsedSecs  = 0;
+  var _procElapsedTimer = null;
+  var _elapsedArea = document.getElementById('proc-elapsed-area');
+  if (_elapsedArea) {
+    _elapsedArea.innerHTML =
+      '<div id="proc-elapsed-time" style="margin-top:10px;font-size:11px;color:#aaa;text-align:center">0 seconds elapsed</div>' +
+      '<div id="proc-reassurance"  style="font-size:10px;color:#888;text-align:center;margin-top:3px;min-height:14px;font-style:italic"></div>';
+  }
+  _procElapsedTimer = setInterval(function() {
+    _procElapsedSecs++;
+    var timeEl  = document.getElementById('proc-elapsed-time');
+    var reassEl = document.getElementById('proc-reassurance');
+    if (timeEl) timeEl.textContent = _procElapsedSecs + ' second' + (_procElapsedSecs !== 1 ? 's' : '') + ' elapsed';
+    if (reassEl) {
+      if (_procElapsedSecs >= 120) {
+        reassEl.textContent = 'Almost there — finalizing your evaluation';
+        reassEl.style.color = '#4B286D';
+      } else if (_procElapsedSecs >= 30) {
+        reassEl.textContent = 'Longer transcripts can take 2–3 minutes — still working';
+      }
+    }
+  }, 1000);
+
   // ── Animate progress steps to keep user informed ──────────────────────────
   var _procStepIdx = 0;
   var _procStepTimers = [];
@@ -2312,9 +2337,12 @@ function handleSubmit() {
   google.script.run
     .withSuccessHandler(function (result) {
       _procStepTimers.forEach(clearTimeout);
+      clearInterval(_procElapsedTimer);
       _activateStep(4);
       setTimeout(function(){
         document.getElementById('processing-overlay').classList.remove('visible');
+        var _ea = document.getElementById('proc-elapsed-area');
+        if (_ea) _ea.innerHTML = '';
         // reset steps for next run
         _procStepData.forEach(function(s){
           var el=document.getElementById(s.id);
@@ -2363,9 +2391,19 @@ function handleSubmit() {
         showCache('&#9888; Saved, but: ' + result.warnings.join(' | '));
       }
       openModal(document.getElementById('transcript').value, _lastHTML);
+
+      // Background enrichment: fills RCA Category / Product Opportunity / Sales Attempted
+      // after the result is already shown. Fire-and-forget — no handlers needed.
+      if (!result.fromCache && result.auditRef) {
+        google.script.run
+          .enrichDashboardRCA(result.auditRef, formData.analysisType, result.html);
+      }
     })
     .withFailureHandler(function (err) {
       _procStepTimers.forEach(clearTimeout);
+      clearInterval(_procElapsedTimer);
+      var _eaFail = document.getElementById('proc-elapsed-area');
+      if (_eaFail) _eaFail.innerHTML = '';
       document.getElementById('processing-overlay').classList.remove('visible');
       document.getElementById('btn-process').disabled = false;
       showError('Unexpected error: ' + (err.message || err));
@@ -2393,7 +2431,7 @@ function openModal(transcriptText, resultHTML) {
     '<div class="modal-script-box">' + escHtml(transcriptText) + '</div>' +
     '<hr class="modal-divider"/>' +
     '<p class="modal-results-label">Analysis Results</p>' +
-    sanitiseResultHTML(resultHTML);
+    '<div id="modal-ai-result">' + sanitiseResultHTML(resultHTML) + '</div>';
   document.getElementById('analysis-modal').classList.add('visible');
 }
 function closeModal()  { document.getElementById('analysis-modal').classList.remove('visible'); }
@@ -2402,8 +2440,13 @@ function reOpenModal() { if (_lastHTML) openModal(document.getElementById('trans
 // ── Apply & Close ─────────────────────────────────────────────────────────────
 function applyAndClose() {
   var out = document.getElementById('applied-output');
-  out.innerHTML = sanitiseResultHTML(_lastHTML);
-  // Ensure all relevant elements are editable
+  // Capture the user's edited content from the modal, not the original _lastHTML
+  var modalAIResult = document.getElementById('modal-ai-result');
+  var editedHTML = modalAIResult ? modalAIResult.innerHTML : sanitiseResultHTML(_lastHTML);
+  out.innerHTML = editedHTML;
+  // Keep _lastHTML in sync so getEffectiveHTML() fallback is also correct
+  _lastHTML = editedHTML;
+  // Ensure all relevant elements are editable (safety net for any AI-omitted attributes)
   out.querySelectorAll('.r-summary-box,.r-pos-stmt,.r-systemic').forEach(function(el) {
     el.setAttribute('contenteditable', 'true');
   });
@@ -2414,6 +2457,16 @@ function applyAndClose() {
   var section = document.getElementById('applied-section');
   section.classList.add('visible');
   section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Returns the current HTML to use for email/PDF:
+// prefers the user-edited applied-output content; falls back to the original AI result.
+function getEffectiveHTML() {
+  var applied = document.getElementById('applied-output');
+  if (applied && applied.innerHTML && applied.innerHTML.trim().length > 100) {
+    return applied.innerHTML;
+  }
+  return _lastHTML;
 }
 
 function copyApplied(btn) {
@@ -2525,7 +2578,7 @@ function downloadAuditPDF() {
       if (btn) { btn.textContent = '📄 Download Evaluation'; btn.disabled = false; }
       _downloadHTMLFallback(ref);
     })
-    .generateAndServePDF(formData, _lastHTML);
+    .generateAndServePDF(formData, getEffectiveHTML());
 }
 
 // Fallback: open the evaluation as a print-ready HTML page
@@ -2547,7 +2600,7 @@ function _downloadHTMLFallback(ref) {
     '<button onclick="window.print()">&#128424; Print / Save PDF</button>' +
     '<button onclick="window.close()">Close</button>' +
     '</div>' +
-    sanitiseResultHTML(_lastHTML) + '</body></html>';
+    sanitiseResultHTML(getEffectiveHTML()) + '</body></html>';
 
   var blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
   var url  = URL.createObjectURL(blob);
@@ -4005,7 +4058,7 @@ function handleSubmitEmail() {
       document.getElementById('btn-submit').disabled = false;
       showError('Email failed: ' + (err.message || err));
     })
-    .sendAuditEmail(formData, _lastHTML);
+    .sendAuditEmail(formData, getEffectiveHTML());
 }
 
 // ── Lock form after submission — prevents editing a submitted evaluation ───────

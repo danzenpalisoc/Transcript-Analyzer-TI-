@@ -140,3 +140,37 @@ function saveCachedResult(interactionId, analysisType, htmlResult) {
   }
 }
 
+// ── Cache: replace an existing cached result with user-edited HTML ────────────
+function updateCachedResult(interactionId, analysisType, editedHTML) {
+  if (!interactionId || !editedHTML) return;
+  try {
+    var id        = interactionId.trim();
+    var typeLower = (analysisType || '').trim().toLowerCase();
+
+    var ss    = getOrCreateSpreadsheet();
+    var sheet = getOrCreateSheet(ss, CACHE_SHEET);
+    ensureHeaders(sheet, CACHE_HEADERS);
+
+    // Delete all existing rows for this id + type (includes chunks: sales_2, repeats_2, etc.)
+    // Iterate bottom-up so row indices don't shift during deletion
+    var lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      var colAB = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+      for (var i = colAB.length - 1; i >= 0; i--) {
+        var rowId   = (colAB[i][0] || '').toString().trim();
+        var rowType = (colAB[i][1] || '').toString().trim().toLowerCase();
+        if (rowId === id &&
+            (rowType === typeLower || rowType.indexOf(typeLower + '_') === 0)) {
+          sheet.deleteRow(i + 2); // +2: 1-based + skip header
+        }
+      }
+    }
+
+    // Write new chunks with the edited HTML
+    saveCachedResult(id, analysisType, editedHTML);
+    Logger.log('updateCachedResult: replaced cache for ' + id + ' (' + typeLower + ')');
+  } catch(e) {
+    Logger.log('updateCachedResult error: ' + e);
+  }
+}
+

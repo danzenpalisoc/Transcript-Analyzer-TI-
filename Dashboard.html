@@ -372,18 +372,24 @@ function populateFilters(pfx) {
   var leaders  = uniq(rows.map(function(r) { return r['Team Leader']; }));
   var ops      = uniq(rows.map(function(r) { return r['Operations Manager']; }));
   var lobs     = uniq(rows.map(function(r) { return r['Line of Business']; }));
-  var locales  = uniq(rows.map(function(r) { return r['Locale']; }));
+  var locales        = uniq(rows.map(function(r) { return r['Locale']; }));
+  var hasBlankLocale = rows.some(function(r) { return !r['Locale']; });
 
   fillSelect(pfx + '-f-member', members);
   fillSelect(pfx + '-f-leader', leaders);
   fillSelect(pfx + '-f-ops',    ops);
   fillSelect(pfx + '-f-lob',    lobs);
-  fillSelect(pfx + '-f-locale', locales);
+  fillSelect(pfx + '-f-locale', locales, hasBlankLocale);
 }
 
-function fillSelect(id, values) {
+function fillSelect(id, values, includeBlank) {
   var sel = document.getElementById(id);
   sel.innerHTML = '';
+  if (includeBlank) {
+    var blankOpt = document.createElement('option');
+    blankOpt.value = '__blank__'; blankOpt.textContent = '(No Locale)';
+    sel.appendChild(blankOpt);
+  }
   values.filter(Boolean).sort().forEach(function(v) {
     var opt = document.createElement('option');
     opt.value = v; opt.textContent = v;
@@ -445,7 +451,14 @@ function applyFilters(pfx) {
     if (leaders.length && leaders.indexOf(r['Team Leader']) === -1) return false;
     if (ops.length    && ops.indexOf(r['Operations Manager']) === -1) return false;
     if (lobs.length   && lobs.indexOf(r['Line of Business']) === -1) return false;
-    if (locales.length && locales.indexOf(r['Locale']) === -1) return false;
+    if (locales.length) {
+      var wantsBlank   = locales.indexOf('__blank__') !== -1;
+      var namedLocales = locales.filter(function(l) { return l !== '__blank__'; });
+      var rowLocale    = r['Locale'] || '';
+      var matchesNamed = namedLocales.length && namedLocales.indexOf(rowLocale) !== -1;
+      var matchesBlank = wantsBlank && !rowLocale;
+      if (!matchesNamed && !matchesBlank) return false;
+    }
     return true;
   });
 
