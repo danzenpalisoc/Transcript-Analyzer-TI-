@@ -2492,7 +2492,7 @@ function renderAnalyticsHTML(d, filters, analysisType, rowCount) {
       }
       if (r.positioningStatement) {
         html += '<div style="background:#EDF7E6;border:1px solid #B3DFA0;border-radius:4px;padding:8px 10px;font-size:12px;color:#1A5E00;font-style:italic">' +
-          '&#127908; ' + e(r.positioningStatement) + '</div>';
+          '<span data-tts-stmt="' + esc(r.positioningStatement) + '">&#127908;</span> ' + e(r.positioningStatement) + '</div>';
       }
       html += '</div>';
     });
@@ -4315,7 +4315,7 @@ function posCard(flag) {
   var html  = '<div class="r-pos-card">';
   html += '<div class="r-pos-param">&#9888; ' + esc(param) + '</div>';
   if (expl) html += '<div class="r-pos-detail">' + esc(expl) + '</div>';
-  if (stmt) html += '<div class="r-pos-stmt-label">&#127908; Sample Positioning Statement — Roleplay &amp; Practice</div>' +
+  if (stmt) html += '<div class="r-pos-stmt-label" data-tts-stmt="' + esc(stmt) + '">&#127908; Sample Positioning Statement — Roleplay &amp; Practice</div>' +
                     '<div class="r-pos-stmt" contenteditable="true">"' + esc(stmt) + '"</div>';
   html += '</div>';
   return html;

@@ -2505,41 +2505,27 @@ function initPlayButtons() {
   var container = document.getElementById('modal-ai-result');
   if (!container) return;
 
-  // Single DOM walk — context-aware TTS extraction
-  var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
-  var micNodes = [];
-  var n;
-  while ((n = walker.nextNode())) {
-    if (n.nodeValue.indexOf('🎤') >= 0) micNodes.push(n);
-  }
-
-  micNodes.forEach(function(textNode) {
-    var val = textNode.nodeValue;
-    var idx = val.indexOf('🎤');
-    if (idx < 0) return;
-    var micLen = '🎤'.length;
-
-    // If this text node is inside .r-pos-stmt-label, the statement text lives
-    // in the NEXT sibling (.r-pos-stmt), not after the emoji in this node.
-    var parent = textNode.parentNode;
-    var ttsText;
-    if (parent && parent.classList && parent.classList.contains('r-pos-stmt-label')) {
-      var stmtDiv = parent.nextElementSibling;
-      ttsText = stmtDiv ? stmtDiv.textContent.trim().replace(/^["]+|["]+$/g, '').trim() : '';
-    } else {
-      ttsText = val.substring(idx + micLen).trim().replace(/^["]+|["]+$/g, '').trim();
-    }
-
+  container.querySelectorAll('[data-tts-stmt]').forEach(function(el) {
+    var ttsText = el.getAttribute('data-tts-stmt');
     if (!ttsText) return;
-
-    var frag = document.createDocumentFragment();
-    var before = val.substring(0, idx);
-    if (before) frag.appendChild(document.createTextNode(before));
-    var tmp = document.createElement('span');
-    tmp.innerHTML = _makePlayBtn(ttsText);
-    frag.appendChild(tmp.firstChild);
-    frag.appendChild(document.createTextNode(val.substring(idx + micLen)));
-    parent.replaceChild(frag, textNode);
+    var child = el.firstChild;
+    while (child) {
+      var next = child.nextSibling;
+      if (child.nodeType === 3 && child.nodeValue.indexOf('🎤') >= 0) {
+        var val = child.nodeValue;
+        var idx = val.indexOf('🎤');
+        var micLen = '🎤'.length;
+        var frag = document.createDocumentFragment();
+        if (idx > 0) frag.appendChild(document.createTextNode(val.substring(0, idx)));
+        var tmp = document.createElement('span');
+        tmp.innerHTML = _makePlayBtn(ttsText);
+        frag.appendChild(tmp.firstChild);
+        frag.appendChild(document.createTextNode(val.substring(idx + micLen)));
+        el.replaceChild(frag, child);
+        break;
+      }
+      child = next;
+    }
   });
 }
 
