@@ -750,43 +750,52 @@ function enrichDashboardRCA(auditRef, analysisType, html) {
 }
 
 // ── Admin: run once from GAS editor to fix manually-typed locale values ──
-// Finds Dashboard_Data rows where Locale exactly matches a known bad value
-// and replaces it with the correct full locale name.
+// Fixes bad Locale values in both Dashboard_Data and Audit_Log sheets.
 function fixTruncatedLocale() {
   var FIXES = [
-    { bad: 'TI M',     good: 'TI Morocco (CAS)' },
-    { bad: 'TI Mo',    good: 'TI Morocco (CAS)' },
-    { bad: 'TI Mor',   good: 'TI Morocco (CAS)' }
+    { bad: 'TI M',   good: 'TI Morocco (CAS)' },
+    { bad: 'TI Mo',  good: 'TI Morocco (CAS)' },
+    { bad: 'TI Mor', good: 'TI Morocco (CAS)' },
+    { bad: 'TIM',    good: 'TI Morocco (CAS)' }
   ];
 
   var ss      = getOrCreateSpreadsheet();
-  var sheet   = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) { Logger.log('fixTruncatedLocale: no data rows'); return; }
+  var total   = 0;
 
-  var lastCol = sheet.getLastColumn();
-  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  total += _fixLocaleInSheet(ss, DASHBOARD_DATA_SHEET, FIXES);
+  total += _fixLocaleInSheet(ss, AUDIT_LOG_SHEET,      FIXES);
+
+  if (total > 0) invalidateDashboardCache();
+  Logger.log('=== fixTruncatedLocale done: ' + total + ' patched across both sheets ===');
+}
+
+function _fixLocaleInSheet(ss, sheetName, fixes) {
+  var sheet   = getOrCreateSheet(ss, sheetName);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+
+  var headers   = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   var localeCol = headers.indexOf('Locale');
-  if (localeCol < 0) { Logger.log('fixTruncatedLocale: Locale column not found'); return; }
-  localeCol++; // convert to 1-based
+  if (localeCol < 0) { Logger.log('_fixLocaleInSheet: no Locale column in ' + sheetName); return 0; }
+  localeCol++;
 
   var data    = sheet.getRange(2, localeCol, lastRow - 1, 1).getValues();
   var patched = 0;
 
   for (var i = 0; i < data.length; i++) {
     var cell = (data[i][0] || '').toString().trim();
-    for (var j = 0; j < FIXES.length; j++) {
-      if (cell === FIXES[j].bad) {
-        sheet.getRange(i + 2, localeCol).setValue(FIXES[j].good);
-        Logger.log('fixTruncatedLocale: row ' + (i + 2) + ' "' + cell + '" → "' + FIXES[j].good + '"');
+    for (var j = 0; j < fixes.length; j++) {
+      if (cell === fixes[j].bad) {
+        sheet.getRange(i + 2, localeCol).setValue(fixes[j].good);
+        Logger.log('fixLocale [' + sheetName + '] row ' + (i + 2) + ': "' + cell + '" → "' + fixes[j].good + '"');
         patched++;
         break;
       }
     }
   }
 
-  if (patched > 0) invalidateDashboardCache();
-  Logger.log('=== fixTruncatedLocale done: ' + patched + ' patched ===');
+  Logger.log('fixLocale [' + sheetName + ']: ' + patched + ' patched');
+  return patched;
 }
 
 // ── Run ONCE from the Apps Script editor to upgrade the Dashboard_Data sheet ──
