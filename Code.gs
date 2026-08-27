@@ -789,6 +789,35 @@ function translateTranscriptText(text) {
   }
 }
 
+// ── Text-to-Speech via FuelIX — returns base64 MP3 or null on failure ────────
+function synthesizeSpeech(text) {
+  if (!text || !text.trim()) return null;
+  var payload = {
+    model: 'tts-1',
+    input: text.trim().substring(0, 4096),
+    voice: 'nova',
+    response_format: 'mp3'
+  };
+  var options = {
+    method: 'post', contentType: 'application/json',
+    headers: { 'Authorization': 'Bearer ' + FUELIX_CONFIG.apiKey, 'Content-Type': 'application/json' },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true, deadline: 30
+  };
+  try {
+    var response = UrlFetchApp.fetch(FUELIX_CONFIG.baseUrl + '/v1/audio/speech', options);
+    var code = response.getResponseCode();
+    if (code !== 200) {
+      Logger.log('synthesizeSpeech HTTP ' + code + ': ' + response.getContentText().substring(0, 300));
+      return null;
+    }
+    return Utilities.base64Encode(response.getContent());
+  } catch(e) {
+    Logger.log('synthesizeSpeech error: ' + e);
+    return null;
+  }
+}
+
 // ── Admin: run once from GAS editor to fix manually-typed locale values ──
 // Fixes bad Locale values in both Dashboard_Data and Audit_Log sheets.
 function fixTruncatedLocale() {

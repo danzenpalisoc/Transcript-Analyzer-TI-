@@ -2483,9 +2483,93 @@ function openModal(transcriptText, resultHTML) {
     '<p class="modal-results-label">Analysis Results</p>' +
     '<div id="modal-ai-result">' + sanitiseResultHTML(resultHTML) + '</div>';
   document.getElementById('analysis-modal').classList.add('visible');
+  initPlayButtons();
 }
 function closeModal()  { document.getElementById('analysis-modal').classList.remove('visible'); }
 function reOpenModal() { if (_lastHTML) openModal(document.getElementById('transcript').value, _lastHTML); }
+
+// ── TTS: play button helpers ───────────────────────────────────────────────────
+var _audioCache = {};
+
+function _makePlayBtn(ttsText) {
+  var safe = (ttsText || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return '<button data-tts="' + safe + '" onclick="playStatement(this)" title="Play sample statement" ' +
+    'style="background:#22c55e;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;' +
+    'display:inline-flex;align-items:center;justify-content:center;padding:0;' +
+    'vertical-align:middle;margin-right:5px;flex-shrink:0;transition:opacity .15s">' +
+    '<svg width="9" height="10" viewBox="0 0 9 10" fill="white" style="margin-left:1px">' +
+    '<polygon points="1,1 8,5 1,9"/></svg></button>';
+}
+
+function initPlayButtons() {
+  var container = document.getElementById('modal-ai-result');
+  if (!container) return;
+
+  // Case A: r-pos-stmt-label has 🎤 as label — statement text is in the next .r-pos-stmt sibling
+  container.querySelectorAll('.r-pos-stmt-label').forEach(function(label) {
+    if (label.textContent.indexOf('🎤') < 0) return;
+    var stmt = label.nextElementSibling;
+    if (!stmt) return;
+    var ttsText = stmt.textContent.trim().replace(/^[""]+|[""]+$/g, '').trim();
+    label.innerHTML = label.innerHTML.replace('🎤', _makePlayBtn(ttsText));
+  });
+
+  // Case B: inline coaching divs — 🎤 + statement text in the same text node
+  var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+  var micNodes = [];
+  var n;
+  while ((n = walker.nextNode())) {
+    if (n.nodeValue.indexOf('🎤') >= 0) micNodes.push(n);
+  }
+  micNodes.forEach(function(textNode) {
+    var val = textNode.nodeValue;
+    var idx = val.indexOf('🎤');
+    if (idx < 0) return;
+    var micLen = '🎤'.length;
+    var ttsText = val.substring(idx + micLen).trim().replace(/^[""]+|[""]+$/g, '').trim();
+    if (!ttsText) return;
+    var frag = document.createDocumentFragment();
+    var before = val.substring(0, idx);
+    if (before) frag.appendChild(document.createTextNode(before));
+    var tmp = document.createElement('span');
+    tmp.innerHTML = _makePlayBtn(ttsText);
+    frag.appendChild(tmp.firstChild);
+    frag.appendChild(document.createTextNode(val.substring(idx + micLen)));
+    textNode.parentNode.replaceChild(frag, textNode);
+  });
+}
+
+function playStatement(btn) {
+  var text = btn.getAttribute('data-tts');
+  if (!text) return;
+  if (_audioCache[text]) {
+    try { new Audio('data:audio/mp3;base64,' + _audioCache[text]).play(); } catch(e) {}
+    return;
+  }
+  btn.style.opacity = '0.4';
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function(base64) {
+      btn.style.opacity = '1';
+      btn.disabled = false;
+      if (!base64) { _tryWebSpeech(text); return; }
+      _audioCache[text] = base64;
+      try { new Audio('data:audio/mp3;base64,' + base64).play(); } catch(e) {}
+    })
+    .withFailureHandler(function() {
+      btn.style.opacity = '1';
+      btn.disabled = false;
+      _tryWebSpeech(text);
+    })
+    .synthesizeSpeech(text);
+}
+
+function _tryWebSpeech(text) {
+  if (!window.speechSynthesis) return;
+  var utt = new SpeechSynthesisUtterance(text);
+  utt.rate = 0.9;
+  window.speechSynthesis.speak(utt);
+}
 
 // ── Apply & Close ─────────────────────────────────────────────────────────────
 function applyAndClose() {
