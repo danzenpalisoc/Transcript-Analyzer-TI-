@@ -2492,40 +2492,29 @@ function reOpenModal() { if (_lastHTML) openModal(document.getElementById('trans
 var _audioCache = {};
 
 function _makePlayBtn(ttsText) {
-  var safe = (ttsText || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  return '<button data-tts="' + safe + '" onclick="playStatement(this)" title="Play sample statement" ' +
-    'style="background:#22c55e;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;' +
+  var btn = document.createElement('button');
+  btn.setAttribute('data-tts', ttsText);
+  btn.setAttribute('contenteditable', 'false');
+  btn.setAttribute('title', 'Play sample statement');
+  btn.style.cssText = 'background:#22c55e;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;' +
     'display:inline-flex;align-items:center;justify-content:center;padding:0;' +
-    'vertical-align:middle;margin-right:5px;flex-shrink:0;transition:opacity .15s">' +
-    '<svg width="9" height="10" viewBox="0 0 9 10" fill="white" style="margin-left:1px">' +
-    '<polygon points="1,1 8,5 1,9"/></svg></button>';
+    'vertical-align:middle;margin-right:5px;flex-shrink:0;transition:opacity .15s';
+  btn.innerHTML = '<svg width="9" height="10" viewBox="0 0 9 10" fill="white" style="margin-left:1px"><polygon points="1,1 8,5 1,9"/></svg>';
+  btn.addEventListener('click', function() { playStatement(this); });
+  return btn;
 }
 
 function initPlayButtons() {
   var container = document.getElementById('modal-ai-result');
   if (!container) return;
 
-  container.querySelectorAll('[data-tts-stmt]').forEach(function(el) {
-    var ttsText = el.getAttribute('data-tts-stmt');
+  container.querySelectorAll('.r-tts-stmt-text').forEach(function(el) {
+    if (el.querySelector('button[data-tts]')) return; // already initialized
+    var ttsText = el.textContent.trim()
+      .replace(/^["""'''\s]+|["""'''\s]+$/g, '')
+      .trim();
     if (!ttsText) return;
-    var child = el.firstChild;
-    while (child) {
-      var next = child.nextSibling;
-      if (child.nodeType === 3 && child.nodeValue.indexOf('🎤') >= 0) {
-        var val = child.nodeValue;
-        var idx = val.indexOf('🎤');
-        var micLen = '🎤'.length;
-        var frag = document.createDocumentFragment();
-        if (idx > 0) frag.appendChild(document.createTextNode(val.substring(0, idx)));
-        var tmp = document.createElement('span');
-        tmp.innerHTML = _makePlayBtn(ttsText);
-        frag.appendChild(tmp.firstChild);
-        frag.appendChild(document.createTextNode(val.substring(idx + micLen)));
-        el.replaceChild(frag, child);
-        break;
-      }
-      child = next;
-    }
+    el.insertBefore(_makePlayBtn(ttsText), el.firstChild);
   });
 }
 

@@ -2491,8 +2491,8 @@ function renderAnalyticsHTML(d, filters, analysisType, rowCount) {
         html += '<p style="font-size:13px;margin:0 0 6px">' + e(r.action) + '</p>';
       }
       if (r.positioningStatement) {
-        html += '<div style="background:#EDF7E6;border:1px solid #B3DFA0;border-radius:4px;padding:8px 10px;font-size:12px;color:#1A5E00;font-style:italic">' +
-          '<span data-tts-stmt="' + esc(r.positioningStatement) + '">&#127908;</span> ' + e(r.positioningStatement) + '</div>';
+        html += '<div class="r-tts-stmt-text" style="background:#EDF7E6;border:1px solid #B3DFA0;border-radius:4px;padding:8px 10px;font-size:12px;color:#1A5E00;font-style:italic">' +
+          e(r.positioningStatement) + '</div>';
       }
       html += '</div>';
     });
@@ -4315,8 +4315,8 @@ function posCard(flag) {
   var html  = '<div class="r-pos-card">';
   html += '<div class="r-pos-param">&#9888; ' + esc(param) + '</div>';
   if (expl) html += '<div class="r-pos-detail">' + esc(expl) + '</div>';
-  if (stmt) html += '<div class="r-pos-stmt-label" data-tts-stmt="' + esc(stmt) + '">&#127908; Sample Positioning Statement — Roleplay &amp; Practice</div>' +
-                    '<div class="r-pos-stmt" contenteditable="true">"' + esc(stmt) + '"</div>';
+  if (stmt) html += '<div class="r-pos-stmt-label">Sample Positioning Statement &#9654; Roleplay &amp; Practice</div>' +
+                    '<div class="r-pos-stmt r-tts-stmt-text" contenteditable="true">"' + esc(stmt) + '"</div>';
   html += '</div>';
   return html;
 }
