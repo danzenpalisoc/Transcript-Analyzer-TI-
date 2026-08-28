@@ -2907,11 +2907,15 @@ function readAuditLog() {
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return [];
 
-    var data   = sheet.getRange(2, 1, lastRow - 1, AUDIT_LOG_HEADERS.length).getValues();
+    // Read by actual header names so column order in the sheet never matters.
+    // Mirrors readDashboardSheet — fixes silent misreads when columns were added.
+    var lastCol      = sheet.getLastColumn();
+    var actualHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var data   = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
     var result = data.map(function(row) {
       var obj = {};
-      AUDIT_LOG_HEADERS.forEach(function(h, i) {
-        obj[h] = row[i] !== undefined ? row[i].toString() : '';
+      actualHeaders.forEach(function(h, i) {
+        if (h) obj[h] = row[i] !== undefined ? row[i].toString() : '';
       });
       return obj;
     });
