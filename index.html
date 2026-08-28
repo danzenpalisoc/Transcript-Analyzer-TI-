@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -2492,29 +2492,29 @@ function reOpenModal() { if (_lastHTML) openModal(document.getElementById('trans
 var _audioCache = {};
 
 function _makePlayBtn(ttsText) {
-  var btn = document.createElement('button');
-  btn.setAttribute('data-tts', ttsText);
-  btn.setAttribute('contenteditable', 'false');
-  btn.setAttribute('title', 'Play sample statement');
-  btn.style.cssText = 'background:#22c55e;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;' +
-    'display:inline-flex;align-items:center;justify-content:center;padding:0;' +
-    'vertical-align:middle;margin-right:5px;flex-shrink:0;transition:opacity .15s';
-  btn.innerHTML = '<svg width="9" height="10" viewBox="0 0 9 10" fill="white" style="margin-left:1px"><polygon points="1,1 8,5 1,9"/></svg>';
-  btn.addEventListener('click', function() { playStatement(this); });
-  return btn;
+  var safe = (ttsText || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  return '<button class="tts-play-btn" data-tts="' + safe + '" contenteditable="false" title="Play sample statement" '
+    + 'style="background:#22c55e;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;'
+    + 'display:inline-flex;align-items:center;justify-content:center;padding:0;'
+    + 'vertical-align:middle;margin-right:5px;flex-shrink:0">'
+    + '<svg width="9" height="10" viewBox="0 0 9 10" fill="white"><polygon points="1,1 8,5 1,9"/></svg></button>';
 }
 
 function initPlayButtons() {
   var container = document.getElementById('modal-ai-result');
   if (!container) return;
-
-  container.querySelectorAll('.r-tts-stmt-text').forEach(function(el) {
-    if (el.querySelector('button[data-tts]')) return; // already initialized
-    var ttsText = el.textContent.trim()
-      .replace(/^["""'''\s]+|["""'''\s]+$/g, '')
-      .trim();
-    if (!ttsText) return;
-    el.insertBefore(_makePlayBtn(ttsText), el.firstChild);
+  var done = [];
+  container.querySelectorAll('.r-pos-stmt, .r-tts-stmt-text').forEach(function(el) {
+    if (done.indexOf(el) >= 0 || el.querySelector('button[data-tts]')) return;
+    done.push(el);
+    var text = el.textContent.trim();
+    if (text.charAt(0) === '"') text = text.slice(1);
+    if (text.charAt(text.length - 1) === '"') text = text.slice(0, -1);
+    text = text.trim();
+    if (!text) return;
+    var tmp = document.createElement('span');
+    tmp.innerHTML = _makePlayBtn(text);
+    el.insertBefore(tmp.firstChild, el.firstChild);
   });
 }
 
@@ -4926,6 +4926,14 @@ document.addEventListener('DOMContentLoaded', function() {
   if (inp) {
     inp.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+    });
+  }
+  // Event delegation for TTS play buttons — CSP-safe, survives modal innerHTML rebuild
+  var modal = document.getElementById('analysis-modal');
+  if (modal) {
+    modal.addEventListener('click', function(e) {
+      var btn = e.target.closest('button.tts-play-btn');
+      if (btn) { e.stopPropagation(); playStatement(btn); }
     });
   }
 });
