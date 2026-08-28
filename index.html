@@ -1612,6 +1612,14 @@ body {
         <span class="db-pill-clear" id="pill-ref-clr" style="display:none" onclick="event.stopPropagation();dbClearPill('ref')">✕</span>
       </div>
 
+      <!-- QA (Observer Name) pill -->
+      <div class="db-pill" id="pill-qa" onclick="dbTogglePill('qa',this)">
+        <span class="db-pill-label">QA</span>
+        <span class="db-pill-value" id="pill-qa-val">All</span>
+        <span class="db-pill-arrow">▼</span>
+        <span class="db-pill-clear" id="pill-qa-clr" style="display:none" onclick="event.stopPropagation();dbClearPill('qa')">✕</span>
+      </div>
+
       <!-- SAP ID text search -->
       <input type="text" class="db-sap-pill-input" id="sh-sap-search" placeholder="&#128269; SAP ID…" oninput="dbApplyAll()"/>
 
@@ -1634,6 +1642,7 @@ body {
     <div id="sh-ms-vtid"></div>
     <div id="sh-ms-atype"></div>
     <div id="sh-ms-ref"></div>
+    <div id="sh-ms-qa"></div>
   </div>
 
   <!-- Floating dropdown panels (one per pill) -->
@@ -1645,6 +1654,7 @@ body {
   <div class="db-pill-panel" id="panel-vtid"></div>
   <div class="db-pill-panel" id="panel-atype"></div>
   <div class="db-pill-panel" id="panel-ref"></div>
+  <div class="db-pill-panel" id="panel-qa"></div>
 
   <!-- Shared stats row — shows for whichever tab is active -->
   <div style="max-width:900px;margin:10px auto 0;padding:0 24px">
@@ -3263,10 +3273,11 @@ function dbPrecheck(listId, val) {
 
 var _openPill = null;  // currently open pill key
 
-var PILL_KEYS = ['member','leader','ops','lob','locale','vtid','atype','ref'];
+var PILL_KEYS = ['member','leader','ops','lob','locale','vtid','atype','ref','qa'];
 var PILL_LABELS = {
   member: 'Team Member', leader: 'Team Leader', ops: 'Ops Manager',
-  lob: 'LOB', locale: 'Locale', vtid: 'VTID', atype: 'Analysis Type', ref: 'Audit Ref'
+  lob: 'LOB', locale: 'Locale', vtid: 'VTID', atype: 'Analysis Type', ref: 'Audit Ref',
+  qa: 'QA'
 };
 var PILL_PREFILL = { member: true }; // member pill prefills others
 
@@ -3328,7 +3339,7 @@ function dbBuildPanelHTML(key) {
   var fieldMap = {
     member: 'Team Member', leader: 'Team Leader', ops: 'Operations Manager',
     lob: 'Line of Business', locale: 'Locale', vtid: 'VTID',
-    atype: 'Analysis Type', ref: 'Audit Ref'
+    atype: 'Analysis Type', ref: 'Audit Ref', qa: 'Observer Name'
   };
   var field  = fieldMap[key];
   var values = dbUniq(all.map(function(r){ return r[field] || ''; })).filter(Boolean).sort();
@@ -3650,7 +3661,7 @@ function dbPopulateFilters() {
   var fieldMap = {
     member: 'Team Member', leader: 'Team Leader', ops: 'Operations Manager',
     lob: 'Line of Business', locale: 'Locale', vtid: 'VTID',
-    atype: 'Analysis Type', ref: 'Audit Ref'
+    atype: 'Analysis Type', ref: 'Audit Ref', qa: 'Observer Name'
   };
 
   // For VTID: also pull from roster since dashboard data may not have it yet
@@ -3714,7 +3725,8 @@ function dbGetSharedFilters() {
     locales:  dbGetPillFilter('locale'),
     vtids:    dbGetPillFilter('vtid'),
     atypes:   dbGetPillFilter('atype'),
-    refs:     dbGetPillFilter('ref')
+    refs:     dbGetPillFilter('ref'),
+    qas:      dbGetPillFilter('qa')
   };
 }
 
@@ -3724,14 +3736,15 @@ function dbApplyAll() {
   var f = dbGetSharedFilters();
 
   // Count active filter groups for badge
-  var active = [f.members, f.leaders, f.ops, f.lobs, f.locales, f.vtids, f.atypes, f.refs]
+  var active = [f.members, f.leaders, f.ops, f.lobs, f.locales, f.vtids, f.atypes, f.refs, f.qas]
     .filter(function(a) { return a && a.length > 0; }).length +
     (f.dateFrom || f.dateTo ? 1 : 0) + (f.sapQ ? 1 : 0);
 
   // Sync pill labels to current selection
   PILL_KEYS.forEach(function(k) {
     var fm = { member: f.members, leader: f.leaders, ops: f.ops,
-               lob: f.lobs, locale: f.locales, vtid: f.vtids, atype: f.atypes, ref: f.refs };
+               lob: f.lobs, locale: f.locales, vtid: f.vtids, atype: f.atypes, ref: f.refs,
+               qa: f.qas };
     dbUpdatePillLabel(k, fm[k] || []);
   });
   var badge = document.getElementById('db-active-filter-badge');
@@ -3760,6 +3773,7 @@ function dbApplyAll() {
     if (f.vtids.length   && f.vtids.indexOf(r['VTID']                 || '') === -1) return false;
     if (f.atypes.length) { var _ra = (r['Analysis Type'] || '').toLowerCase(); if (!f.atypes.some(function(a){ return _ra.indexOf(a.toLowerCase()) !== -1; })) return false; }
     if (f.refs.length    && f.refs.indexOf(r['Audit Ref']             || '') === -1) return false;
+    if (f.qas.length     && f.qas.indexOf(r['Observer Name']          || '') === -1) return false;
     return true;
   }
 
