@@ -2833,21 +2833,74 @@ function generateAuditRef() {
   }
 }
 
-// ── Resolve observer from logged-in user email via roster ─────────────────────
-// Returns { name, sapId, email }
+// ── Look up a user in the central Users sheet by email ───────────────────────
+// Returns { name, role, email } or null if not found.
+// Cached in UserCache (per-user, 8 hours).
+function lookupUserFromUsersSheet(email) {
+  if (!email) return null;
+  try {
+    var cache    = CacheService.getUserCache();
+    var cacheKey = 'userssheet_' + email.replace(/[^a-zA-Z0-9]/g, '_');
+    var cached   = cache.get(cacheKey);
+    if (cached) { try { return JSON.parse(cached); } catch(e) {} }
+
+    var ss    = SpreadsheetApp.openById(USERS_SS_ID);
+    var sheet = ss.getSheetByName(USERS_TAB);
+    if (!sheet) { Logger.log('lookupUserFromUsersSheet: tab "' + USERS_TAB + '" not found'); return null; }
+
+    var data    = sheet.getDataRange().getValues();
+    if (data.length < 2) return null;
+
+    var hdrs     = data[0].map(function(h){ return (h || '').toString().toLowerCase().trim(); });
+    var emailCol = hdrs.indexOf('email address');
+    var nameCol  = hdrs.indexOf('name');
+    var roleCol  = hdrs.indexOf('role');
+    if (emailCol < 0 || nameCol < 0) { Logger.log('lookupUserFromUsersSheet: missing columns'); return null; }
+
+    var emailLower = email.toLowerCase().trim();
+    for (var i = 1; i < data.length; i++) {
+      if ((data[i][emailCol] || '').toString().toLowerCase().trim() !== emailLower) continue;
+      var result = {
+        name:  (data[i][nameCol] || '').toString().trim(),
+        role:  roleCol >= 0 ? (data[i][roleCol] || '').toString().trim() : '',
+        email: email
+      };
+      try { cache.put(cacheKey, JSON.stringify(result), 8 * 60 * 60); } catch(e) {}
+      Logger.log('lookupUserFromUsersSheet: ' + result.name + ' [' + result.role + ']');
+      return result;
+    }
+    Logger.log('lookupUserFromUsersSheet: not found — ' + email);
+    return null;
+  } catch(e) {
+    Logger.log('lookupUserFromUsersSheet error: ' + e);
+    return null;
+  }
+}
+
+// ── Resolve observer from logged-in user email ────────────────────────────────
+// Priority: 1) Users sheet  2) Roster sheet  3) email prefix fallback
+// Returns { name, role, sapId, email }
 function resolveObserver() {
   try {
-    var email = Session.getActiveUser().getEmail();
-    if (!email) return { name: '', sapId: '', email: '' };
+    var email = '';
+    try { email = Session.getActiveUser().getEmail() || ''; } catch(e) {}
+    if (!email) return { name: '', role: '', sapId: '', email: '' };
 
     // Cache observer result per email for 8 hours
     var cache    = CacheService.getUserCache();
     var cacheKey = 'observer_' + email.replace(/[^a-zA-Z0-9]/g, '_');
     var cached   = cache.get(cacheKey);
-    if (cached) {
-      try { return JSON.parse(cached); } catch(e) {}
+    if (cached) { try { return JSON.parse(cached); } catch(e) {} }
+
+    // ── 1. Users sheet (canonical source — Email Address, Name, Role) ─────────
+    var userRow = lookupUserFromUsersSheet(email);
+    if (userRow && userRow.name) {
+      var result = { name: userRow.name, role: userRow.role, sapId: '', email: email };
+      try { cache.put(cacheKey, JSON.stringify(result), 8 * 60 * 60); } catch(e) {}
+      return result;
     }
 
+    // ── 2. Roster sheet fallback ──────────────────────────────────────────────
     var data       = _getRosterSheetData();  // uses cached roster
     var emailLower = email.toLowerCase();
 
@@ -2858,6 +2911,7 @@ function resolveObserver() {
         if (data[i][j] && data[i][j].toString().toLowerCase() === emailLower) {
           result = {
             name:  (data[i][ROSTER_COL_AGENT_NAME] || '').toString().trim(),
+            role:  '',
             sapId: (data[i][ROSTER_COL_SAP_ID]     || '').toString().trim(),
             email: email
           };
@@ -2872,20 +2926,20 @@ function resolveObserver() {
         if (parts.length >= 2) {
           var constructed = (parts[0] + '.' + parts[parts.length - 1] + '@telus.com').toLowerCase();
           if (constructed === emailLower) {
-            result = { name: agentName, sapId: (data[i][ROSTER_COL_SAP_ID] || '').toString().trim(), email: email };
+            result = { name: agentName, role: '', sapId: (data[i][ROSTER_COL_SAP_ID] || '').toString().trim(), email: email };
             break;
           }
         }
       }
     }
-    if (!result) result = { name: email.split('@')[0], sapId: '', email: email };
+    if (!result) result = { name: email.split('@')[0], role: '', sapId: '', email: email };
 
     // Cache for 8 hours
     try { cache.put(cacheKey, JSON.stringify(result), 8 * 60 * 60); } catch(e) {}
     return result;
   } catch(e) {
     Logger.log('resolveObserver error: ' + e);
-    return { name: '', sapId: '', email: '' };
+    return { name: '', role: '', sapId: '', email: '' };
   }
 }
 

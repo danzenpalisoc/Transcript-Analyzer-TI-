@@ -68,6 +68,11 @@ var AT_DATA_AGENT_COL    = 2;   // Column C (0-based) — Agent_Name
 // FCR Dashboard Data file — third lookup source for Team Leader / Ops Manager
 var FCR_DASHBOARD_SS_ID  = '1wy65jF6bz15tIQs5uozxksA2z7yDwxWOszaOrVCGuaM';
 
+// Users sheet — canonical user directory (Email Address, Name, Role, Status…)
+// Used by resolveObserver() to identify QA analysts by their logged-in email.
+var USERS_SS_ID = '1nqHtScRcW7xdMOi8OPcpgxEmm4DBWuopoqp030DtBXk';
+var USERS_TAB   = 'Users';
+
 var TRANSCRIPTS_HEADERS = [
   'Audit Ref', 'Timestamp', 'SAP ID', 'Team Member', 'Team Leader',
   'Operations Manager', 'Line of Business', 'Locale', 'Observer Name',
