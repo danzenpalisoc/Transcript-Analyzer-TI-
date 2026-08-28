@@ -3235,20 +3235,7 @@ function dbGetChecked(listId) {
     .map(function(cb) { return cb.value; });
 }
 
-// ── Populate SHARED filters from all data ────────────────────────────────────
-function dbPopulateFilters() {
-  var all = _dbAllData.concat(_dbAuditLog);
-  var f   = function(field) { return dbUniq(all.map(function(r) { return r[field] || ''; })); };
-  dbBuildMs('sh-ms-member', f('Team Member'),        'sh', 'member');
-  dbBuildMs('sh-ms-leader', f('Team Leader'),        null, null);
-  dbBuildMs('sh-ms-ops',    f('Operations Manager'), null, null);
-  dbBuildMs('sh-ms-lob',    f('Line of Business'),   null, null);
-  dbBuildMs('sh-ms-locale', f('Locale'),             null, null);
-  dbBuildMs('sh-ms-atype',  f('Analysis Type'),      null, null);
-  dbBuildMs('sh-ms-ref',    f('Audit Ref'),           null, null);
-}
-
-// dbPopulateAuditLogFilters — unified version defined above near dbApplyAuditLog
+// dbPopulateFilters — defined below near the pill system (search for "Populate pill stores")
 
 // ── When Team Member ticked — prefill from roster (shared panel) ─────────────
 function dbMemberChange(pfx, name) {
@@ -3418,10 +3405,16 @@ function dbPillSelectAll(key, selectAll) {
   var panel = document.getElementById('panel-' + key);
   if (!panel) return;
 
-  // Check/uncheck all visible items in the list
+  // Clear active search first so all items are visible before selecting
+  var searchEl = panel.querySelector('.db-pill-panel-search');
+  if (searchEl && searchEl.value) {
+    searchEl.value = '';
+    dbPillSearch(searchEl, key);
+  }
+
+  // Check/uncheck all items (all are now visible after search clear)
   panel.querySelectorAll('.db-pill-panel-item input[type=checkbox]').forEach(function(cb) {
-    var item = cb.closest('.db-pill-panel-item');
-    if (item && item.style.display !== 'none') cb.checked = selectAll;
+    cb.checked = selectAll;
   });
 
   // Update the Select All checkbox label
@@ -3430,13 +3423,40 @@ function dbPillSelectAll(key, selectAll) {
     saBox.nextSibling && (saBox.parentNode.lastChild.textContent = selectAll ? 'Deselect All' : 'Select All');
   }
 
-  // Sync to store and apply
+  // Sync to store and apply (batch — single dbApplyAll at the end, not one per member)
   if (key === 'member') {
-    // Use member-specific handler to trigger prefill
-    panel.querySelectorAll('.db-pill-panel-item input[type=checkbox]').forEach(function(cb) {
-      if (selectAll) dbPillMemberChange(cb.value, cb);
-    });
-    if (!selectAll) { dbPillCheck('member'); }
+    dbPillCheck('member');
+    if (selectAll) {
+      var members = dbGetChecked('sh-ms-member');
+      var leaders = [], ops = [], lobs = [], locales = [];
+      members.forEach(function(m) {
+        var rr = _dbRoster.find(function(r){ return r.participant === m; });
+        if (rr) {
+          if (rr.teamLeader)     leaders.push(rr.teamLeader);
+          if (rr.opsManager)     ops.push(rr.opsManager);
+          if (rr.lineOfBusiness) lobs.push(rr.lineOfBusiness);
+          if (rr.locale)         locales.push(rr.locale);
+        }
+        var dr = _dbAllData.find(function(r){ return r['Team Member'] === m; });
+        if (dr) {
+          if (dr['Team Leader'])        leaders.push(dr['Team Leader']);
+          if (dr['Operations Manager']) ops.push(dr['Operations Manager']);
+          if (dr['Line of Business'])   lobs.push(dr['Line of Business']);
+          if (dr['Locale'])             locales.push(dr['Locale']);
+        }
+      });
+      dbPreTickPill('leader', dbUniq(leaders));
+      dbPreTickPill('ops',    dbUniq(ops));
+      dbPreTickPill('lob',    dbUniq(lobs));
+      dbPreTickPill('locale', dbUniq(locales));
+    } else {
+      ['leader','ops','lob','locale'].forEach(function(k) {
+        var s = document.getElementById('sh-ms-' + k);
+        if (s) s.querySelectorAll('input').forEach(function(cb){ cb.checked = true; });
+        dbUpdatePillLabel(k, []);
+      });
+    }
+    dbApplyAll();
   } else {
     dbPillCheck(key);
   }
@@ -3458,9 +3478,9 @@ function dbPillCheck(key) {
   var storeEl = document.getElementById('sh-ms-' + key);
   if (!panel || !storeEl) return;
 
-  // Sync panel checkboxes → hidden store
+  // Sync panel checkboxes → hidden store (skip Select All meta-checkbox)
   var checked = [];
-  panel.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
+  panel.querySelectorAll('.db-pill-panel-item input[type=checkbox]').forEach(function(cb) {
     var existing = storeEl.querySelector('input[value="' + CSS.escape(cb.value) + '"]');
     if (!existing) {
       var lbl = document.createElement('label');
@@ -3534,9 +3554,15 @@ function dbPreTickPill(key, vals) {
   dbUpdatePillLabel(key, vals);
 }
 
-// Non-member pill selection — just sync and apply, no cross-prefill
+// Non-member pill selection — sync, auto-restore if nothing left checked, then apply
 function dbPillCrossSelect(key, val, checked) {
   dbPillCheck(key);
+  // If user unchecked the last item, treat it as "All" (restore everything)
+  var store = document.getElementById('sh-ms-' + key);
+  if (store && !store.querySelector('input[type=checkbox]:checked')) {
+    store.querySelectorAll('input[type=checkbox]').forEach(function(cb){ cb.checked = true; });
+    dbUpdatePillLabel(key, []);
+  }
   dbApplyAll();
 }
 
@@ -3698,8 +3724,12 @@ function dbApplyAll() {
   // Filter helper
   function matchRow(r, tsField) {
     var ts = r[tsField] || r['Timestamp'] || r['Submitted At'] || '';
-    if (f.dateFrom) { var d = new Date(ts); if (!isNaN(d) && d < new Date(f.dateFrom)) return false; }
-    if (f.dateTo)   { var d2 = new Date(ts); if (!isNaN(d2) && d2 > new Date(f.dateTo + 'T23:59:59')) return false; }
+    if (f.dateFrom || f.dateTo) {
+      var d = ts ? new Date(ts) : null;
+      if (!d || isNaN(d.getTime())) return false; // no valid timestamp → exclude when date filter active
+      if (f.dateFrom && d < new Date(f.dateFrom + 'T00:00:00')) return false; // local midnight, not UTC
+      if (f.dateTo   && d > new Date(f.dateTo   + 'T23:59:59')) return false;
+    }
     if (f.sapQ && (r['SAP ID'] || '').toLowerCase().indexOf(f.sapQ) === -1) return false;
     if (f.members.length && f.members.indexOf(r['Team Member']        || '') === -1) return false;
     if (f.leaders.length && f.leaders.indexOf(r['Team Leader']        || '') === -1) return false;
@@ -3707,7 +3737,7 @@ function dbApplyAll() {
     if (f.lobs.length    && f.lobs.indexOf(r['Line of Business']      || '') === -1) return false;
     if (f.locales.length && f.locales.indexOf(r['Locale']             || '') === -1) return false;
     if (f.vtids.length   && f.vtids.indexOf(r['VTID']                 || '') === -1) return false;
-    if (f.atypes.length  && f.atypes.indexOf(r['Analysis Type']       || '') === -1) return false;
+    if (f.atypes.length) { var _ra = (r['Analysis Type'] || '').toLowerCase(); if (!f.atypes.some(function(a){ return _ra.indexOf(a.toLowerCase()) !== -1; })) return false; }
     if (f.refs.length    && f.refs.indexOf(r['Audit Ref']             || '') === -1) return false;
     return true;
   }
@@ -3742,10 +3772,11 @@ function dbApplyAll() {
   dbRenderAuditStats(_dbAlFiltered);
   dbRenderAuditTable(_dbAlFiltered);
 
-  // Shared count summary
+  // Shared count summary — label reflects active Analysis Type filter if narrowed
   var total = _dbRFiltered.length + _dbSFiltered.length;
+  var _typeLabel = f.atypes.length === 1 ? f.atypes[0] : 'Repeats & Sales';
   document.getElementById('sh-row-count').textContent =
-    total + ' total record' + (total !== 1 ? 's' : '') + ' across Repeats & Sales';
+    total + ' total record' + (total !== 1 ? 's' : '') + ' across ' + _typeLabel;
 
   // Re-render Overview tab if it's currently visible
   var ovTab = document.getElementById('db-tab-overview');
