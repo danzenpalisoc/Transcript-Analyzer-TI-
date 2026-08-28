@@ -2311,7 +2311,8 @@ function handleSubmit() {
     analysisType:   document.querySelector('input[name="analysisType"]:checked').value,
     transcript:     document.getElementById('transcript').value.trim(),
     agentEmail:        document.getElementById('agentEmail').value.trim(),
-    translateToEnglish: document.getElementById('translate-toggle').checked
+    translateToEnglish: document.getElementById('translate-toggle').checked,
+    observerName:      _currentObserver.name || _currentObserver.email || ''
   };
   if (!formData.sapId)      { showError('Please fill in: SAP ID'); return; }
   if (!formData.transcript) { showError('Please paste a call transcript'); return; }
