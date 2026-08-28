@@ -3445,10 +3445,10 @@ function dbPillSelectAll(key, selectAll) {
           if (dr['Locale'])             locales.push(dr['Locale']);
         }
       });
-      dbPreTickPill('leader', dbUniq(leaders));
-      dbPreTickPill('ops',    dbUniq(ops));
-      dbPreTickPill('lob',    dbUniq(lobs));
-      dbPreTickPill('locale', dbUniq(locales));
+      dbInfoPill('leader', dbUniq(leaders));
+      dbInfoPill('ops',    dbUniq(ops));
+      dbInfoPill('lob',    dbUniq(lobs));
+      dbInfoPill('locale', dbUniq(locales));
     } else {
       ['leader','ops','lob','locale'].forEach(function(k) {
         var s = document.getElementById('sh-ms-' + k);
@@ -3508,7 +3508,7 @@ function dbPillMemberChange(name, checkbox) {
   // already checked — but it doesn't force those filters on.
   var members = dbGetChecked('sh-ms-member');
   if (members.length > 0) {
-    // Collect all related values for selected members
+    // Collect related values for info display (NOT for filtering)
     var leaders = [], ops = [], lobs = [], locales = [];
     members.forEach(function(m) {
       var rosterRow = _dbRoster.find(function(r){ return r.participant === m; });
@@ -3518,22 +3518,22 @@ function dbPillMemberChange(name, checkbox) {
         if (rosterRow.lineOfBusiness) lobs.push(rosterRow.lineOfBusiness);
         if (rosterRow.locale)         locales.push(rosterRow.locale);
       }
-      // Also from dashboard data (has VTID)
-      var dataRow = _dbAllData.find(function(r){ return r['Team Member'] === m; });
-      if (dataRow) {
-        if (dataRow['Team Leader'])        leaders.push(dataRow['Team Leader']);
-        if (dataRow['Operations Manager']) ops.push(dataRow['Operations Manager']);
-        if (dataRow['Line of Business'])   lobs.push(dataRow['Line of Business']);
-        if (dataRow['Locale'])             locales.push(dataRow['Locale']);
-      }
+      // Collect from ALL matching records (not just first) to catch multi-LOB agents
+      _dbAllData.filter(function(r){ return r['Team Member'] === m; }).forEach(function(dr) {
+        if (dr['Team Leader'])        leaders.push(dr['Team Leader']);
+        if (dr['Operations Manager']) ops.push(dr['Operations Manager']);
+        if (dr['Line of Business'])   lobs.push(dr['Line of Business']);
+        if (dr['Locale'])             locales.push(dr['Locale']);
+      });
     });
-    // Pre-tick only relevant options in each pill (deselect the rest)
-    dbPreTickPill('leader', dbUniq(leaders));
-    dbPreTickPill('ops',    dbUniq(ops));
-    dbPreTickPill('lob',    dbUniq(lobs));
-    dbPreTickPill('locale', dbUniq(locales));
+    // Visual-only info: show values in pill labels but keep all store options
+    // checked so related pills do NOT actually filter — only Team Member filters.
+    dbInfoPill('leader', dbUniq(leaders));
+    dbInfoPill('ops',    dbUniq(ops));
+    dbInfoPill('lob',    dbUniq(lobs));
+    dbInfoPill('locale', dbUniq(locales));
   } else {
-    // No member selected — restore all options in related pills
+    // No member selected — restore all related pills to "All"
     ['leader','ops','lob','locale'].forEach(function(k) {
       var store = document.getElementById('sh-ms-' + k);
       if (store) store.querySelectorAll('input').forEach(function(cb){ cb.checked = true; });
@@ -3552,6 +3552,27 @@ function dbPreTickPill(key, vals) {
   });
   // Update the pill label to show selection state
   dbUpdatePillLabel(key, vals);
+}
+
+// Visual-only pill info — shows member's related values as a label but keeps ALL
+// store options checked so no filter is actually applied on those related pills.
+// Use this for cross-prefill (member → leader/ops/lob/locale) so only the
+// Team Member pill itself filters; related pills are informational only.
+function dbInfoPill(key, vals) {
+  var store = document.getElementById('sh-ms-' + key);
+  if (!store) return;
+  store.querySelectorAll('input[type=checkbox]').forEach(function(cb){ cb.checked = true; });
+  var valEl = document.getElementById('pill-' + key + '-val');
+  var clrEl = document.getElementById('pill-' + key + '-clr');
+  var pill  = document.getElementById('pill-' + key);
+  if (!valEl) return;
+  if (vals && vals.length) {
+    valEl.textContent = vals.length === 1 ? vals[0] : vals.length + ' values';
+  } else {
+    valEl.textContent = 'All';
+  }
+  if (clrEl) clrEl.style.display = 'none';
+  if (pill)  pill.classList.remove('db-pill-active');
 }
 
 // Non-member pill selection — sync, auto-restore if nothing left checked, then apply
@@ -4584,8 +4605,11 @@ function sendAnalyticsBriefingFromUI() {
 function renderOverviewTab() {
   var all = _dbRFiltered.concat(_dbSFiltered); // use filtered rows — both Repeats and Sales
   if (!all || !all.length) {
-    document.getElementById('ov-highlights').innerHTML = '<li class="ov-empty">No data loaded yet. Click ⟳ Refresh.</li>';
-    document.getElementById('ov-lowlights').innerHTML  = '<li class="ov-empty">No data loaded yet.</li>';
+    var _emptyMsg = _dbAllData && _dbAllData.length
+      ? 'No records match current filters.'
+      : 'No data loaded yet. Click ⟳ Refresh.';
+    document.getElementById('ov-highlights').innerHTML = '<li class="ov-empty">' + _emptyMsg + '</li>';
+    document.getElementById('ov-lowlights').innerHTML  = '<li class="ov-empty">' + _emptyMsg + '</li>';
     return;
   }
 
@@ -4812,10 +4836,14 @@ function renderSalesAttemptedDonut() {
 }
 
 function renderTabAIHighlights(pfx, rows) {
-  if (!rows || !rows.length) return;
   var hlEl = document.getElementById(pfx + '-highlights');
   var llEl = document.getElementById(pfx + '-lowlights');
   if (!hlEl || !llEl) return;
+  if (!rows || !rows.length) {
+    hlEl.innerHTML = '<li class="ov-empty">No records match current filters.</li>';
+    llEl.innerHTML = '<li class="ov-empty">No records match current filters.</li>';
+    return;
+  }
   hlEl.innerHTML = '<li class="ov-empty" style="color:#888;font-style:italic">Generating AI insights…</li>';
   llEl.innerHTML = '<li class="ov-empty" style="color:#888;font-style:italic">Generating AI insights…</li>';
   var atype = pfx === 's' ? 'sales' : 'repeats';
@@ -4840,7 +4868,13 @@ function renderTabAIHighlights(pfx, rows) {
 
 function renderOverviewAIHighlights() {
   var _ovFiltered = _dbRFiltered.concat(_dbSFiltered);
-  if (!_ovFiltered.length) return;
+  if (!_ovFiltered.length) {
+    var hlEl = document.getElementById('ov-highlights');
+    var llEl = document.getElementById('ov-lowlights');
+    if (hlEl) hlEl.innerHTML = '<li class="ov-empty">No records match current filters.</li>';
+    if (llEl) llEl.innerHTML = '<li class="ov-empty">No records match current filters.</li>';
+    return;
+  }
   google.script.run
     .withFailureHandler(function(e) { console.warn('[H&L AI] failed:', e.message); })
     .withSuccessHandler(function(result) {
