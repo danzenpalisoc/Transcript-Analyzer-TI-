@@ -2877,6 +2877,97 @@ function lookupUserFromUsersSheet(email) {
   }
 }
 
+// ── Return all users from the Users sheet — called by dashboard to populate ──
+// the QA filter pill. Cached 1 hour in ScriptCache (shared across users).
+function getQAUsersFromSheet() {
+  try {
+    var cache    = CacheService.getScriptCache();
+    var cacheKey = 'qa_users_list_v1';
+    var cached   = cache.get(cacheKey);
+    if (cached) { try { return JSON.parse(cached); } catch(e) {} }
+
+    var ss    = SpreadsheetApp.openById(USERS_SS_ID);
+    var sheet = ss.getSheetByName(USERS_TAB);
+    if (!sheet) return [];
+
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) return [];
+
+    var hdrs      = data[0].map(function(h){ return (h || '').toString().toLowerCase().trim(); });
+    var emailCol  = hdrs.indexOf('email address');
+    var nameCol   = hdrs.indexOf('name');
+    var roleCol   = hdrs.indexOf('role');
+    var statusCol = hdrs.indexOf('status');
+    if (emailCol < 0 || nameCol < 0) return [];
+
+    var users = [];
+    for (var i = 1; i < data.length; i++) {
+      var name   = (data[i][nameCol]   || '').toString().trim();
+      var email  = (data[i][emailCol]  || '').toString().trim();
+      var role   = roleCol   >= 0 ? (data[i][roleCol]   || '').toString().trim() : '';
+      var status = statusCol >= 0 ? (data[i][statusCol] || '').toString().trim() : '';
+      if (!name || !email) continue;
+      if (status && status.toLowerCase() === 'inactive') continue;
+      users.push({ name: name, email: email, role: role });
+    }
+
+    try { cache.put(cacheKey, JSON.stringify(users), 60 * 60); } catch(e) {}
+    Logger.log('getQAUsersFromSheet: ' + users.length + ' users loaded');
+    return users;
+  } catch(e) {
+    Logger.log('getQAUsersFromSheet error: ' + e);
+    return [];
+  }
+}
+
+// ── Backfill blank Observer Name in Dashboard_Data + Audit_Log ────────────────
+// Run ONCE from the GAS editor: Tools → Run → backfillObserverName
+// Sets Observer Name for all blank rows to the name of the currently
+// logged-in user (looked up from the Users sheet by their email).
+function backfillObserverName() {
+  var email = '';
+  try { email = Session.getActiveUser().getEmail() || ''; } catch(e) {}
+  try { if (!email) email = Session.getEffectiveUser().getEmail() || ''; } catch(e) {}
+
+  if (!email) { Logger.log('backfillObserverName: no email — run from editor while signed in'); return; }
+
+  var user = lookupUserFromUsersSheet(email);
+  var name = user ? user.name : email.split('@')[0];
+  Logger.log('backfillObserverName: will set Observer Name = "' + name + '" for blank rows');
+
+  var ss     = getOrCreateSpreadsheet();
+  var dSheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
+  var lSheet = getOrCreateSheet(ss, AUDIT_LOG_SHEET);
+  var total  = 0;
+
+  function patchSheet(sheet) {
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+    var lastCol  = sheet.getLastColumn();
+    var hdrs     = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var obsCol   = hdrs.map(function(h){ return (h||'').toString().trim(); }).indexOf('Observer Name');
+    if (obsCol < 0) { Logger.log('patchSheet: no Observer Name column in ' + sheet.getName()); return; }
+    obsCol++; // 1-based
+
+    var data    = sheet.getRange(2, obsCol, lastRow - 1, 1).getValues();
+    var patched = 0;
+    for (var i = 0; i < data.length; i++) {
+      if (!(data[i][0] || '').toString().trim()) {
+        sheet.getRange(i + 2, obsCol).setValue(name);
+        patched++;
+      }
+    }
+    Logger.log('backfillObserverName [' + sheet.getName() + ']: ' + patched + ' rows patched');
+    total += patched;
+  }
+
+  patchSheet(dSheet);
+  patchSheet(lSheet);
+  invalidateDashboardCache();
+  invalidateAuditLogCache();
+  Logger.log('=== backfillObserverName done: ' + total + ' total rows patched ===');
+}
+
 // ── Resolve observer from logged-in user email ────────────────────────────────
 // Priority: 1) Users sheet  2) Roster sheet  3) email prefix fallback
 // Returns { name, role, sapId, email }

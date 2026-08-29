@@ -2607,6 +2607,7 @@ function copyApplied(btn) {
 // ══════════════════════════════════════════════════════════════════════════════
 var _dbAllData    = [];
 var _dbRoster     = [];
+var _dbQAUsers    = [];   // users from Users sheet — for QA pill options
 var _dbRFiltered  = [];
 var _dbSFiltered  = [];
 var _dbLoaded      = false;
@@ -2862,11 +2863,13 @@ function loadDashboardData() {
 
     // Background refresh — update silently without blocking UI
     _refreshAllInBackground();
+    _loadQAUsers();
     return;
   }
 
-  // No cache — must fetch. Load all three in parallel.
+  // No cache — must fetch. Load all in parallel.
   _fetchAllParallel(function() { dbSetLoading(false); });
+  _loadQAUsers(); // fire-and-forget — fills QA pill from Users sheet
 }
 
 // Fetch dashboard + roster + auditlog in parallel, render when all done
@@ -2895,6 +2898,40 @@ function _fetchAllParallel(onDone) {
     .withSuccessHandler(function(r){ auditResult=r; lsSet(LS_AUDITLOG_KEY,r); check(); })
     .withFailureHandler(function(){ pending--; check(); })
     .getAuditLogData();
+}
+
+// Load QA users from Users sheet and refresh QA pill options
+function _loadQAUsers() {
+  google.script.run
+    .withSuccessHandler(function(users) {
+      if (!users || !users.length) return;
+      _dbQAUsers = users;
+      // Repopulate just the QA pill with merged data + sheet users
+      _refreshQAPill();
+    })
+    .withFailureHandler(function(){})
+    .getQAUsersFromSheet();
+}
+
+function _refreshQAPill() {
+  var all = _dbAllData.concat(_dbAuditLog);
+  // Names from existing data
+  var fromData = dbUniq(all.map(function(r){ return r['Observer Name'] || ''; })).filter(Boolean);
+  // Names from Users sheet
+  var fromSheet = dbUniq(_dbQAUsers.map(function(u){ return u.name || ''; })).filter(Boolean);
+  // Merge both sources
+  var values = dbUniq(fromData.concat(fromSheet)).filter(Boolean).sort();
+
+  var store = document.getElementById('sh-ms-qa');
+  if (!store) return;
+  store.innerHTML = '';
+  values.forEach(function(v) {
+    var lbl = document.createElement('label');
+    lbl.innerHTML = '<input type="checkbox" value="' + escHtml(v) + '"> ' + escHtml(v);
+    store.appendChild(lbl);
+  });
+  // Check all by default (= no filter)
+  store.querySelectorAll('input[type=checkbox]').forEach(function(cb){ cb.checked = true; });
 }
 
 // Background refresh — doesn't show loading spinner
@@ -2927,6 +2964,7 @@ function dbForceRefresh() {
       btn.textContent = '⟳ Refresh';
       dbHandleData(result, false);
       lsSet(LS_CACHE_KEY, result);
+      _loadQAUsers();
     })
     .withFailureHandler(function(e) {
       btn.disabled = false;
@@ -3671,8 +3709,10 @@ function dbPopulateFilters() {
   PILL_KEYS.forEach(function(key) {
     var field  = fieldMap[key];
     var values = dbUniq(all.map(function(r){ return r[field] || ''; })).filter(Boolean);
-    // Merge in roster VTIDs so the filter always has options
+    // Merge VTID options from roster
     if (key === 'vtid') values = dbUniq(values.concat(vtidFromRoster)).filter(Boolean);
+    // Merge QA options from Users sheet (always shows QA analysts even if records are blank)
+    if (key === 'qa') values = dbUniq(values.concat(_dbQAUsers.map(function(u){ return u.name||''; }))).filter(Boolean);
     values = values.sort();
 
     var store = document.getElementById('sh-ms-' + key);
