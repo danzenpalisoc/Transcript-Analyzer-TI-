@@ -3381,7 +3381,9 @@ function dbBuildPanelHTML(key) {
     atype: 'Analysis Type', ref: 'Audit Ref', qa: 'Observer Name'
   };
   var field  = fieldMap[key];
-  var values = dbUniq(all.map(function(r){ return r[field] || ''; })).filter(Boolean).sort();
+  var values = dbUniq(all.map(function(r){ return r[field] || ''; })).filter(Boolean);
+  if (key === 'qa') values = dbUniq(values.concat(_dbQAUsers.map(function(u){ return u.name||''; }))).filter(Boolean);
+  values = values.sort();
 
   var countSel = Object.keys(checked).length;
   var allSelected = (countSel === values.length && values.length > 0);
