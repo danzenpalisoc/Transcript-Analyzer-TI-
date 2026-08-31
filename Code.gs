@@ -3497,9 +3497,31 @@ function sendAuditEmail(formData, htmlResult) {
       var adminList = getRecipientsFromRoster('Admin/Dev');
       recipients = adminList.map(function(r) { return r.email; }).filter(Boolean);
     } else {
-      var teamLeaderEmail = resolveEmail(formData.teamLeader);
-      var opsMgrEmail     = resolveEmail(formData.opsManager);
-      recipients = [teamLeaderEmail, opsMgrEmail].filter(Boolean);
+      // Agent being audited
+      var agentEmailAddr  = lookupAgentEmail((formData.participant || '').trim());
+      // Agent's Team Leader
+      var agentTLEmail    = resolveEmail(formData.teamLeader);
+      // QA / Observer who submitted
+      var observerName_   = (formData.observerName || '').trim();
+      var qaEmailAddr     = '';
+      if (observerName_) {
+        var qaRows_   = getRecipientsFromRoster(QA_ROLE);
+        var qaMatch_  = qaRows_.filter(function(r) { return r.name.toLowerCase() === observerName_.toLowerCase(); });
+        qaEmailAddr   = qaMatch_.length ? qaMatch_[0].email : resolveEmail(observerName_);
+      }
+      // QA Team Leaders
+      var qaTLEmails_  = getRecipientsFromRoster(QA_TL_ROLE).map(function(r) { return r.email; });
+      // Admin/Dev
+      var adminEmails_ = getRecipientsFromRoster('Admin/Dev').map(function(r) { return r.email; });
+
+      var allEmails_ = [agentEmailAddr, agentTLEmail, qaEmailAddr].concat(qaTLEmails_).concat(adminEmails_);
+      var validRe_   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      var seen_      = {};
+      recipients = allEmails_.filter(function(e) {
+        if (!e || !validRe_.test(e) || seen_[e.toLowerCase()]) return false;
+        seen_[e.toLowerCase()] = true;
+        return true;
+      });
     }
 
     if (!recipients.length) {
