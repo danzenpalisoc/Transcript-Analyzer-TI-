@@ -5082,14 +5082,11 @@ document.addEventListener('DOMContentLoaded', function() {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
     });
   }
-  // Event delegation for TTS play buttons — CSP-safe, survives modal innerHTML rebuild
-  var modal = document.getElementById('analysis-modal');
-  if (modal) {
-    modal.addEventListener('click', function(e) {
-      var btn = e.target.closest('button.tts-play-btn');
-      if (btn) { e.stopPropagation(); playStatement(btn); }
-    });
-  }
+  // Event delegation for TTS play buttons — covers modal AND applied-output section
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('button.tts-play-btn');
+    if (btn) { e.stopPropagation(); playStatement(btn); }
+  });
 });
 </script>
 
