@@ -2608,8 +2608,10 @@ function copyApplied(btn) {
 var _dbAllData    = [];
 var _dbRoster     = [];
 var _dbQAUsers    = [];   // users from Users sheet — for QA pill options
-var _dbRFiltered  = [];
-var _dbSFiltered  = [];
+var _dbRFiltered     = [];
+var _dbSFiltered     = [];
+var _ovHighlightsGen = 0; // generation counter — guards against stale async AI H&L overwrites
+var _tabHLGen        = 0; // same guard for Repeats/Sales tab H&L
 var _dbLoaded      = false;
 
 var _dbAuditLog    = [];
@@ -2924,14 +2926,23 @@ function _refreshQAPill() {
 
   var store = document.getElementById('sh-ms-qa');
   if (!store) return;
+
+  // Preserve any active selection before rebuilding the store
+  var prevChecked = {};
+  store.querySelectorAll('input[type=checkbox]').forEach(function(cb){ prevChecked[cb.value] = cb.checked; });
+  var hadSelection = Object.keys(prevChecked).length > 0;
+  var allPrevChecked = hadSelection && Object.keys(prevChecked).every(function(k){ return prevChecked[k]; });
+
   store.innerHTML = '';
   values.forEach(function(v) {
     var lbl = document.createElement('label');
     lbl.innerHTML = '<input type="checkbox" value="' + escHtml(v) + '"> ' + escHtml(v);
     store.appendChild(lbl);
   });
-  // Check all by default (= no filter)
-  store.querySelectorAll('input[type=checkbox]').forEach(function(cb){ cb.checked = true; });
+  // Restore prior selection; default to all-checked only if store was empty before
+  store.querySelectorAll('input[type=checkbox]').forEach(function(cb){
+    cb.checked = (!hadSelection || allPrevChecked) ? true : (prevChecked[cb.value] === true);
+  });
 }
 
 // Background refresh — doesn't show loading spinner
@@ -4661,10 +4672,18 @@ function sendAnalyticsBriefingFromUI() {
 
 function renderOverviewTab() {
   var all = _dbRFiltered.concat(_dbSFiltered); // use filtered rows — both Repeats and Sales
+
+  // Always wipe stale stats/charts first — prevents stale display on any code path
+  document.getElementById('ov-stats').innerHTML = '';
+  ['ov-chart-drivers','ov-chart-flags','ov-chart-rca','ov-chart-type'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.innerHTML = '';
+  });
+
   if (!all || !all.length) {
     var _emptyMsg = _dbAllData && _dbAllData.length
       ? 'No records match current filters.'
       : 'No data loaded yet. Click ⟳ Refresh.';
+    _ovHighlightsGen++;  // invalidate any in-flight AI H&L request
     document.getElementById('ov-highlights').innerHTML = '<li class="ov-empty">' + _emptyMsg + '</li>';
     document.getElementById('ov-lowlights').innerHTML  = '<li class="ov-empty">' + _emptyMsg + '</li>';
     return;
@@ -4897,19 +4916,23 @@ function renderTabAIHighlights(pfx, rows) {
   var llEl = document.getElementById(pfx + '-lowlights');
   if (!hlEl || !llEl) return;
   if (!rows || !rows.length) {
+    _tabHLGen++;  // invalidate in-flight requests
     hlEl.innerHTML = '<li class="ov-empty">No records match current filters.</li>';
     llEl.innerHTML = '<li class="ov-empty">No records match current filters.</li>';
     return;
   }
+  var gen = ++_tabHLGen;
   hlEl.innerHTML = '<li class="ov-empty" style="color:#888;font-style:italic">Generating AI insights…</li>';
   llEl.innerHTML = '<li class="ov-empty" style="color:#888;font-style:italic">Generating AI insights…</li>';
   var atype = pfx === 's' ? 'sales' : 'repeats';
   google.script.run
     .withFailureHandler(function(e) {
+      if (gen !== _tabHLGen) return;
       hlEl.innerHTML = '<li class="ov-empty">Could not load AI insights.</li>';
       llEl.innerHTML = '<li class="ov-empty">Could not load AI insights.</li>';
     })
     .withSuccessHandler(function(result) {
+      if (gen !== _tabHLGen) return;  // filter changed while waiting — discard stale response
       if (!result || !result.success) return;
       var hl = result.highlights || [];
       var ll = result.lowlights  || [];
@@ -4926,15 +4949,18 @@ function renderTabAIHighlights(pfx, rows) {
 function renderOverviewAIHighlights() {
   var _ovFiltered = _dbRFiltered.concat(_dbSFiltered);
   if (!_ovFiltered.length) {
+    _ovHighlightsGen++;  // invalidate in-flight requests
     var hlEl = document.getElementById('ov-highlights');
     var llEl = document.getElementById('ov-lowlights');
     if (hlEl) hlEl.innerHTML = '<li class="ov-empty">No records match current filters.</li>';
     if (llEl) llEl.innerHTML = '<li class="ov-empty">No records match current filters.</li>';
     return;
   }
+  var gen = ++_ovHighlightsGen;
   google.script.run
     .withFailureHandler(function(e) { console.warn('[H&L AI] failed:', e.message); })
     .withSuccessHandler(function(result) {
+      if (gen !== _ovHighlightsGen) return;  // filter changed while waiting — discard stale response
       if (!result || !result.success) return;
       var hl = result.highlights || [];
       var ll = result.lowlights  || [];
