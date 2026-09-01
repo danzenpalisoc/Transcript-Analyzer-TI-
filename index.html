@@ -2733,7 +2733,9 @@ function _downloadHTMLFallback(ref) {
     '<button onclick="window.print()">&#128424; Print / Save PDF</button>' +
     '<button onclick="window.close()">Close</button>' +
     '</div>' +
-    sanitiseResultHTML(getEffectiveHTML()) + '</body></html>';
+    sanitiseResultHTML(getEffectiveHTML()) +
+    '<script>document.addEventListener("click",function(e){var btn=e.target.closest("button.tts-play-btn");if(!btn)return;var text=btn.getAttribute("data-tts");if(!text||!window.speechSynthesis)return;var u=new SpeechSynthesisUtterance(text);u.rate=0.9;window.speechSynthesis.speak(u);});<\/script>' +
+    '</body></html>';
 
   var blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
   var url  = URL.createObjectURL(blob);
@@ -4208,7 +4210,9 @@ function dbOpenEvaluation(auditRef) {
         '<div class="no-print"><strong>Evaluation Report — ' + auditRef + '</strong>' +
         '<button onclick="window.print()">&#128424; Print / Save PDF</button>' +
         '<button onclick="window.close()">Close</button></div>' +
-        sanitiseResultHTML(result.html) + '</body></html>');
+        sanitiseResultHTML(result.html) +
+        '<script>document.addEventListener("click",function(e){var btn=e.target.closest("button.tts-play-btn");if(!btn)return;var text=btn.getAttribute("data-tts");if(!text||!window.speechSynthesis)return;var u=new SpeechSynthesisUtterance(text);u.rate=0.9;window.speechSynthesis.speak(u);});<\/script>' +
+        '</body></html>');
       w.document.close();
     })
     .withFailureHandler(function(e) {
