@@ -362,6 +362,7 @@ function render(d) {
       var title = sec.querySelector('.ai-title');
       if (title && /transcript/i.test(title.textContent)) sec.remove();
     });
+    initPlayButtons();
   } else {
     analysisEl.innerHTML =
       '<p style="color:#AAA;padding:24px;text-align:center">Evaluation content is being processed — check back shortly.</p>';
@@ -463,6 +464,67 @@ function showError(msg) {
   e.textContent = msg;
   e.style.display = 'block';
 }
+
+// ── TTS play buttons ──────────────────────────────────────────────────────────
+var _audioCache = {};
+
+function initPlayButtons() {
+  var container = document.getElementById('ev-analysis');
+  if (!container) return;
+  container.querySelectorAll('.ai-flag-stmt, .r-pos-stmt, .r-tts-stmt-text').forEach(function(el) {
+    if (el.querySelector('button.tts-play-btn')) return;
+    var text = el.textContent.trim();
+    if (text.charAt(0) === '"') text = text.slice(1);
+    if (text.charAt(text.length - 1) === '"') text = text.slice(0, -1);
+    text = text.trim();
+    if (!text) return;
+    var btn = document.createElement('button');
+    btn.className = 'tts-play-btn';
+    btn.setAttribute('data-tts', text);
+    btn.setAttribute('contenteditable', 'false');
+    btn.setAttribute('title', 'Play sample statement');
+    btn.style.cssText = 'background:#22c55e;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0;vertical-align:middle;margin-right:5px;flex-shrink:0';
+    btn.innerHTML = '<svg width="9" height="10" viewBox="0 0 9 10" fill="white"><polygon points="1,1 8,5 1,9"/></svg>';
+    el.insertBefore(btn, el.firstChild);
+  });
+}
+
+function playStatement(btn) {
+  var text = btn.getAttribute('data-tts');
+  if (!text) return;
+  if (_audioCache[text]) {
+    try { new Audio('data:audio/mp3;base64,' + _audioCache[text]).play(); } catch(e) {}
+    return;
+  }
+  btn.style.opacity = '0.4';
+  btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function(base64) {
+      btn.style.opacity = '1';
+      btn.disabled = false;
+      if (!base64) { _tryWebSpeech(text); return; }
+      _audioCache[text] = base64;
+      try { new Audio('data:audio/mp3;base64,' + base64).play(); } catch(e) {}
+    })
+    .withFailureHandler(function() {
+      btn.style.opacity = '1';
+      btn.disabled = false;
+      _tryWebSpeech(text);
+    })
+    .synthesizeSpeech(text);
+}
+
+function _tryWebSpeech(text) {
+  if (!window.speechSynthesis) return;
+  var utt = new SpeechSynthesisUtterance(text);
+  utt.rate = 0.9;
+  window.speechSynthesis.speak(utt);
+}
+
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('button.tts-play-btn');
+  if (btn) { e.stopPropagation(); playStatement(btn); }
+});
 </script>
 </body>
 </html>
