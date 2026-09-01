@@ -598,6 +598,14 @@ function buildRepeatsPrompt(transcriptText, knowledgeText) {
 
   return 'You are a Quality Analyst. Analyze the call transcript(s) below.\n' +
     'PURPOSE: Identify FCR opportunities, reduce repeat call rate and transfer rate.\n\n' +
+    'EVALUATION FRAMEWORK — TELUS CUSTOMER EXPERIENCE BLUEPRINT:\n' +
+    'Use these 4 pillars as your evaluation lens for ALL insights, coaching tips, and sample positioning statements:\n' +
+    '• ENGAGE: Empathy vs Acknowledging — Acknowledge the OCCURRENCE (the event), validate the EMOTION. Scripted openers like "I\'m sorry" or "I apologize" without context show a lack of personalization and imply a mistake before understanding the situation.\n' +
+    '• UNDERSTAND: Confirm vs Asking Questions — Ask open-ended questions to EXPLORE before confirming. Jumping to confirm before exploring means solving the wrong problem fast. Asking questions surfaces what the customer has not said yet.\n' +
+    '• SOLVE: Explain vs Bridging — Explaining tells the customer what something is (information). Bridging shows WHY it matters to THEM specifically (connection). The customer should walk away thinking "that\'s exactly what I need" not just "I understand that."\n' +
+    '• IMPRESS: Checking Understanding vs Setting Expectations — Checking understanding is REACTIVE (asks if the customer got it). Setting expectations is PROACTIVE (tells what comes next before they have to ask). Goal: customer leaves feeling informed, not just answered.\n' +
+    'Non-Negotiables that must never be missing: Qualification → Research → Solve → Explain → Change → Summarize.\n' +
+    'When writing insights, coaching tips, and sample positioning statements — ground them naturally in these CX Blueprint concepts. Use pillar language in your output (e.g. "The agent explained the solution but did not bridge it to the customer\'s specific situation" or "The agent confirmed an assumption instead of asking an open question to explore further").\n\n' +
     'CRITICAL INSTRUCTION: Return ONLY valid HTML. No markdown, no explanations, no JSON.\n' +
     'Your entire response must be HTML that uses exactly these CSS classes:\n\n' +
     'For each call, wrap everything in: <div class="ai-call-block">\n' +
@@ -715,6 +723,14 @@ function buildSalesPrompt(transcriptText, knowledgeText) {
 
   return 'You are an expert sales performance analyst for TELUS. Evaluate the call transcript.\n' +
     'PURPOSE: Identify sales opportunities and coach agents to increase sales.\n\n' +
+    'EVALUATION FRAMEWORK — TELUS CUSTOMER EXPERIENCE BLUEPRINT:\n' +
+    'Use these 4 pillars as your evaluation lens for ALL insights, coaching tips, and sample positioning statements:\n' +
+    '• ENGAGE: Empathy vs Acknowledging — Acknowledge the OCCURRENCE (the event), validate the EMOTION. Scripted openers like "I\'m sorry" or "I apologize" without context show a lack of personalization and imply a mistake before understanding the situation.\n' +
+    '• UNDERSTAND: Confirm vs Asking Questions — Ask open-ended questions to EXPLORE before confirming. Jumping to confirm before exploring means solving the wrong problem fast. Asking questions surfaces what the customer has not said yet.\n' +
+    '• SOLVE: Explain vs Bridging — Explaining tells the customer what something is (information). Bridging shows WHY it matters to THEM specifically (connection). The customer should walk away thinking "that\'s exactly what I need" not just "I understand that." This is the core of value-based selling.\n' +
+    '• IMPRESS: Checking Understanding vs Setting Expectations — Checking understanding is REACTIVE (asks if the customer got it). Setting expectations is PROACTIVE (tells what comes next before they have to ask). Goal: customer leaves feeling informed, not just answered.\n' +
+    'Non-Negotiables that must never be missing: Qualification → Research → Solve → Explain → Change → Summarize.\n' +
+    'When writing insights, coaching tips, and sample positioning statements — ground them naturally in these CX Blueprint concepts. Use pillar language in your output (e.g. "The agent explained the product features but did not bridge to why it matters to this customer\'s specific situation" or "The agent confirmed the need without asking open questions to fully explore it first").\n\n' +
     'CRITICAL INSTRUCTION: Return ONLY valid HTML. No markdown, no explanations, no JSON.\n' +
     'Your entire response must be HTML using exactly these CSS classes:\n\n' +
     'Use this exact structure. START with the Overall Recommendation and Coaching Takeaways summary cards at the very TOP before the score panel:\n\n' +
