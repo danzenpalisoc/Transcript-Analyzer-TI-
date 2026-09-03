@@ -1566,7 +1566,15 @@ function getRecipientsFromRoster(roleFilter) {
     var results   = allRows.filter(function(r) {
       return r.role.toLowerCase() === roleLower && validRe.test(r.email);
     });
-    Logger.log('getRecipientsFromRoster("' + roleFilter + '"): ' + results.length + ' found');
+    // Deduplicate by email — Roster sheet may have multiple rows for same address
+    var seenEmails = {};
+    results = results.filter(function(r) {
+      var key = r.email.toLowerCase();
+      if (seenEmails[key]) return false;
+      seenEmails[key] = true;
+      return true;
+    });
+    Logger.log('getRecipientsFromRoster("' + roleFilter + '"): ' + results.length + ' found (after dedup)');
     return results;
   } catch(e) {
     Logger.log('getRecipientsFromRoster error: ' + e);
