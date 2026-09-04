@@ -529,7 +529,15 @@ function filterTranscriptByAgent(transcriptText, targetAgentName) {
   if (pMatch) {
     otherAgents = pMatch[1].split(/[,;]+/)
       .map(function(n) { return n.trim().toLowerCase(); })
-      .filter(function(n) { return n && n !== targetLower; });
+      .filter(function(n) {
+        if (!n) return false;
+        // Exclude exact match AND partial match — roster name may differ slightly from
+        // transcript header (e.g. "John Smith" vs "John A. Smith" = same person)
+        var isTarget = n === targetLower ||
+                       (targetLower.length > 4 && n.indexOf(targetLower) !== -1) ||
+                       (n.length > 4 && targetLower.indexOf(n) !== -1);
+        return !isTarget;
+      });
   }
 
   if (otherAgents.length === 0) return transcriptText;
