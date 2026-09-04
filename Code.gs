@@ -3125,6 +3125,110 @@ function updateDashboardPDFLink(interactionId, pdfLink, recipients, auditRef) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Pre-analysis: detect speakers in a transcript before submitting for AI.
+// Called by the client to power the speaker-confirmation modal (P1/P4).
+// Returns:
+//   { hasHeader, headerAgents, detectedSpeakers, targetName, targetMatch,
+//     targetFound, otherAgents }
+// ─────────────────────────────────────────────────────────────────────────────
+function detectTranscriptSpeakers(transcriptText, sapId) {
+  try {
+    if (!transcriptText) return { error: 'No transcript provided.' };
+
+    // Resolve target agent name from SAP ID (or use raw sapId as fallback label)
+    var targetName = '';
+    if (sapId) {
+      try {
+        var looked = lookupBySapId(sapId);
+        targetName = (looked && looked.name) ? looked.name : sapId;
+      } catch(e) { targetName = sapId; }
+    }
+    var targetLower = targetName.toLowerCase().trim();
+
+    // ── Parse Internal Participant(s) header ──────────────────────────────────
+    var hasHeader    = false;
+    var headerAgents = [];
+    var pMatch = transcriptText.match(/Internal Participant\(s\)[:\s]+([^\n\r]+)/i);
+    if (pMatch) {
+      hasHeader    = true;
+      headerAgents = pMatch[1].split(/[,;]+/)
+        .map(function(n) { return n.trim(); })
+        .filter(function(n) { return n.length > 0; });
+    }
+
+    // ── Pre-scan: detect all real speakers (≥2 turns) ────────────────────────
+    var lines  = transcriptText.split('\n');
+    var counts = {};
+    for (var i = 0; i < lines.length; i++) {
+      var m = lines[i].match(/^([^:\n]{2,60}):\s/);
+      if (m) {
+        var sp = m[1].trim();
+        counts[sp] = (counts[sp] || 0) + 1;
+      }
+    }
+    var detectedSpeakers = Object.keys(counts).filter(function(sp) {
+      return counts[sp] >= 2;
+    });
+    // Also include any header agent names not caught by pre-scan
+    headerAgents.forEach(function(h) {
+      var found = detectedSpeakers.some(function(sp) {
+        return sp.toLowerCase() === h.toLowerCase() ||
+               sp.toLowerCase().indexOf(h.toLowerCase()) !== -1 ||
+               h.toLowerCase().indexOf(sp.toLowerCase()) !== -1;
+      });
+      if (!found) detectedSpeakers.push(h);
+    });
+
+    // ── Match target against detected speakers ────────────────────────────────
+    var targetMatch = null;
+    if (targetLower) {
+      for (var j = 0; j < detectedSpeakers.length; j++) {
+        var spLower = detectedSpeakers[j].toLowerCase();
+        if (spLower === targetLower ||
+            (targetLower.length > 4 && spLower.indexOf(targetLower) !== -1) ||
+            (spLower.length > 4 && targetLower.indexOf(spLower) !== -1)) {
+          targetMatch = detectedSpeakers[j];
+          break;
+        }
+      }
+    }
+
+    // ── Other agents = detected speakers that are NOT target and NOT customer ─
+    var otherAgents = detectedSpeakers.filter(function(sp) {
+      var spLower = sp.toLowerCase();
+      var isTarget = targetMatch && (spLower === targetMatch.toLowerCase() ||
+                      spLower.indexOf(targetMatch.toLowerCase()) !== -1 ||
+                      targetMatch.toLowerCase().indexOf(spLower) !== -1);
+      if (isTarget) return false;
+      var isCustomerKeyword = /^(customer|caller|client|member|cx)\b/i.test(sp);
+      if (isCustomerKeyword) return false;
+      if (hasHeader) {
+        return headerAgents.some(function(h) {
+          var hLow = h.toLowerCase();
+          return spLower === hLow ||
+                 (hLow.length > 4 && spLower.indexOf(hLow) !== -1) ||
+                 (spLow.length > 4 && hLow.indexOf(spLow) !== -1);
+        });
+      }
+      return true;
+    });
+
+    return {
+      hasHeader:        hasHeader,
+      headerAgents:     headerAgents,
+      detectedSpeakers: detectedSpeakers,
+      targetName:       targetName,
+      targetMatch:      targetMatch,
+      targetFound:      !!targetMatch,
+      otherAgents:      otherAgents
+    };
+  } catch(e) {
+    Logger.log('detectTranscriptSpeakers error: ' + e);
+    return { error: e.toString() };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main submission — cache check first, then AI if needed
 // ─────────────────────────────────────────────────────────────────────────────
 function submitTranscript(formData) {
@@ -3233,8 +3337,11 @@ function submitTranscript(formData) {
 
     // ── 4. Run AI ─────────────────────────────────────────────────────────────
     // Filter transcript to only include the target agent's turns + customer lines
+    var filterStats = { applied: false, targetFound: false };
     if (participant) {
-      transcriptForAnalysis = filterTranscriptByAgent(transcriptForAnalysis, participant);
+      var filterResult = filterTranscriptByAgent(transcriptForAnalysis, participant);
+      transcriptForAnalysis = filterResult.filtered;
+      filterStats = filterResult.stats;
     }
     var rawAI = analyzeTranscript(transcriptForAnalysis, analysisType, participant);
     Logger.log('AI response length: ' + rawAI.length);
@@ -3347,6 +3454,7 @@ function submitTranscript(formData) {
       auditRef:     auditRef,
       observerName: observerName,
       warnings:     warnings,
+      filterStats:  filterStats,
       // Return resolved fields so client can backfill any blanks
       resolvedFields: {
         interactionId: interactionId,

@@ -516,14 +516,52 @@ function parseTranscriptMetadata(transcriptText) {
   return meta;
 }
 
-// Removes turns by other internal agents, keeping only target agent + customer lines.
-// Uses "Internal Participant(s)" header to identify who the other agents are.
+// ── Speaker name matching helper ──────────────────────────────────────────────
+function _nameMatches(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length > 4 && b.indexOf(a) !== -1) return true;
+  if (b.length > 4 && a.indexOf(b) !== -1) return true;
+  return false;
+}
+
+// ── Build a set of confirmed real speakers from a pre-scan ────────────────────
+// Real speakers appear 2+ times OR are named in the Internal Participant(s) header.
+// This prevents header fields ("Interaction ID:") and inline colons from being
+// treated as speaker turns.
+function _buildKnownSpeakers(lines, allKnownAgentsLower) {
+  var counts = {};
+  for (var p = 0; p < lines.length; p++) {
+    var m = lines[p].match(/^([^:\n]{2,60}):\s/);
+    if (m) {
+      var sp = m[1].trim().toLowerCase();
+      counts[sp] = (counts[sp] || 0) + 1;
+    }
+  }
+  var known = {};
+  for (var sp in counts) {
+    var isAgent = allKnownAgentsLower.some(function(a) { return _nameMatches(a, sp); });
+    if (counts[sp] >= 2 || isAgent) known[sp] = true;
+  }
+  return known;
+}
+
+// ── Main transcript filter ────────────────────────────────────────────────────
+// Section-based + turn-based hybrid:
+//   1. Always keep the metadata header (before any known speaker turn).
+//   2. Skip everything from the first known speaker until the TARGET agent
+//      first appears (pre-handoff content — other agents + customer before transfer).
+//   3. From the target's first turn onwards: keep target + customer lines,
+//      remove other internal agents' turns.
+// Returns { filtered: <string>, stats: { totalLines, keptLines, skippedPreHandoff,
+//           excludedAgents: [], targetFirstLine: <string|null>, targetFound: <bool> } }
 function filterTranscriptByAgent(transcriptText, targetAgentName) {
-  if (!targetAgentName || !transcriptText) return transcriptText;
+  var NO_FILTER = { filtered: transcriptText, stats: { targetFound: false, applied: false } };
+  if (!targetAgentName || !transcriptText) return NO_FILTER;
 
   var targetLower = targetAgentName.toLowerCase().trim();
 
-  // Identify other internal agents from the transcript header
+  // Parse other internal agents from header
   var otherAgents = [];
   var pMatch = transcriptText.match(/Internal Participant\(s\)[:\s]+([^\n\r]+)/i);
   if (pMatch) {
@@ -531,63 +569,104 @@ function filterTranscriptByAgent(transcriptText, targetAgentName) {
       .map(function(n) { return n.trim().toLowerCase(); })
       .filter(function(n) {
         if (!n) return false;
-        // Exclude exact match AND partial match — roster name may differ slightly from
-        // transcript header (e.g. "John Smith" vs "John A. Smith" = same person)
-        var isTarget = n === targetLower ||
-                       (targetLower.length > 4 && n.indexOf(targetLower) !== -1) ||
-                       (n.length > 4 && targetLower.indexOf(n) !== -1);
-        return !isTarget;
+        return !_nameMatches(n, targetLower);
       });
   }
 
-  if (otherAgents.length === 0) return transcriptText;
+  if (otherAgents.length === 0) return NO_FILTER;
 
-  var lines = transcriptText.split('\n');
+  var lines        = transcriptText.split('\n');
+  var allKnown     = otherAgents.concat([targetLower]);
+  var knownSpkrs   = _buildKnownSpeakers(lines, allKnown);
 
-  // Pre-scan: count how many times each "Name: text" pattern appears.
-  // Real speakers appear 2+ times. Header fields like "Interaction ID:" appear once.
-  // Known internal agents are always trusted regardless of count.
-  var allKnownAgents = otherAgents.concat([targetLower]);
-  var speakerCounts = {};
-  for (var p = 0; p < lines.length; p++) {
-    var pm = lines[p].match(/^([^:\n]{2,60}):\s/);
-    if (pm) {
-      var sp = pm[1].trim().toLowerCase();
-      speakerCounts[sp] = (speakerCounts[sp] || 0) + 1;
+  // ── Find boundary indices ─────────────────────────────────────────────────
+  // convStart: first line of actual conversation (first known-speaker turn)
+  // targetStart: first line where TARGET agent speaks
+  var convStart   = -1;
+  var targetStart = -1;
+
+  for (var i = 0; i < lines.length; i++) {
+    var m = lines[i].match(/^([^:\n]{2,60}):\s/);
+    if (!m) continue;
+    var sp = m[1].trim().toLowerCase();
+    if (!knownSpkrs[sp]) continue;              // not a real speaker — skip
+
+    if (convStart === -1) convStart = i;        // first known-speaker line
+
+    if (_nameMatches(sp, targetLower)) {
+      targetStart = i;
+      break;
     }
   }
-  var knownSpeakers = {};
-  for (var sp in speakerCounts) {
-    var isKnownAgent = allKnownAgents.some(function(a) {
-      return sp === a ||
-             (a.length > 4 && sp.indexOf(a) !== -1) ||
-             (sp.length > 4 && a.indexOf(sp) !== -1);
-    });
-    if (speakerCounts[sp] >= 2 || isKnownAgent) knownSpeakers[sp] = true;
+
+  // Target never speaks — can't filter meaningfully
+  if (targetStart === -1) {
+    Logger.log('filterTranscriptByAgent: target "' + targetAgentName + '" not found in transcript — no filter applied');
+    return NO_FILTER;
   }
 
-  var result = [];
-  var skipBlock = false;
+  // ── Apply filtering ───────────────────────────────────────────────────────
+  var result            = [];
+  var skipBlock         = false;
+  var skippedPreHandoff = 0;
+  var excludedPerAgent  = {};
 
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
-    var speakerMatch = line.match(/^([^:\n]{2,60}):\s/);
-    if (speakerMatch) {
-      var speaker = speakerMatch[1].trim().toLowerCase();
-      // Only update skipBlock for confirmed real speakers — not header fields or inline colons
-      if (knownSpeakers[speaker]) {
-        skipBlock = otherAgents.some(function(a) {
-          return speaker === a ||
-                 (a.length > 4 && speaker.indexOf(a) !== -1) ||
-                 (speaker.length > 4 && a.indexOf(speaker) !== -1);
-        });
+
+    // Phase 1: header (before any known speaker) — always keep
+    if (convStart === -1 || i < convStart) {
+      result.push(line);
+      continue;
+    }
+
+    // Phase 2: pre-handoff (between convStart and targetStart) — always skip
+    if (i < targetStart) {
+      skippedPreHandoff++;
+      continue;
+    }
+
+    // Phase 3: from target's first turn — turn-based filter
+    var m = line.match(/^([^:\n]{2,60}):\s/);
+    if (m) {
+      var sp = m[1].trim().toLowerCase();
+      if (knownSpkrs[sp]) {
+        var isOther = otherAgents.some(function(a) { return _nameMatches(a, sp); });
+        skipBlock = isOther;
+        if (isOther) {
+          var origName = m[1].trim();
+          excludedPerAgent[origName] = (excludedPerAgent[origName] || 0) + 1;
+        }
       }
     }
-    if (!skipBlock) result.push(line);
+
+    if (!skipBlock) {
+      result.push(line);
+    } else {
+      var origName2 = (line.match(/^([^:\n]{2,60}):\s/) || [])[1] || '(cont.)';
+      excludedPerAgent[origName2.trim()] = (excludedPerAgent[origName2.trim()] || 0) + 1;
+    }
   }
 
-  Logger.log('filterTranscriptByAgent: kept ' + result.length + '/' + lines.length + ' lines for agent "' + targetAgentName + '"');
-  return result.join('\n');
+  var keptLines = result.length;
+  Logger.log('filterTranscriptByAgent: ' + keptLines + '/' + lines.length + ' lines kept for "' +
+             targetAgentName + '" | pre-handoff skipped: ' + skippedPreHandoff +
+             ' | excluded agents: ' + JSON.stringify(excludedPerAgent));
+
+  var excludedNames = Object.keys(excludedPerAgent).filter(function(k) { return k !== '(cont.)'; });
+
+  return {
+    filtered: result.join('\n'),
+    stats: {
+      applied:           true,
+      targetFound:       true,
+      totalLines:        lines.length,
+      keptLines:         keptLines,
+      skippedPreHandoff: skippedPreHandoff,
+      excludedAgents:    excludedNames,
+      targetFirstLine:   lines[targetStart] || null
+    }
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

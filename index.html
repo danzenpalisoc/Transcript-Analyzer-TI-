@@ -1361,6 +1361,7 @@ body {
       </div>
     </div>
     <div id="applied-output"></div>
+    <div id="filter-stats-area" style="padding:0 0 10px 2px"></div>
   </div>
 </div>
 
@@ -1954,6 +1955,25 @@ body {
   </div>
 </div>
 
+<!-- Speaker confirmation modal (P1/P4) -->
+<div id="spk-confirm-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9500;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;max-width:520px;width:92%;padding:28px 28px 22px;box-shadow:0 8px 40px rgba(0,0,0,.28);font-family:inherit">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+      <span style="font-size:22px">&#128269;</span>
+      <h3 style="margin:0;font-size:16px;color:#1a1a1a;font-weight:700">Confirm Who You Are Auditing</h3>
+    </div>
+    <div id="spk-body" style="font-size:13px;color:#333;line-height:1.65"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:22px">
+      <button id="spk-cancel-btn"
+        style="padding:9px 20px;border-radius:8px;border:1.5px solid #ccc;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:#555"
+        onclick="spkConfirmCancel()">Cancel</button>
+      <button id="spk-confirm-btn"
+        style="padding:9px 22px;border-radius:8px;border:none;background:#4B286D;color:#fff;cursor:pointer;font-size:13px;font-weight:700"
+        onclick="spkConfirmProceed()">Confirm &amp; Analyze &#9654;</button>
+    </div>
+  </div>
+</div>
+
 <!-- Analysis modal -->
 <div id="analysis-modal">
   <div class="modal-box">
@@ -2293,6 +2313,82 @@ function showSuccess(msg) {
   el.classList.add('visible');
 }
 
+// ── Speaker confirmation modal state ──────────────────────────────────────────
+var _pendingFormData = null;
+
+function spkConfirmCancel() {
+  document.getElementById('spk-confirm-overlay').style.display = 'none';
+  _pendingFormData = null;
+  document.getElementById('btn-process').disabled = false;
+}
+
+function spkConfirmProceed() {
+  document.getElementById('spk-confirm-overlay').style.display = 'none';
+  var sel = document.getElementById('spk-agent-select');
+  if (sel && sel.value && _pendingFormData) {
+    _pendingFormData.participant = sel.value;
+    document.getElementById('participant').value = sel.value;
+  }
+  if (_pendingFormData) _doSubmit(_pendingFormData);
+}
+
+function _showSpkModal(detected, formData) {
+  var body  = document.getElementById('spk-body');
+  var targetName  = detected.targetName  || formData.participant || formData.sapId;
+  var targetMatch = detected.targetMatch;
+  var otherAgents = detected.otherAgents || [];
+  var speakers    = detected.detectedSpeakers || [];
+  var html = '';
+
+  if (detected.targetFound) {
+    html += '<div style="background:#f0f7ec;border:1.5px solid #2B8000;border-radius:8px;padding:10px 14px;margin-bottom:12px">' +
+            '<strong style="color:#1a5c00">&#10003; Target agent found in transcript</strong><br>' +
+            '<span style="color:#333">Auditing: <strong>' + _escHtml(targetMatch) + '</strong></span>' +
+            (targetMatch && targetMatch.toLowerCase() !== targetName.toLowerCase()
+              ? '<span style="color:#666;font-size:11px"> (roster name: ' + _escHtml(targetName) + ')</span>'
+              : '') +
+            '</div>';
+  } else {
+    html += '<div style="background:#fff8e1;border:1.5px solid #f0a000;border-radius:8px;padding:10px 14px;margin-bottom:12px">' +
+            '<strong style="color:#7a4800">&#9888; Target agent not found in transcript</strong><br>' +
+            '<span style="color:#555">Looking for: <strong>' + _escHtml(targetName) + '</strong></span><br>' +
+            '<span style="color:#777;font-size:12px">The analysis will still run but no turn filtering will be applied.</span>' +
+            '</div>';
+  }
+
+  if (otherAgents.length > 0) {
+    html += '<div style="background:#fdf3f3;border:1.5px solid #e0b0b0;border-radius:8px;padding:10px 14px;margin-bottom:12px">' +
+            '<strong style="color:#8b0000">&#128683; Other agent(s) will be excluded:</strong><br>' +
+            '<span style="color:#555">' +
+            otherAgents.map(function(a){ return '<strong>' + _escHtml(a) + '</strong>'; }).join(', ') +
+            '</span><br>' +
+            '<span style="color:#888;font-size:11px">Their turns will be removed from the transcript before AI analysis.</span>' +
+            '</div>';
+  }
+
+  if (speakers.length > 0) {
+    html += '<div style="font-size:11px;color:#888;margin-bottom:10px">All detected speakers: ' +
+            speakers.map(function(s){ return _escHtml(s); }).join(' &bull; ') + '</div>';
+  }
+
+  if (!detected.targetFound && speakers.length > 0) {
+    html += '<div style="margin-bottom:6px">' +
+            '<label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:5px">Select the agent to audit:</label>' +
+            '<select id="spk-agent-select" style="width:100%;padding:8px 10px;border-radius:6px;border:1.5px solid #ccc;font-size:13px">' +
+            '<option value="">— choose from detected speakers —</option>' +
+            speakers.map(function(s){ return '<option value="' + _escHtml(s) + '">' + _escHtml(s) + '</option>'; }).join('') +
+            '</select></div>';
+  }
+
+  body.innerHTML = html;
+  document.getElementById('spk-confirm-overlay').style.display = 'flex';
+}
+
+function _escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function handleSubmit() {
   hideError();
   var formData = {
@@ -2319,6 +2415,24 @@ function handleSubmit() {
   if (!formData.transcript) { showError('Please paste a call transcript'); return; }
 
   document.getElementById('btn-process').disabled = true;
+
+  // Step 1: detect speakers — show confirmation modal before running AI
+  _pendingFormData = formData;
+  google.script.run
+    .withSuccessHandler(function(detected) {
+      if (detected && !detected.error) {
+        _showSpkModal(detected, formData);
+      } else {
+        _doSubmit(formData);
+      }
+    })
+    .withFailureHandler(function() {
+      _doSubmit(formData);
+    })
+    .detectTranscriptSpeakers(formData.transcript, formData.sapId);
+}
+
+function _doSubmit(formData) {
   document.getElementById('processing-overlay').classList.add('visible');
   document.getElementById('applied-section').classList.remove('visible');
 
@@ -2452,6 +2566,9 @@ function handleSubmit() {
       }
       openModal(document.getElementById('transcript').value, _lastHTML);
 
+      // P5: Show filter transparency metadata below the applied-output area
+      _renderFilterStats(result.filterStats);
+
       // Background enrichment: fills RCA Category / Product Opportunity / Sales Attempted
       // after the result is already shown. Fire-and-forget — no handlers needed.
       if (!result.fromCache && result.auditRef) {
@@ -2471,6 +2588,27 @@ function handleSubmit() {
       showError('Unexpected error: ' + (err.message || err));
     })
     .submitTranscript(formData);
+}
+
+// P5: Render filter transparency pill below results
+function _renderFilterStats(stats) {
+  var area = document.getElementById('filter-stats-area');
+  if (!area) return;
+  if (!stats || !stats.applied) {
+    area.innerHTML = '';
+    return;
+  }
+  var excluded = (stats.excludedAgents || []).join(', ');
+  var html =
+    '<div style="display:inline-flex;align-items:center;gap:8px;background:#f5f0fa;border:1px solid #cbbde2;' +
+    'border-radius:20px;padding:5px 14px;font-size:11px;color:#5a3d7a;margin-top:8px">' +
+    '<span>&#128202;</span>' +
+    '<span><strong>' + (stats.keptLines || '?') + '</strong> lines analyzed' +
+    ' of <strong>' + (stats.totalLines || '?') + '</strong> total' +
+    (stats.skippedPreHandoff > 0 ? ' &bull; <strong>' + stats.skippedPreHandoff + '</strong> pre-handoff lines skipped' : '') +
+    (excluded ? ' &bull; Excluded: <strong>' + _escHtml(excluded) + '</strong>' : '') +
+    '</span></div>';
+  area.innerHTML = html;
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
