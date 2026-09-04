@@ -535,27 +535,51 @@ function filterTranscriptByAgent(transcriptText, targetAgentName) {
   if (otherAgents.length === 0) return transcriptText;
 
   var lines = transcriptText.split('\n');
+
+  // Pre-scan: count how many times each "Name: text" pattern appears.
+  // Real speakers appear 2+ times. Header fields like "Interaction ID:" appear once.
+  // Known internal agents are always trusted regardless of count.
+  var allKnownAgents = otherAgents.concat([targetLower]);
+  var speakerCounts = {};
+  for (var p = 0; p < lines.length; p++) {
+    var pm = lines[p].match(/^([^:\n]{2,60}):\s/);
+    if (pm) {
+      var sp = pm[1].trim().toLowerCase();
+      speakerCounts[sp] = (speakerCounts[sp] || 0) + 1;
+    }
+  }
+  var knownSpeakers = {};
+  for (var sp in speakerCounts) {
+    var isKnownAgent = allKnownAgents.some(function(a) {
+      return sp === a ||
+             (a.length > 4 && sp.indexOf(a) !== -1) ||
+             (sp.length > 4 && a.indexOf(sp) !== -1);
+    });
+    if (speakerCounts[sp] >= 2 || isKnownAgent) knownSpeakers[sp] = true;
+  }
+
   var result = [];
   var skipBlock = false;
 
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
-    // Detect start of a new speaker turn: "Speaker Name: text"
     var speakerMatch = line.match(/^([^:\n]{2,60}):\s/);
     if (speakerMatch) {
       var speaker = speakerMatch[1].trim().toLowerCase();
-      skipBlock = otherAgents.some(function(a) {
-        return speaker === a ||
-               (a.length > 4 && speaker.indexOf(a) !== -1) ||
-               (speaker.length > 4 && a.indexOf(speaker) !== -1);
-      });
+      // Only update skipBlock for confirmed real speakers — not header fields or inline colons
+      if (knownSpeakers[speaker]) {
+        skipBlock = otherAgents.some(function(a) {
+          return speaker === a ||
+                 (a.length > 4 && speaker.indexOf(a) !== -1) ||
+                 (speaker.length > 4 && a.indexOf(speaker) !== -1);
+        });
+      }
     }
     if (!skipBlock) result.push(line);
   }
 
-  var filtered = result.join('\n');
   Logger.log('filterTranscriptByAgent: kept ' + result.length + '/' + lines.length + ' lines for agent "' + targetAgentName + '"');
-  return filtered;
+  return result.join('\n');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
