@@ -516,6 +516,48 @@ function parseTranscriptMetadata(transcriptText) {
   return meta;
 }
 
+// Removes turns by other internal agents, keeping only target agent + customer lines.
+// Uses "Internal Participant(s)" header to identify who the other agents are.
+function filterTranscriptByAgent(transcriptText, targetAgentName) {
+  if (!targetAgentName || !transcriptText) return transcriptText;
+
+  var targetLower = targetAgentName.toLowerCase().trim();
+
+  // Identify other internal agents from the transcript header
+  var otherAgents = [];
+  var pMatch = transcriptText.match(/Internal Participant\(s\)[:\s]+([^\n\r]+)/i);
+  if (pMatch) {
+    otherAgents = pMatch[1].split(/[,;]+/)
+      .map(function(n) { return n.trim().toLowerCase(); })
+      .filter(function(n) { return n && n !== targetLower; });
+  }
+
+  if (otherAgents.length === 0) return transcriptText;
+
+  var lines = transcriptText.split('\n');
+  var result = [];
+  var skipBlock = false;
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    // Detect start of a new speaker turn: "Speaker Name: text"
+    var speakerMatch = line.match(/^([^:\n]{2,60}):\s/);
+    if (speakerMatch) {
+      var speaker = speakerMatch[1].trim().toLowerCase();
+      skipBlock = otherAgents.some(function(a) {
+        return speaker === a ||
+               (a.length > 4 && speaker.indexOf(a) !== -1) ||
+               (speaker.length > 4 && a.indexOf(speaker) !== -1);
+      });
+    }
+    if (!skipBlock) result.push(line);
+  }
+
+  var filtered = result.join('\n');
+  Logger.log('filterTranscriptByAgent: kept ' + result.length + '/' + lines.length + ' lines for agent "' + targetAgentName + '"');
+  return filtered;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CSS shared by both prompts (injected into the AI output)
 // ─────────────────────────────────────────────────────────────────────────────

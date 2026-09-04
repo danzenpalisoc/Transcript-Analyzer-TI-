@@ -3232,6 +3232,10 @@ function submitTranscript(formData) {
     }
 
     // ── 4. Run AI ─────────────────────────────────────────────────────────────
+    // Filter transcript to only include the target agent's turns + customer lines
+    if (participant) {
+      transcriptForAnalysis = filterTranscriptByAgent(transcriptForAnalysis, participant);
+    }
     var rawAI = analyzeTranscript(transcriptForAnalysis, analysisType, participant);
     Logger.log('AI response length: ' + rawAI.length);
 
