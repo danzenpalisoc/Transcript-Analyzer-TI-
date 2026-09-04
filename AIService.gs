@@ -591,12 +591,16 @@ function sharedCSS() {
 // ─────────────────────────────────────────────────────────────────────────────
 // REPEATS PROMPT — asks AI to return complete HTML
 // ─────────────────────────────────────────────────────────────────────────────
-function buildRepeatsPrompt(transcriptText, knowledgeText) {
+function buildRepeatsPrompt(transcriptText, knowledgeText, agentName) {
   var kb = knowledgeText
     ? '\n\nCOMPANY POLICIES AND PROCEDURES:\n' + knowledgeText + '\n\n'
     : '';
+  var focusLine = agentName
+    ? 'IMPORTANT: This transcript may contain multiple agents. Evaluate ONLY the performance of ' + agentName + '. Any other agents are context only — do not evaluate or score their performance.\n\n'
+    : '';
 
   return 'You are a Quality Analyst. Analyze the call transcript(s) below.\n' +
+    focusLine +
     'PURPOSE: Identify FCR opportunities, reduce repeat call rate and transfer rate.\n\n' +
     'EVALUATION FRAMEWORK — TELUS CUSTOMER EXPERIENCE BLUEPRINT:\n' +
     'Use these 4 pillars as your evaluation lens for ALL insights, coaching tips, and sample positioning statements:\n' +
@@ -716,12 +720,16 @@ function buildRepeatsPrompt(transcriptText, knowledgeText) {
 // ─────────────────────────────────────────────────────────────────────────────
 // SALES PROMPT — asks AI to return complete HTML
 // ─────────────────────────────────────────────────────────────────────────────
-function buildSalesPrompt(transcriptText, knowledgeText) {
+function buildSalesPrompt(transcriptText, knowledgeText, agentName) {
   var kb = knowledgeText
     ? '\n\nCOMPANY POLICIES AND PROCEDURES:\n' + knowledgeText + '\n\n'
     : '';
+  var focusLine = agentName
+    ? 'IMPORTANT: This transcript may contain multiple agents. Evaluate ONLY the performance of ' + agentName + '. Any other agents are context only — do not evaluate or score their performance.\n\n'
+    : '';
 
   return 'You are an expert sales performance analyst for TELUS. Evaluate the call transcript.\n' +
+    focusLine +
     'PURPOSE: Identify sales opportunities and coach agents to increase sales.\n\n' +
     'EVALUATION FRAMEWORK — TELUS CUSTOMER EXPERIENCE BLUEPRINT:\n' +
     'Use these 4 pillars as your evaluation lens for ALL insights, coaching tips, and sample positioning statements:\n' +
@@ -851,7 +859,7 @@ function buildSalesPrompt(transcriptText, knowledgeText) {
 }
 
 // ── Main orchestrator ─────────────────────────────────────────────────────────
-function analyzeTranscript(transcriptText, analysisType) {
+function analyzeTranscript(transcriptText, analysisType, agentName) {
   var knowledgeText = '';
   try {
     knowledgeText = analysisType === 'sales'
@@ -860,8 +868,8 @@ function analyzeTranscript(transcriptText, analysisType) {
   } catch(e) { Logger.log('PDF fetch failed (non-fatal): ' + e); }
 
   var prompt = analysisType === 'sales'
-    ? buildSalesPrompt(transcriptText, knowledgeText)
-    : buildRepeatsPrompt(transcriptText, knowledgeText);
+    ? buildSalesPrompt(transcriptText, knowledgeText, agentName)
+    : buildRepeatsPrompt(transcriptText, knowledgeText, agentName);
 
   return callFuelIX(prompt);
 }

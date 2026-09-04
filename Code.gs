@@ -3232,7 +3232,7 @@ function submitTranscript(formData) {
     }
 
     // ── 4. Run AI ─────────────────────────────────────────────────────────────
-    var rawAI = analyzeTranscript(transcriptForAnalysis, analysisType);
+    var rawAI = analyzeTranscript(transcriptForAnalysis, analysisType, participant);
     Logger.log('AI response length: ' + rawAI.length);
 
     var html = fixBadgeClasses(
