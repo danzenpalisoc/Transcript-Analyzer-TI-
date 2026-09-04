@@ -1708,27 +1708,21 @@ function notifyAdmins(formData, auditRef) {
       cleanIntId, direction, duration, evalUrl
     );
 
-    // ── Send individually — MailApp works without extra OAuth grant ───────────
-    var sent = [], failed = [];
-    recipients.forEach(function(r) {
-      try {
-        MailApp.sendEmail({
-          to:       r.email,
-          subject:  subject,
-          body:     plainBody,
-          htmlBody: htmlBody,
-          name:     'NH Call Analyzer — Admin Notifications'
-        });
-        sent.push(r.email);
-        Logger.log('Sent to: ' + r.email);
-      } catch(emailErr) {
-        Logger.log('Failed to send to ' + r.email + ': ' + emailErr);
-        failed.push(r.email);
-      }
-    });
-
-    Logger.log('Admin notification sent to: ' + sent.join(', '));
-    if (failed.length) Logger.log('Failed recipients: ' + failed.join(', '));
+    // ── Send one consolidated email to all admins — prevents multiple copies
+    // in shared inboxes when there are multiple Admin/Dev recipients ───────────
+    var adminEmails = recipients.map(function(r) { return r.email; });
+    try {
+      MailApp.sendEmail({
+        to:       adminEmails.join(','),
+        subject:  subject,
+        body:     plainBody,
+        htmlBody: htmlBody,
+        name:     'NH Call Analyzer — Admin Notifications'
+      });
+      Logger.log('Admin notification sent to: ' + adminEmails.join(', '));
+    } catch(emailErr) {
+      Logger.log('Admin notification failed: ' + emailErr);
+    }
 
   } catch(e) {
     Logger.log('notifyAdmins error: ' + e.toString());
