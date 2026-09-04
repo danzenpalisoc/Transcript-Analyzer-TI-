@@ -1675,7 +1675,7 @@ function notifyAdmins(formData, auditRef) {
     var cleanIntId = interactionId.replace(/[\r\n\t]/g, ' ').substring(0, 120);
 
     var evalUrl  = ScriptApp.getService().getUrl() + '?page=eval&ref=' + encodeURIComponent(auditRef);
-    var subject  = '[Admin] ' + agentName + ' | ' + auditRef + ' | ' + lob + ' | ' + locale;
+    var subject  = '[Admin] ' + agentName + ' | ' + auditRef + ' | ' + observer + ' | ' + lob + ' | ' + locale;
 
     // ── Plain text body ───────────────────────────────────────────────────────
     var plainBody =
@@ -3409,7 +3409,7 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
 
     var firstName  = agentName.split(' ')[0];
     var evalTitle  = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
-    var subject    = agentName + ' | ' + auditRef + ' | ' + (formData.lineOfBusiness || 'N/A') + ' | ' + (formData.locale || 'N/A');
+    var subject    = agentName + ' | ' + auditRef + ' | ' + (formData.observerName || 'N/A') + ' | ' + (formData.lineOfBusiness || 'N/A') + ' | ' + (formData.locale || 'N/A');
 
     var body =
       'Hi ' + firstName + ',\n\n' +
@@ -3540,7 +3540,7 @@ function sendAuditEmail(formData, htmlResult) {
     var firstName     = agentName.split(' ')[0];
     var evalTitle     = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
     var subject       = (effectiveMode === 'test' ? '[TEST] ' : '') +
-                        agentName + ' | ' + auditRef + ' | ' + (formData.lineOfBusiness || 'N/A') + ' | ' + (formData.locale || 'N/A');
+                        agentName + ' | ' + auditRef + ' | ' + (formData.observerName || 'N/A') + ' | ' + (formData.lineOfBusiness || 'N/A') + ' | ' + (formData.locale || 'N/A');
 
     // ── Plain-text body ───────────────────────────────────────────────────────
     var body =
