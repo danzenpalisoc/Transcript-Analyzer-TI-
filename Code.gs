@@ -3499,14 +3499,16 @@ function sendAuditEmail(formData, htmlResult) {
       var adminList = getRecipientsFromRoster('Admin/Dev');
       recipients = adminList.map(function(r) { return r.email; }).filter(Boolean);
     } else {
-      // Agent being audited
-      var agentEmailAddr  = lookupAgentEmail((formData.participant || '').trim());
+      // Agent being audited — use formData.agentEmail if already resolved, else name lookup
+      var agentEmailAddr  = (formData.agentEmail || '').trim() || lookupAgentEmail((formData.participant || '').trim());
       // Agent's Team Leader
       var agentTLEmail    = resolveEmail(formData.teamLeader);
       // QA / Observer who submitted
       var observerName_   = (formData.observerName || '').trim();
-      var qaEmailAddr     = '';
-      if (observerName_) {
+      // Use observerEmail directly (passed from client — always the logged-in QA's real email)
+      // Fall back to name-based lookup only if observerEmail is missing
+      var qaEmailAddr     = (formData.observerEmail || '').trim();
+      if (!qaEmailAddr && observerName_) {
         var qaRows_   = getRecipientsFromRoster(QA_ROLE);
         var qaMatch_  = qaRows_.filter(function(r) { return r.name.toLowerCase() === observerName_.toLowerCase(); });
         qaEmailAddr   = qaMatch_.length ? qaMatch_[0].email : resolveEmail(observerName_);
