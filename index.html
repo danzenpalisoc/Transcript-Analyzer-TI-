@@ -2358,7 +2358,8 @@ function _showSpkModal(detected, formData) {
             '</div>';
   }
 
-  if (otherAgents.length > 0) {
+  // Only show exclusion block when target was found — filtering will actually run
+  if (detected.targetFound && otherAgents.length > 0) {
     html += '<div style="background:#fdf3f3;border:1.5px solid #e0b0b0;border-radius:8px;padding:10px 14px;margin-bottom:12px">' +
             '<strong style="color:#8b0000">&#128683; Other agent(s) will be excluded:</strong><br>' +
             '<span style="color:#555">' +
