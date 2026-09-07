@@ -2652,14 +2652,25 @@ function generateAndServePDF(formData, htmlResult) {
       try { DriveApp.getFileById(driveFile.id).setTrashed(true); } catch(e) {}
     }
 
-    // Save PDF to Drive and return link
-    var folder   = DriveApp.getRootFolder();
-    var pdfFile  = folder.createFile(pdf);
+    // Save PDF to a named folder and lazy-clean files older than 2 hours
+    var folderName = 'NH Analyzer PDFs (auto-cleanup)';
+    var folderIt   = DriveApp.getFoldersByName(folderName);
+    var folder     = folderIt.hasNext() ? folderIt.next() : DriveApp.createFolder(folderName);
+
+    // Lazy cleanup: trash PDF files in this folder older than 2 hours
+    try {
+      var cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      var oldFiles = folder.getFiles();
+      while (oldFiles.hasNext()) {
+        var f = oldFiles.next();
+        if (f.getDateCreated() < cutoff) { try { f.setTrashed(true); } catch(te) {} }
+      }
+    } catch(ce) { Logger.log('PDF cleanup error (non-fatal): ' + ce); }
+
+    var pdfFile   = folder.createFile(pdf);
     var sharingOk = true;
     try { pdfFile.setSharing(DriveApp.Access.DOMAIN, DriveApp.Permission.VIEW); }
     catch(se) { sharingOk = false; Logger.log('PDF setSharing failed: ' + se); }
-
-    // Note: Drive API v2 has no TTL/scheduled-trash. File persists until manually deleted.
 
     return { success: true, url: pdfFile.getDownloadUrl() || pdfFile.getUrl(), name: pdfFile.getName(), sharingFailed: !sharingOk };
   } catch(e) {
@@ -2705,7 +2716,6 @@ function getEvaluationByAuditRef(auditRef) {
 
 function getEvaluationFromCache(auditRef) {
   try {
-    // Find Interaction ID for this Audit Ref from Audit_Log
     var ss       = getOrCreateSpreadsheet();
     var logSheet = getOrCreateSheet(ss, AUDIT_LOG_SHEET);
     var logLast  = logSheet.getLastRow();
@@ -2716,18 +2726,53 @@ function getEvaluationFromCache(auditRef) {
     for (var i = 0; i < logData.length; i++) {
       if ((logData[i][0] || '').toString().trim() === auditRef.trim()) {
         interactionId = (logData[i][2] || '').toString().trim();
+        analysisType  = (logData[i][1] || '').toString().trim().toLowerCase();
         break;
       }
     }
     if (!interactionId) return null;
-    // Now look up cache by interaction ID
+
     var cacheSheet = getOrCreateSheet(ss, CACHE_SHEET);
-    var cacheFind  = cacheSheet.getRange('A:A').createTextFinder(interactionId).matchEntireCell(true).findAll();
-    if (!cacheFind.length) return null;
-    var row     = cacheFind[0].getRow();
-    var cached  = cacheSheet.getRange(row, 4).getValue().toString();
-    if (!cached) return null;
-    return { html: sharedCSS() + fixBadgeClasses(cached), css: '' };
+    var matches    = cacheSheet.getRange('A:A').createTextFinder(interactionId).matchEntireCell(true).findAll();
+    if (!matches.length) return null;
+
+    // Find the primary row (exact analysis type, no chunk suffix)
+    var primaryHtml = null;
+    var typeLower   = analysisType || 'repeats';
+    for (var m = 0; m < matches.length; m++) {
+      var rData = cacheSheet.getRange(matches[m].getRow(), 1, 1, 4).getValues()[0];
+      var rType = (rData[1] || '').toString().trim().toLowerCase();
+      if (rType === typeLower) {
+        primaryHtml = (rData[3] || '').toString();
+        break;
+      }
+    }
+    // Fallback: use first match if no type match
+    if (!primaryHtml) {
+      var fData = cacheSheet.getRange(matches[0].getRow(), 1, 1, 4).getValues()[0];
+      primaryHtml = (fData[3] || '').toString();
+    }
+    if (!primaryHtml) return null;
+
+    // Assemble continuation chunks (same pattern as findCachedResult)
+    var html = primaryHtml;
+    var chunkNum = 2;
+    while (true) {
+      var chunkType  = typeLower + '_' + chunkNum;
+      var chunkFound = false;
+      for (var j = 0; j < matches.length; j++) {
+        var cData = cacheSheet.getRange(matches[j].getRow(), 1, 1, 4).getValues()[0];
+        if ((cData[1] || '').toString().trim().toLowerCase() === chunkType) {
+          html += (cData[3] || '').toString();
+          chunkFound = true;
+          break;
+        }
+      }
+      if (!chunkFound) break;
+      chunkNum++;
+    }
+
+    return { html: sharedCSS() + fixBadgeClasses(html), css: '' };
   } catch(e) {
     Logger.log('getEvaluationFromCache error: ' + e);
     return null;
@@ -3093,7 +3138,9 @@ function updateDashboardPDFLink(interactionId, pdfLink, recipients, auditRef) {
       var dHeaderRow = dSheet.getRange(1, 1, 1, dSheet.getLastColumn()).getValues()[0];
       var pdfCol    = dHeaderRow.indexOf('PDF Email Link') + 1;
       var dStatusCol= dHeaderRow.indexOf('Email Status')   + 1;
-      var ids = dSheet.getRange(2, 3, lastRow - 1, 1).getValues();
+      var dIdCol    = dHeaderRow.indexOf('Interaction ID') + 1;
+      if (dIdCol < 1) dIdCol = 3; // safe fallback to col C
+      var ids = dSheet.getRange(2, dIdCol, lastRow - 1, 1).getValues();
       for (var i = 0; i < ids.length; i++) {
         if (ids[i][0].toString().trim() === interactionId.trim()) {
           if (pdfCol    > 0) dSheet.getRange(i + 2, pdfCol).setValue(pdfLink || '');
@@ -3108,9 +3155,11 @@ function updateDashboardPDFLink(interactionId, pdfLink, recipients, auditRef) {
     var logLast   = logSheet.getLastRow();
     if (logLast >= 2) {
       var logHeaderRow  = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0];
-      var logStatusCol  = logHeaderRow.indexOf('Email Status') + 1;
-      var logRecipCol   = logHeaderRow.indexOf('Recipients')   + 1;
-      var logIds = logSheet.getRange(2, 3, logLast - 1, 1).getValues();
+      var logStatusCol  = logHeaderRow.indexOf('Email Status')   + 1;
+      var logRecipCol   = logHeaderRow.indexOf('Recipients')     + 1;
+      var logIdCol      = logHeaderRow.indexOf('Interaction ID') + 1;
+      if (logIdCol < 1) logIdCol = 3; // safe fallback
+      var logIds = logSheet.getRange(2, logIdCol, logLast - 1, 1).getValues();
       for (var j = 0; j < logIds.length; j++) {
         if (logIds[j][0].toString().trim() === interactionId.trim()) {
           if (logStatusCol > 0) logSheet.getRange(j + 2, logStatusCol).setValue('Sent');
@@ -3140,7 +3189,7 @@ function detectTranscriptSpeakers(transcriptText, sapId) {
     if (sapId) {
       try {
         var looked = lookupBySapId(sapId);
-        targetName = (looked && looked.name) ? looked.name : sapId;
+        targetName = (looked && looked.participant) ? looked.participant : sapId;
       } catch(e) { targetName = sapId; }
     }
     var targetLower = targetName.toLowerCase().trim();
@@ -3157,18 +3206,23 @@ function detectTranscriptSpeakers(transcriptText, sapId) {
     }
 
     // ── Pre-scan: detect all real speakers (≥2 turns) ────────────────────────
-    var lines  = transcriptText.split('\n');
-    var counts = {};
+    // Count case-insensitively to handle inconsistent transcript capitalisation;
+    // preserve first-seen original casing for display.
+    var lines     = transcriptText.split('\n');
+    var counts    = {};
+    var firstSeen = {};
     for (var i = 0; i < lines.length; i++) {
       var m = lines[i].match(/^([^:\n]{2,60}):\s/);
       if (m) {
-        var sp = m[1].trim();
-        counts[sp] = (counts[sp] || 0) + 1;
+        var spOrig  = m[1].trim();
+        var spLower = spOrig.toLowerCase();
+        counts[spLower]    = (counts[spLower] || 0) + 1;
+        if (!firstSeen[spLower]) firstSeen[spLower] = spOrig;
       }
     }
-    var detectedSpeakers = Object.keys(counts).filter(function(sp) {
-      return counts[sp] >= 2;
-    });
+    var detectedSpeakers = Object.keys(counts).filter(function(k) {
+      return counts[k] >= 2;
+    }).map(function(k) { return firstSeen[k]; });
     // Also include any header agent names not caught by pre-scan
     headerAgents.forEach(function(h) {
       var found = detectedSpeakers.some(function(sp) {
@@ -3523,7 +3577,7 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
 
     var firstName  = agentName.split(' ')[0];
     var evalTitle  = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
-    var subject    = agentName + ' | ' + auditRef + ' | ' + (formData.observerName || 'N/A') + ' | ' + (formData.lineOfBusiness || 'N/A') + ' | ' + (formData.locale || 'N/A');
+    var subject    = 'Real Time Feedback — ' + agentName + ' (' + sapId + ') | BAN: ' + (formData.customerBAN || 'N/A');
 
     var body =
       'Hi ' + firstName + ',\n\n' +
@@ -4005,8 +4059,10 @@ function sanitiseHTMLForPDF(html) {
     .replace(/<object[\s\S]*?<\/object>/gi, '')
     .replace(/<form[\s\S]*?<\/form>/gi, '')
     .replace(/<meta[^>]*http-equiv[^>]*>/gi, '')
-    .replace(/\s+on\w+="[^"]*"/gi, '')   // remove inline event handlers
-    .replace(/\s+on\w+='[^']*'/gi, '');
+    .replace(/\s+on\w+="[^"]*"/gi, '')
+    .replace(/\s+on\w+='[^']*'/gi, '')
+    .replace(/(href|src|action)\s*=\s*["']javascript:[^"']*["']/gi, '$1="#"')
+    .replace(/(href|src|action)\s*=\s*javascript:[^\s>]*/gi, '$1="#"');
 }
 
 // ── Email helper ───────────────────────────────────────────────────────────────

@@ -2326,12 +2326,19 @@ function spkConfirmCancel() {
 
 function spkConfirmProceed() {
   document.getElementById('spk-confirm-overlay').style.display = 'none';
+  // Check if QA manually picked a different agent via the dropdown (P4 fallback)
   var sel = document.getElementById('spk-agent-select');
   if (sel && sel.value && _pendingFormData) {
     _pendingFormData.participant = sel.value;
     document.getElementById('participant').value = sel.value;
   }
-  if (_pendingFormData) _doSubmit(_pendingFormData);
+  if (_pendingFormData) {
+    _doSubmit(_pendingFormData);
+  } else {
+    var btn = document.getElementById('btn-process');
+    btn.disabled = false;
+    btn.textContent = 'Process Script';
+  }
 }
 
 function _showSpkModal(detected, formData) {
@@ -2342,6 +2349,7 @@ function _showSpkModal(detected, formData) {
   var speakers    = detected.detectedSpeakers || [];
   var html = '';
 
+  // Target status
   if (detected.targetFound) {
     html += '<div style="background:#f0f7ec;border:1.5px solid #2B8000;border-radius:8px;padding:10px 14px;margin-bottom:12px">' +
             '<strong style="color:#1a5c00">&#10003; Target agent found in transcript</strong><br>' +
@@ -2358,7 +2366,7 @@ function _showSpkModal(detected, formData) {
             '</div>';
   }
 
-  // Only show exclusion block when target was found — filtering will actually run
+  // Other agents to be excluded — only show when target was found (filtering will actually run)
   if (detected.targetFound && otherAgents.length > 0) {
     html += '<div style="background:#fdf3f3;border:1.5px solid #e0b0b0;border-radius:8px;padding:10px 14px;margin-bottom:12px">' +
             '<strong style="color:#8b0000">&#128683; Other agent(s) will be excluded:</strong><br>' +
@@ -2369,11 +2377,13 @@ function _showSpkModal(detected, formData) {
             '</div>';
   }
 
+  // All detected speakers summary
   if (speakers.length > 0) {
     html += '<div style="font-size:11px;color:#888;margin-bottom:10px">All detected speakers: ' +
             speakers.map(function(s){ return _escHtml(s); }).join(' &bull; ') + '</div>';
   }
 
+  // P4 fallback: if target not found, show a dropdown for manual selection
   if (!detected.targetFound && speakers.length > 0) {
     html += '<div style="margin-bottom:6px">' +
             '<label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:5px">Select the agent to audit:</label>' +
@@ -2429,10 +2439,12 @@ function handleSubmit() {
       if (detected && !detected.error) {
         _showSpkModal(detected, formData);
       } else {
+        // Detection failed — proceed directly without confirmation
         _doSubmit(formData);
       }
     })
     .withFailureHandler(function() {
+      // Fall through silently — restore button text then submit
       _btnProcess.textContent = 'Process Script';
       _doSubmit(formData);
     })
@@ -2440,6 +2452,7 @@ function handleSubmit() {
 }
 
 function _doSubmit(formData) {
+  _currentAuditRef = '';  // clear stale ref — will be set from server response
   document.getElementById('processing-overlay').classList.add('visible');
   document.getElementById('applied-section').classList.remove('visible');
 
@@ -2628,7 +2641,9 @@ function sanitiseResultHTML(html) {
     .replace(/<object[\s\S]*?<\/object>/gi, '')
     .replace(/<form[\s\S]*?<\/form>/gi, '')
     .replace(/\s+on\w+="[^"]*"/gi, '')
-    .replace(/\s+on\w+='[^']*'/gi, '');
+    .replace(/\s+on\w+='[^']*'/gi, '')
+    .replace(/(href|src|action)\s*=\s*["']javascript:[^"']*["']/gi, '$1="#"')
+    .replace(/(href|src|action)\s*=\s*javascript:[^\s>]*/gi, '$1="#"');
 }
 
 function openModal(transcriptText, resultHTML) {
@@ -2835,6 +2850,7 @@ function downloadAuditPDF() {
 
   // Collect current form data for the structured PDF
   var formData = getFormData();
+  if (!formData) return;
   formData.auditRef     = ref;
   formData.observerName = _currentObserver.name || _currentObserver.email || '';
 
@@ -4426,6 +4442,7 @@ function handleSubmitEmail() {
   }
 
   var formData = getFormData();
+  if (!formData) return;
   formData.emailMode = _emailMode;
   document.getElementById('btn-submit').disabled = true;
   document.getElementById('email-overlay').classList.add('visible');
@@ -4489,6 +4506,8 @@ function lockFormAfterSubmit(auditRef) {
 }
 
 function getFormData() {
+  var checkedType = document.querySelector('input[name="analysisType"]:checked');
+  if (!checkedType) { showError('Please select an analysis type.'); return null; }
   return {
     sapId:          document.getElementById('sapId').value.trim(),
     participant:    document.getElementById('participant').value.trim(),
@@ -4502,7 +4521,7 @@ function getFormData() {
     interactionId:  document.getElementById('interactionId').value.trim(),
     direction:      document.getElementById('direction').value,
     duration:       document.getElementById('duration').value.trim(),
-    analysisType:   document.querySelector('input[name="analysisType"]:checked').value,
+    analysisType:   checkedType.value,
     auditRef:       _currentAuditRef,
     observerName:   _currentObserver.name || _currentObserver.email || '',
     observerEmail:  _currentObserver.email || '',

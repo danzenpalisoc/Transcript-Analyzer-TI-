@@ -418,7 +418,8 @@ function submitSurvey() {
   if (!_starVal) { alert('Please select a star rating.'); return; }
   // Future: call google.script.run to save survey response
   document.getElementById('ev-survey-ok').style.display = 'block';
-  document.getElementById('ev-survey-btn') && (document.querySelector('.ev-survey-btn').disabled = true);
+  var surveyBtn = document.querySelector('.ev-survey-btn');
+  if (surveyBtn) surveyBtn.disabled = true;
 }
 
 function doSearch() {
@@ -449,7 +450,9 @@ function sanitiseResultHTML(html) {
     .replace(/<object[\s\S]*?<\/object>/gi, '')
     .replace(/<form[\s\S]*?<\/form>/gi, '')
     .replace(/\s+on\w+="[^"]*"/gi, '')
-    .replace(/\s+on\w+='[^']*'/gi, '');
+    .replace(/\s+on\w+='[^']*'/gi, '')
+    .replace(/(href|src|action)\s*=\s*["']javascript:[^"']*["']/gi, '$1="#"')
+    .replace(/(href|src|action)\s*=\s*javascript:[^\s>]*/gi, '$1="#"');
 }
 function formatDate(s) {
   try {

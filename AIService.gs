@@ -180,13 +180,10 @@ function _getATDataGCPSheetData() {
     var ss    = SpreadsheetApp.openById(AT_DATA_GCP_SS_ID);
     var sheet = ss.getSheetByName('Roster') || ss.getSheetByName('roster') || ss.getSheets()[0];
     var data  = sheet.getDataRange().getValues();
-    // Cache all rows (slice(1) to skip header — store header separately)
-    var header = data[0];
-    var rows   = data.slice(1);
-    var payload = JSON.stringify({ header: header, rows: rows });
-    try { cache.put(cacheKey, payload.substring(0, 95000), 4 * 60 * 60); } catch(e) {}
-    _atDataInMemory = data; // full data including header row
-    Logger.log('AT Data GCP loaded from sheet: ' + rows.length + ' rows');
+    // Store the full 2D array — callers use data[0] for header and data[i] for rows
+    try { cache.put(cacheKey, JSON.stringify(data).substring(0, 95000), 4 * 60 * 60); } catch(e) {}
+    _atDataInMemory = data;
+    Logger.log('AT Data GCP loaded from sheet: ' + (data.length - 1) + ' rows');
     return _atDataInMemory;
   } catch(e) { Logger.log('_getATDataGCPSheetData: ' + e); return [[]]; }
 }
