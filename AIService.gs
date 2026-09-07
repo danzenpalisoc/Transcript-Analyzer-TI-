@@ -289,7 +289,7 @@ function lookupBySapId(sapId) {
           opsManager:     (rosterRows[i][ROSTER_COL_OPS_MGR]     || '').toString().trim(),
           locale:         (rosterRows[i][ROSTER_COL_LOCALE]       || '').toString().trim(),
           vtid:           lookupVTID(targetStr),
-          agentEmail:     lookupAgentEmail(agentName)
+          agentEmail:     lookupAgentEmail(agentName) || resolveEmail(agentName)
         };
       }
     }
@@ -387,7 +387,7 @@ function lookupBySapId(sapId) {
           opsManager:     '',
           locale:         loc,
           vtid:           vtid,
-          agentEmail:     lookupAgentEmail(name)
+          agentEmail:     lookupAgentEmail(name) || resolveEmail(name)
         };
 
         // Try to enrich Team Leader / Ops Manager from FCR Dashboard Data

@@ -3667,8 +3667,11 @@ function sendAuditEmail(formData, htmlResult) {
       var adminList = getRecipientsFromRoster('Admin/Dev');
       recipients = adminList.map(function(r) { return r.email; }).filter(Boolean);
     } else {
-      // Agent being audited — use formData.agentEmail if already resolved, else name lookup
-      var agentEmailAddr  = (formData.agentEmail || '').trim() || lookupAgentEmail((formData.participant || '').trim());
+      // Agent being audited — use formData.agentEmail if already resolved, else name lookup, then Global Roster fallback
+      var _agentParticipant = (formData.participant || '').trim();
+      var agentEmailAddr  = (formData.agentEmail || '').trim()
+                          || lookupAgentEmail(_agentParticipant)
+                          || resolveEmail(_agentParticipant);
       // Agent's Team Leader
       var agentTLEmail    = resolveEmail(formData.teamLeader);
       // QA / Observer who submitted
