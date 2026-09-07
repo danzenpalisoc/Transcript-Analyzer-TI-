@@ -633,16 +633,16 @@ function filterTranscriptByAgent(transcriptText, targetAgentName) {
       if (knownSpkrs[sp]) {
         var isOther = otherAgents.some(function(a) { return _nameMatches(a, sp); });
         skipBlock = isOther;
-        if (isOther) {
-          var origName = m[1].trim();
-          excludedPerAgent[origName] = (excludedPerAgent[origName] || 0) + 1;
-        }
+        // Do NOT count here — the else branch below counts every excluded line
+        // (including this speaker-start line), avoiding double-counting.
       }
     }
 
     if (!skipBlock) {
       result.push(line);
     } else {
+      // Count every excluded line once: speaker-start lines + continuation lines.
+      // Speaker-start: origName2 = agent name. Continuation: origName2 = '(cont.)'.
       var origName2 = (line.match(/^([^:\n]{2,60}):\s/) || [])[1] || '(cont.)';
       excludedPerAgent[origName2.trim()] = (excludedPerAgent[origName2.trim()] || 0) + 1;
     }

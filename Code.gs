@@ -3193,25 +3193,27 @@ function detectTranscriptSpeakers(transcriptText, sapId) {
       }
     }
 
-    // ── Other agents = detected speakers that are NOT target and NOT customer ─
-    var otherAgents = detectedSpeakers.filter(function(sp) {
-      var spLower = sp.toLowerCase();
-      var isTarget = targetMatch && (spLower === targetMatch.toLowerCase() ||
-                      spLower.indexOf(targetMatch.toLowerCase()) !== -1 ||
-                      targetMatch.toLowerCase().indexOf(spLower) !== -1);
-      if (isTarget) return false;
-      var isCustomerKeyword = /^(customer|caller|client|member|cx)\b/i.test(sp);
-      if (isCustomerKeyword) return false;
-      if (hasHeader) {
+    // ── Other agents = header agents minus the target ─────────────────────────
+    // Only identify "other agents" when a header is present — without it we
+    // cannot reliably distinguish customer from another internal agent, so we
+    // return an empty list. filterTranscriptByAgent also returns NO_FILTER when
+    // there is no header, keeping both the UI and the server in sync.
+    var otherAgents = [];
+    if (hasHeader) {
+      otherAgents = detectedSpeakers.filter(function(sp) {
+        var spLower = sp.toLowerCase();
+        var isTarget = targetMatch && (spLower === targetMatch.toLowerCase() ||
+                        spLower.indexOf(targetMatch.toLowerCase()) !== -1 ||
+                        targetMatch.toLowerCase().indexOf(spLower) !== -1);
+        if (isTarget) return false;
         return headerAgents.some(function(h) {
           var hLow = h.toLowerCase();
           return spLower === hLow ||
                  (hLow.length > 4 && spLower.indexOf(hLow) !== -1) ||
                  (spLow.length > 4 && hLow.indexOf(spLow) !== -1);
         });
-      }
-      return true;
-    });
+      });
+    }
 
     return {
       hasHeader:        hasHeader,

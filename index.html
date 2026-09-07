@@ -1956,7 +1956,7 @@ body {
 </div>
 
 <!-- Speaker confirmation modal (P1/P4) -->
-<div id="spk-confirm-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9500;display:none;align-items:center;justify-content:center">
+<div id="spk-confirm-overlay" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.55);z-index:9500;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:12px;max-width:520px;width:92%;padding:28px 28px 22px;box-shadow:0 8px 40px rgba(0,0,0,.28);font-family:inherit">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
       <span style="font-size:22px">&#128269;</span>
@@ -2319,7 +2319,9 @@ var _pendingFormData = null;
 function spkConfirmCancel() {
   document.getElementById('spk-confirm-overlay').style.display = 'none';
   _pendingFormData = null;
-  document.getElementById('btn-process').disabled = false;
+  var btn = document.getElementById('btn-process');
+  btn.disabled = false;
+  btn.textContent = 'Process Script';
 }
 
 function spkConfirmProceed() {
@@ -2414,12 +2416,15 @@ function handleSubmit() {
   if (!formData.sapId)      { showError('Please fill in: SAP ID'); return; }
   if (!formData.transcript) { showError('Please paste a call transcript'); return; }
 
-  document.getElementById('btn-process').disabled = true;
+  var _btnProcess = document.getElementById('btn-process');
+  _btnProcess.disabled = true;
+  _btnProcess.textContent = 'Checking speakers…';
 
   // Step 1: detect speakers — show confirmation modal before running AI
   _pendingFormData = formData;
   google.script.run
     .withSuccessHandler(function(detected) {
+      _btnProcess.textContent = 'Process Script';
       if (detected && !detected.error) {
         _showSpkModal(detected, formData);
       } else {
@@ -2427,6 +2432,7 @@ function handleSubmit() {
       }
     })
     .withFailureHandler(function() {
+      _btnProcess.textContent = 'Process Script';
       _doSubmit(formData);
     })
     .detectTranscriptSpeakers(formData.transcript, formData.sapId);
