@@ -1617,6 +1617,7 @@ function _getAgentEmailMap() {
     });
     if (nameCol === -1 || emailCol === -1) {
       Logger.log('_getAgentEmailMap: missing columns — nameCol=' + nameCol + ' emailCol=' + emailCol);
+      _agentEmailMapInMemory = {};
       return {};
     }
     var map = {};
