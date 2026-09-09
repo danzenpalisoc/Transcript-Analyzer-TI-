@@ -1598,7 +1598,7 @@ function _getAgentEmailMap() {
   if (_agentEmailMapInMemory) return _agentEmailMapInMemory;
   try {
     var cache    = CacheService.getScriptCache();
-    var cacheKey = 'agent_email_map_v1';
+    var cacheKey = 'agent_email_map_v2';
     var cached   = cache.get(cacheKey);
     if (cached) {
       try { _agentEmailMapInMemory = JSON.parse(cached); return _agentEmailMapInMemory; } catch(e) {}
@@ -1798,6 +1798,39 @@ function testAdminNotification() {
   }, 'NHA-TEST-0000');
 
   Logger.log('=== Test notification sent ===');
+}
+
+/** Run from GAS editor to verify agent email lookup is working */
+function testEmailLookup() {
+  // ── 1. Clear stale cache so we force a fresh sheet read ───────────────────
+  CacheService.getScriptCache().remove('agent_email_map_v1');
+  CacheService.getScriptCache().remove('agent_email_map_v2');
+  _agentEmailMapInMemory = null;
+  Logger.log('Cache cleared.');
+
+  // ── 2. Check what _getAgentEmailMap builds ────────────────────────────────
+  var map = _getAgentEmailMap();
+  var entries = Object.keys(map).length;
+  Logger.log('_getAgentEmailMap: ' + entries + ' entries loaded.');
+  if (entries === 0) {
+    Logger.log('ERROR: Map is empty — check Primary Roster for Agent_Name and Team Member Email columns.');
+    return;
+  }
+
+  // ── 3. Show first 5 entries as sample ─────────────────────────────────────
+  Logger.log('Sample entries:');
+  var count = 0;
+  for (var name in map) {
+    if (count++ >= 5) break;
+    Logger.log('  "' + name + '" → ' + map[name]);
+  }
+
+  // ── 4. Test a specific name (change this to a real agent name) ────────────
+  var testName = 'Harpreet Singh'; // ← change to actual agent name to test
+  var result   = lookupAgentEmail(testName);
+  Logger.log('lookupAgentEmail("' + testName + '"): "' + result + '"');
+  var result2  = resolveEmail(testName);
+  Logger.log('resolveEmail("' + testName + '"): "' + result2 + '"');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
