@@ -2947,9 +2947,12 @@ function applyAndClose() {
 function getEffectiveHTML() {
   var applied = document.getElementById('applied-output');
   if (applied && applied.innerHTML && applied.innerHTML.trim().length > 100) {
-    // Clone and strip injected delete buttons — they must not appear in emails or PDFs
+    // Clone and strip all delete button artifacts before returning to email/PDF/print callers:
+    // 1. Remove injected button elements
+    // 2. Remove position:relative inline style (set by _injectFlagDeleteBtns, not in original AI output)
     var clone = applied.cloneNode(true);
     clone.querySelectorAll('.ai-flag-del').forEach(function(b) { b.remove(); });
+    clone.querySelectorAll('.ai-flag').forEach(function(f) { f.style.position = ''; });
     return clone.innerHTML;
   }
   return _lastHTML;
