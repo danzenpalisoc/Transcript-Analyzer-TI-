@@ -2922,6 +2922,8 @@ function applyAndClose() {
   // so the serialized button HTML would be dead. Re-inject after setting out.innerHTML.
   if (modalAIResult) {
     modalAIResult.querySelectorAll('.ai-flag-del').forEach(function(b) { b.remove(); });
+    // Also clear the injected position:relative so _lastHTML stays clean for email/PDF fallback
+    modalAIResult.querySelectorAll('.ai-flag').forEach(function(f) { f.style.position = ''; });
   }
   var editedHTML = modalAIResult ? modalAIResult.innerHTML : sanitiseResultHTML(_lastHTML);
   out.innerHTML = editedHTML;
