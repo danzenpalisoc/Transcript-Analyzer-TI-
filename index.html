@@ -2158,10 +2158,10 @@ function scheduleAutofill() {
         if (!_sapResolvedParticipant && meta.participant &&
             !document.getElementById('sapId').value) {
           document.getElementById('participant').value = meta.participant;
+          _sapResolvedParticipant = true; // lock once participant is written — prevents repeated server calls when roster is null
           if (payload.roster && payload.sapId) {
             document.getElementById('sapId').value = payload.sapId;
             _applyRosterRow(payload.roster);
-            _sapResolvedParticipant = true; // lock even if roster participant field is blank
             try {
               var sapCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
               sapCache[payload.sapId] = payload.roster;
