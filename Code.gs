@@ -2864,6 +2864,23 @@ function chatAssistant(userMessage, recentHistory) {
 }
 function getTranscriptMetadata(txt)   { return parseTranscriptMetadata(txt); }
 function getRosterBySapId(sapId)      { return lookupBySapId(sapId); }
+
+// ── Combined single-call autofill: parses transcript + resolves SAP ID + returns full roster ──
+// Eliminates 3 sequential client→server round-trips by doing all lookups in one call.
+function getTranscriptMetadataAndRoster(txt) {
+  var meta = parseTranscriptMetadata(txt);
+  if (!meta) return null;
+  var sapId = '';
+  var roster = null;
+  if (meta.participant) {
+    sapId = lookupSapId(meta.participant) || '';
+    if (sapId) {
+      roster = lookupBySapId(sapId);
+      if (roster) roster.sapId = sapId;
+    }
+  }
+  return { meta: meta, sapId: sapId, roster: roster };
+}
 function getRosterAll()               { return getAllRosterData(); }
 function getObserverInfo() {
   var obs = resolveObserver() || {};

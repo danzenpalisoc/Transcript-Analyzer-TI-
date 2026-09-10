@@ -2121,11 +2121,16 @@ function scheduleAutofill() {
   _autofillTimer = setTimeout(function () {
     var txt = document.getElementById('transcript').value;
     if (!txt.trim()) return;
+    // Single combined call: parses transcript + resolves SAP + returns full roster in one round-trip
+    // so Team Member, SAP ID, Team Leader, Ops Manager, LOB, and Locale all populate simultaneously.
     google.script.run
-      .withSuccessHandler(function (meta) {
+      .withFailureHandler(function(err) { console.error('[AutoFill] getTranscriptMetadataAndRoster failed:', err.message); })
+      .withSuccessHandler(function (payload) {
+        if (!payload) return;
+        var meta = payload.meta;
         if (!meta) return;
 
-        // Always fill call detail fields from transcript metadata
+        // Fill call detail fields
         setIfEmpty('interactionId', meta.interactionId);
         setIfEmpty('startTime',     meta.startTime);
         setIfEmpty('duration',      meta.duration);
@@ -2138,21 +2143,33 @@ function scheduleAutofill() {
             }
           }
         }
+
+        // BAN: only accept numeric values; any non-numeric extracted value → "Not Available"
         if (!document.getElementById('customerBAN').value) {
-          if (meta.customerBAN)       document.getElementById('customerBAN').value = meta.customerBAN;
-          else if (meta.customerName) document.getElementById('customerBAN').value = meta.customerName;
+          var rawBAN = (meta.customerBAN || '').trim();
+          if (rawBAN && /^\d+$/.test(rawBAN)) {
+            document.getElementById('customerBAN').value = rawBAN;
+          } else if (rawBAN) {
+            document.getElementById('customerBAN').value = 'Not Available';
+          }
         }
 
-        // Fill Team Member from transcript only if SAP ID is not yet resolved.
-        // Check sapId (not participant name) so re-pasting a transcript with the
-        // same agent still triggers the full roster lookup.
+        // Fill Team Member + SAP ID + all roster fields at the same time
         if (!_sapResolvedParticipant && meta.participant &&
             !document.getElementById('sapId').value) {
           document.getElementById('participant').value = meta.participant;
-          lookupSapFromName(meta.participant);
+          if (payload.roster && payload.sapId) {
+            document.getElementById('sapId').value = payload.sapId;
+            _applyRosterRow(payload.roster);
+            try {
+              var sapCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
+              sapCache[payload.sapId] = payload.roster;
+              lsSet(LS_SAP_KEY, sapCache);
+            } catch(e) {}
+          }
         }
       })
-      .getTranscriptMetadata(txt);
+      .getTranscriptMetadataAndRoster(txt);
   }, 800);
 }
 
@@ -2699,7 +2716,11 @@ function _doSubmit(formData) {
         setIfBlank('interactionId', rf.interactionId);
         setIfBlank('startTime',     rf.startTime);
         setIfBlank('duration',      rf.duration);
-        setIfBlank('customerBAN',   rf.customerBAN);
+        // BAN: only accept numeric values
+        if (!document.getElementById('customerBAN').value && rf.customerBAN) {
+          var ban_ = (rf.customerBAN || '').trim();
+          document.getElementById('customerBAN').value = /^\d+$/.test(ban_) ? ban_ : 'Not Available';
+        }
         setIfBlank('participant',   rf.participant);
         // Direction dropdown
         if (rf.direction && !document.getElementById('direction').value) {
