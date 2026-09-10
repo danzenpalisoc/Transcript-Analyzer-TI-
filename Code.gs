@@ -1526,7 +1526,7 @@ function getRecipientsFromRoster(roleFilter) {
       allRows = _rosterRecipientsInMemory;
     } else {
       var cache    = CacheService.getScriptCache();
-      var cacheKey = 'audit_roster_rows_v1';
+      var cacheKey = 'audit_roster_rows_v2'; // bumped to bust stale cache after Trainer role added
       var cached   = cache.get(cacheKey);
       if (cached) {
         try { allRows = JSON.parse(cached); } catch(e) {}
