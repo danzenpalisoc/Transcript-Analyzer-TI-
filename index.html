@@ -2908,11 +2908,16 @@ function applyAndClose() {
   var out = document.getElementById('applied-output');
   // Capture the user's edited content from the modal, not the original _lastHTML
   var modalAIResult = document.getElementById('modal-ai-result');
+  // Strip injected delete buttons before serializing — innerHTML drops event listeners,
+  // so the serialized button HTML would be dead. Re-inject after setting out.innerHTML.
+  if (modalAIResult) {
+    modalAIResult.querySelectorAll('.ai-flag-del').forEach(function(b) { b.remove(); });
+  }
   var editedHTML = modalAIResult ? modalAIResult.innerHTML : sanitiseResultHTML(_lastHTML);
   out.innerHTML = editedHTML;
   // Keep _lastHTML in sync so getEffectiveHTML() fallback is also correct
   _lastHTML = editedHTML;
-  // Inject flag delete buttons in the applied view
+  // Inject fresh delete buttons with live event listeners in the applied view
   _injectFlagDeleteBtns(out);
   // Ensure all relevant elements are editable (safety net for any AI-omitted attributes)
   out.querySelectorAll('.r-summary-box,.r-pos-stmt,.r-systemic').forEach(function(el) {
@@ -3165,7 +3170,7 @@ function sharedCSS_client() {
     '.ai-table td{padding:9px 12px;border-bottom:1px solid #EBEBEB;vertical-align:top;line-height:1.6}' +
     '.ai-table tbody tr:nth-child(even) td{background:#FAFAFA}.ai-label-col{font-weight:600;color:#1A1A2E;width:22%}' +
     '.ai-flag{background:#FFF5F5;border:1px solid #F5AAAA;border-left:4px solid #C12335;border-radius:4px;padding:12px 14px 12px 14px;margin-bottom:10px;position:relative}' +
-    '.ai-flag-del{position:absolute;top:6px;right:8px;background:none;border:none;cursor:pointer;font-size:15px;color:#C12335;opacity:.45;line-height:1;padding:2px 4px;border-radius:3px;contenteditable:false}' +
+    '.ai-flag-del{position:absolute;top:6px;right:8px;background:none;border:none;cursor:pointer;font-size:15px;color:#C12335;opacity:.45;line-height:1;padding:2px 4px;border-radius:3px}' +
     '.ai-flag-del:hover{opacity:1;background:#FFE5E5}' +
     '.ai-flag-title{font-weight:700;color:#C12335;font-size:12px;margin-bottom:5px}' +
     '.ai-flag-stmt{background:#EDF7E6;border:1px solid #B3DFA0;border-radius:4px;padding:8px 10px;font-size:12px;font-style:italic;color:#1A5E00}' +
@@ -4751,8 +4756,8 @@ function lockFormAfterSubmit(auditRef) {
   var page = document.querySelector('.page');
   if (page) page.insertBefore(banner, page.firstChild);
 
-  // Lock analysis output cells
-  document.querySelectorAll('#applied-output [contenteditable]').forEach(function(el) {
+  // Lock analysis output cells (exclude delete buttons — they remain interactive after lock)
+  document.querySelectorAll('#applied-output [contenteditable]:not(.ai-flag-del)').forEach(function(el) {
     el.removeAttribute('contenteditable');
     el.style.cursor = 'default';
   });
