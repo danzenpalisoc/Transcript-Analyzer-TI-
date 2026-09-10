@@ -2833,11 +2833,21 @@ function _injectFlagDeleteBtns(container) {
   if (!container) return;
   container.querySelectorAll('.ai-flag').forEach(function(flag) {
     if (flag.querySelector('.ai-flag-del')) return; // already has button
+    // Apply position:relative inline — cannot rely on CSS class since the live page uses
+    // sharedCSS() from AIService.gs which lacks this property.
+    flag.style.position = 'relative';
     var btn = document.createElement('button');
     btn.className = 'ai-flag-del';
     btn.setAttribute('contenteditable', 'false');
     btn.setAttribute('title', 'Remove this flag');
     btn.innerHTML = '&#10005;';
+    // Inline styles: fully independent of any CSS class definition in the live page
+    var BASE_STYLE = 'position:absolute;top:6px;right:8px;background:none;border:none;' +
+                     'cursor:pointer;font-size:15px;color:#C12335;opacity:.45;' +
+                     'line-height:1;padding:2px 4px;border-radius:3px';
+    btn.style.cssText = BASE_STYLE;
+    btn.addEventListener('mouseenter', function() { btn.style.opacity = '1'; btn.style.background = '#FFE5E5'; });
+    btn.addEventListener('mouseleave', function() { btn.style.opacity = '.45'; btn.style.background = 'none'; });
     btn.addEventListener('click', function(e) {
       e.stopPropagation();
       flag.remove();
@@ -2937,7 +2947,10 @@ function applyAndClose() {
 function getEffectiveHTML() {
   var applied = document.getElementById('applied-output');
   if (applied && applied.innerHTML && applied.innerHTML.trim().length > 100) {
-    return applied.innerHTML;
+    // Clone and strip injected delete buttons — they must not appear in emails or PDFs
+    var clone = applied.cloneNode(true);
+    clone.querySelectorAll('.ai-flag-del').forEach(function(b) { b.remove(); });
+    return clone.innerHTML;
   }
   return _lastHTML;
 }
