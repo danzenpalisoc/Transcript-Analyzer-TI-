@@ -2388,7 +2388,7 @@ function clearAllFields() {
     });
   document.querySelectorAll('input[name="analysisType"]').forEach(function(r){ r.disabled = false; });
   var btnP = document.getElementById('btn-process');
-  if (btnP) btnP.disabled = false;
+  if (btnP) { btnP.disabled = false; btnP.textContent = 'Process Script'; }
   var btnS = document.getElementById('btn-submit');
   if (btnS) { btnS.disabled = false; btnS.style.display = ''; }
 
@@ -2399,6 +2399,7 @@ function clearAllFields() {
   _lastHTML = '';
   _currentAuditRef = '';
   _sapResolvedParticipant = false;
+  _pendingFormData = null; // prevent stale in-flight submission from completing after Clear All
 
   // Re-generate audit ref for the new session
   var now = new Date();
