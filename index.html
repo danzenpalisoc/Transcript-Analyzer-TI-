@@ -2406,6 +2406,8 @@ function clearAllFields() {
   document.getElementById('audit-ref-display').textContent = 'NHA-' + y + mo + d + '-…';
 
   // Reset LOB selection and re-show modal for the new audit
+  // Cancel any pending auto-close timer to prevent it from immediately hiding the freshly shown modal
+  if (_lobCloseTimer) { clearTimeout(_lobCloseTimer); _lobCloseTimer = null; }
   _selectedLOB = null;
   _selectedLOBCategory = null;
   // Clear all radio button selections in the LOB modal
@@ -2922,6 +2924,7 @@ var _emailMode        = 'live'; // 'live' | 'test' — toggled by Admin/Dev only
 // ── LOB Selection ─────────────────────────────────────────────────────────────
 var _selectedLOB         = null;
 var _selectedLOBCategory = null;
+var _lobCloseTimer       = null; // tracks pending auto-close timer to avoid race with clearAllFields()
 var _LOB_OPTIONS = {
   'Wireline': ['PF CxSS', 'PF CLS', 'PF TS', 'SHS CxSS', 'SHS CLS', 'SHS TS'],
   'Wireless': ['MOB CxSS', 'MOB CLS', 'MOB TS', 'Koodo', 'Koodo TS']
@@ -2983,7 +2986,9 @@ document.addEventListener('DOMContentLoaded', function() {
     specGroup.querySelectorAll('.lob-radio-opt').forEach(function(el) {
       el.classList.toggle('lob-selected', el.querySelector('input').value === _selectedLOB);
     });
-    setTimeout(function() {
+    hideError(); // clear any stale "Please select a Line of Business first." error
+    _lobCloseTimer = setTimeout(function() {
+      _lobCloseTimer = null;
       hideLOBModal();
       updateLOBBadge();
     }, 150);
