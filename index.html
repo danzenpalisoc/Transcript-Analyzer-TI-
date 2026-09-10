@@ -2404,6 +2404,17 @@ function clearAllFields() {
   var now = new Date();
   var y = now.getFullYear(), mo = String(now.getMonth()+1).padStart(2,'0'), d = String(now.getDate()).padStart(2,'0');
   document.getElementById('audit-ref-display').textContent = 'NHA-' + y + mo + d + '-…';
+
+  // Reset LOB selection and re-show modal for the new audit
+  _selectedLOB = null;
+  _selectedLOBCategory = null;
+  // Clear all radio button selections in the LOB modal
+  document.querySelectorAll('#lob-cat-group input[type="radio"]').forEach(function(r) { r.checked = false; });
+  document.querySelectorAll('#lob-spec-group input[type="radio"]').forEach(function(r) { r.checked = false; });
+  document.querySelectorAll('#lob-cat-group .lob-radio-opt').forEach(function(el) { el.classList.remove('lob-selected'); });
+  document.getElementById('lob-specific-wrap').style.display = 'none';
+  updateLOBBadge();
+  showLOBModal();
 }
 
 // ── Submit ────────────────────────────────────────────────────────────────────
