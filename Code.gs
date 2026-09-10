@@ -3616,7 +3616,7 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
 
     var firstName  = agentName.split(' ')[0];
     var evalTitle  = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
-    var lobLabel   = formData.lineOfBusiness || formData.selectedLOB || '';
+    var lobLabel   = formData.selectedLOB || formData.lineOfBusiness || '';
     var subject    = 'Real Time Feedback — ' + agentName + ' (' + sapId + ')' + (lobLabel ? ' | ' + lobLabel : '') + ' | BAN: ' + (formData.customerBAN || 'N/A');
 
     var body =

@@ -2958,23 +2958,14 @@ function _buildLOBSpecificOptions(category) {
     group.appendChild(label);
   });
   document.getElementById('lob-specific-wrap').style.display = 'block';
-  // Specific LOB selection → auto-close
-  group.addEventListener('change', function lobSpecChange(e) {
-    if (e.target.name !== 'lob-spec') return;
-    _selectedLOB = e.target.value;
-    group.querySelectorAll('.lob-radio-opt').forEach(function(el) {
-      el.classList.toggle('lob-selected', el.querySelector('input').value === _selectedLOB);
-    });
-    setTimeout(function() {
-      hideLOBModal();
-      updateLOBBadge();
-    }, 150);
-    group.removeEventListener('change', lobSpecChange);
-  });
+  // Listener is registered once globally in DOMContentLoaded — not here
 }
-// Category change → show specific options
+// Category + specific LOB listeners registered ONCE via DOMContentLoaded (no accumulation)
 document.addEventListener('DOMContentLoaded', function() {
-  var catGroup = document.getElementById('lob-cat-group');
+  var catGroup  = document.getElementById('lob-cat-group');
+  var specGroup = document.getElementById('lob-spec-group');
+
+  // Level 1: category selection (Wireline / Wireless)
   catGroup.addEventListener('change', function(e) {
     if (e.target.name !== 'lob-cat') return;
     _selectedLOBCategory = e.target.value;
@@ -2983,6 +2974,19 @@ document.addEventListener('DOMContentLoaded', function() {
       el.classList.toggle('lob-selected', el.querySelector('input').value === _selectedLOBCategory);
     });
     _buildLOBSpecificOptions(_selectedLOBCategory);
+  });
+
+  // Level 2: specific LOB selection — single permanent event-delegation listener
+  specGroup.addEventListener('change', function(e) {
+    if (e.target.name !== 'lob-spec') return;
+    _selectedLOB = e.target.value;
+    specGroup.querySelectorAll('.lob-radio-opt').forEach(function(el) {
+      el.classList.toggle('lob-selected', el.querySelector('input').value === _selectedLOB);
+    });
+    setTimeout(function() {
+      hideLOBModal();
+      updateLOBBadge();
+    }, 150);
   });
 });
 
