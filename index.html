@@ -923,6 +923,90 @@ body {
 .modal-divider { border: none; border-top: 1px solid var(--telus-grey-bd); margin: 4px 0 18px; }
 .modal-results-label { font-size: 12px; font-weight: 700; color: var(--telus-subtext); margin-bottom: 12px; text-transform: uppercase; letter-spacing: .4px; }
 
+/* ── LOB Selection Modal ── */
+#lob-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.7);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+}
+#lob-overlay.visible { display: flex; }
+.lob-card {
+  background: #fff;
+  border-radius: 14px;
+  max-width: 440px;
+  width: 92%;
+  padding: 28px 28px 24px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.35);
+}
+.lob-card-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #4B286D;
+  margin: 0 0 4px;
+}
+.lob-card-sub {
+  font-size: 12px;
+  color: #777;
+  margin: 0 0 20px;
+}
+.lob-level-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 10px;
+}
+.lob-radio-group { display: flex; flex-direction: column; gap: 7px; }
+.lob-radio-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  border: 1.5px solid #ddd;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  transition: border-color .12s, background .12s;
+}
+.lob-radio-opt:hover { border-color: #4B286D; background: #f9f5ff; }
+.lob-radio-opt.lob-selected { border-color: #4B286D; background: #f0eaf8; color: #4B286D; font-weight: 600; }
+.lob-radio-opt input[type="radio"] { accent-color: #4B286D; width: 15px; height: 15px; flex-shrink: 0; }
+.lob-divider { height: 1px; background: #eee; margin: 16px 0; }
+/* LOB badge bar shown after selection */
+#lob-badge-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: #f0eaf8;
+  border: 1px solid #d5c5ea;
+  border-radius: 7px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4B286D;
+}
+#lob-badge-bar .lob-chg-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid #4B286D;
+  color: #4B286D;
+  border-radius: 4px;
+  padding: 2px 9px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: inherit;
+}
+#lob-badge-bar .lob-chg-btn:hover { background: #4B286D; color: #fff; }
+
 /* ═══════════════════════════════════════════════════════════════
    RESULT COMPONENTS  (used both in modal and applied view)
 ═══════════════════════════════════════════════════════════════ */
@@ -1216,6 +1300,13 @@ body {
             &#10005; Clear All
           </button>
         </div>
+      </div>
+
+      <!-- LOB Badge — shown after LOB is selected -->
+      <div id="lob-badge-bar">
+        <span>&#128203;</span>
+        <span id="lob-badge-text">—</span>
+        <button class="lob-chg-btn" onclick="showLOBModal()">Change LOB</button>
       </div>
 
       <div class="form-row">
@@ -1956,6 +2047,32 @@ body {
 </div>
 
 <!-- Speaker confirmation modal (P1/P4) -->
+<!-- ══════════════════════════════════════════════════════════
+     LOB SELECTION MODAL — appears on page load
+══════════════════════════════════════════════════════════ -->
+<div id="lob-overlay">
+  <div class="lob-card">
+    <p class="lob-card-title">&#128203; Select Line of Business</p>
+    <p class="lob-card-sub">Choose the audited agent's LOB and role before starting.</p>
+
+    <div class="lob-level-label">Line of Business</div>
+    <div class="lob-radio-group" id="lob-cat-group">
+      <label class="lob-radio-opt">
+        <input type="radio" name="lob-cat" value="Wireline"> Wireline
+      </label>
+      <label class="lob-radio-opt">
+        <input type="radio" name="lob-cat" value="Wireless"> Wireless
+      </label>
+    </div>
+
+    <div id="lob-specific-wrap" style="display:none">
+      <div class="lob-divider"></div>
+      <div class="lob-level-label">Specific L.O.B. / Role</div>
+      <div class="lob-radio-group" id="lob-spec-group"></div>
+    </div>
+  </div>
+</div>
+
 <div id="spk-confirm-overlay" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.55);z-index:9500;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:12px;max-width:520px;width:92%;padding:28px 28px 22px;box-shadow:0 8px 40px rgba(0,0,0,.28);font-family:inherit">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
@@ -2422,10 +2539,12 @@ function handleSubmit() {
     agentEmail:        document.getElementById('agentEmail').value.trim(),
     translateToEnglish: document.getElementById('translate-toggle').checked,
     observerName:      _currentObserver.name || _currentObserver.email || '',
-    observerEmail:     _currentObserver.email || ''
+    observerEmail:     _currentObserver.email || '',
+    selectedLOB:       _selectedLOB || ''
   };
   if (!formData.sapId)      { showError('Please fill in: SAP ID'); return; }
   if (!formData.transcript) { showError('Please paste a call transcript'); return; }
+  if (!formData.selectedLOB) { showLOBModal(); showError('Please select a Line of Business first.'); return; }
 
   var _btnProcess = document.getElementById('btn-process');
   _btnProcess.disabled = true;
@@ -2788,6 +2907,73 @@ var _dbAlFiltered  = [];
 var _currentAuditRef  = '';
 var _currentObserver  = { name: '', sapId: '', email: '', isAdmin: false };
 var _emailMode        = 'live'; // 'live' | 'test' — toggled by Admin/Dev only
+
+// ── LOB Selection ─────────────────────────────────────────────────────────────
+var _selectedLOB         = null;
+var _selectedLOBCategory = null;
+var _LOB_OPTIONS = {
+  'Wireline': ['PF CxSS', 'PF CLS', 'PF TS', 'SHS CxSS', 'SHS CLS', 'SHS TS'],
+  'Wireless': ['MOB CxSS', 'MOB CLS', 'MOB TS', 'Koodo', 'Koodo TS']
+};
+
+function showLOBModal() {
+  document.getElementById('lob-overlay').classList.add('visible');
+}
+function hideLOBModal() {
+  document.getElementById('lob-overlay').classList.remove('visible');
+}
+function updateLOBBadge() {
+  var bar  = document.getElementById('lob-badge-bar');
+  var text = document.getElementById('lob-badge-text');
+  if (_selectedLOB) {
+    text.textContent = _selectedLOBCategory + ' › ' + _selectedLOB;
+    bar.style.display = 'flex';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+function _buildLOBSpecificOptions(category) {
+  var group = document.getElementById('lob-spec-group');
+  group.innerHTML = '';
+  (_LOB_OPTIONS[category] || []).forEach(function(lob) {
+    var label = document.createElement('label');
+    label.className = 'lob-radio-opt';
+    var inp = document.createElement('input');
+    inp.type  = 'radio';
+    inp.name  = 'lob-spec';
+    inp.value = lob;
+    label.appendChild(inp);
+    label.appendChild(document.createTextNode(' ' + lob));
+    group.appendChild(label);
+  });
+  document.getElementById('lob-specific-wrap').style.display = 'block';
+  // Specific LOB selection → auto-close
+  group.addEventListener('change', function lobSpecChange(e) {
+    if (e.target.name !== 'lob-spec') return;
+    _selectedLOB = e.target.value;
+    group.querySelectorAll('.lob-radio-opt').forEach(function(el) {
+      el.classList.toggle('lob-selected', el.querySelector('input').value === _selectedLOB);
+    });
+    setTimeout(function() {
+      hideLOBModal();
+      updateLOBBadge();
+    }, 150);
+    group.removeEventListener('change', lobSpecChange);
+  });
+}
+// Category change → show specific options
+document.addEventListener('DOMContentLoaded', function() {
+  var catGroup = document.getElementById('lob-cat-group');
+  catGroup.addEventListener('change', function(e) {
+    if (e.target.name !== 'lob-cat') return;
+    _selectedLOBCategory = e.target.value;
+    _selectedLOB = null;
+    catGroup.querySelectorAll('.lob-radio-opt').forEach(function(el) {
+      el.classList.toggle('lob-selected', el.querySelector('input').value === _selectedLOBCategory);
+    });
+    _buildLOBSpecificOptions(_selectedLOBCategory);
+  });
+});
 
 function toggleEmailMode() {
   _emailMode = (_emailMode === 'live') ? 'test' : 'live';
@@ -4525,7 +4711,8 @@ function getFormData() {
     auditRef:       _currentAuditRef,
     observerName:   _currentObserver.name || _currentObserver.email || '',
     observerEmail:  _currentObserver.email || '',
-    agentEmail:     document.getElementById('agentEmail').value.trim()
+    agentEmail:     document.getElementById('agentEmail').value.trim(),
+    selectedLOB:    _selectedLOB || ''
   };
 }
 
@@ -5246,6 +5433,9 @@ function sendChatMessage() {
 
 // Send on Enter (Shift+Enter = new line)
 document.addEventListener('DOMContentLoaded', function() {
+  // Show LOB selection modal immediately on page load
+  showLOBModal();
+
   var inp = document.getElementById('chat-input');
   if (inp) {
     inp.addEventListener('keydown', function(e) {

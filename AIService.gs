@@ -741,9 +741,13 @@ function sharedCSS() {
 // ─────────────────────────────────────────────────────────────────────────────
 // REPEATS PROMPT — asks AI to return complete HTML
 // ─────────────────────────────────────────────────────────────────────────────
-function buildRepeatsPrompt(transcriptText, knowledgeText, agentName) {
+function buildRepeatsPrompt(transcriptText, knowledgeText, agentName, selectedLOB) {
   var kb = knowledgeText
     ? '\n\nCOMPANY POLICIES AND PROCEDURES:\n' + knowledgeText + '\n\n'
+    : '';
+  var lobKb = selectedLOB ? getLOBKnowledge(selectedLOB) : '';
+  var lobBlock = lobKb
+    ? '\n\nLOB & ROLE-SPECIFIC EVALUATION GUIDELINES:\nThe agent being audited is in the role: ' + selectedLOB + '. Apply the following role-specific criteria when identifying opportunities and generating coaching recommendations. Flag any deviations from these process requirements prominently in your Critical Flags section.\n\n' + lobKb + '\n\n'
     : '';
   var focusLine = agentName
     ? 'IMPORTANT: This transcript may contain multiple agents. Evaluate ONLY the performance of ' + agentName + '. Any other agents are context only — do not evaluate or score their performance.\n\n'
@@ -864,15 +868,20 @@ function buildRepeatsPrompt(transcriptText, knowledgeText, agentName) {
     'Do NOT use markdown.\n' +
     'Make all contenteditable="true" attributes present on td and li elements.\n\n' +
     kb +
+    lobBlock +
     'TRANSCRIPT:\n\n' + transcriptText;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SALES PROMPT — asks AI to return complete HTML
 // ─────────────────────────────────────────────────────────────────────────────
-function buildSalesPrompt(transcriptText, knowledgeText, agentName) {
+function buildSalesPrompt(transcriptText, knowledgeText, agentName, selectedLOB) {
   var kb = knowledgeText
     ? '\n\nCOMPANY POLICIES AND PROCEDURES:\n' + knowledgeText + '\n\n'
+    : '';
+  var lobKb = selectedLOB ? getLOBKnowledge(selectedLOB) : '';
+  var lobBlock = lobKb
+    ? '\n\nLOB & ROLE-SPECIFIC EVALUATION GUIDELINES:\nThe agent being audited is in the role: ' + selectedLOB + '. Apply the following role-specific criteria when evaluating sales performance. Flag any deviations prominently in your Critical Flags section.\n\n' + lobKb + '\n\n'
     : '';
   var focusLine = agentName
     ? 'IMPORTANT: This transcript may contain multiple agents. Evaluate ONLY the performance of ' + agentName + '. Any other agents are context only — do not evaluate or score their performance.\n\n'
@@ -1005,11 +1014,184 @@ function buildSalesPrompt(transcriptText, knowledgeText, agentName) {
     'Do NOT include any text outside the HTML tags.\n' +
     'Make all td and li elements contenteditable="true".\n\n' +
     kb +
+    lobBlock +
     'TRANSCRIPT:\n\n' + transcriptText;
 }
 
+// ── LOB-specific process evaluation knowledge ──────────────────────────────────
+function getLOBKnowledge(selectedLOB) {
+  var lob = (selectedLOB || '').toString().trim().toUpperCase().replace(/\s+/g,' ');
+
+  if (lob === 'PF CXSS') {
+    return 'LOB ROLE: PF CxSS — PureFibre Frontline Care\n\n' +
+    'TRANSFER RULES (flag violations):\n' +
+    '• Always probe and exhaust options before transferring. Never transfer without trying to resolve.\n' +
+    '• To Retention/CLS: ONLY for genuine churn risk. INVALID: Copper Compass customers, non-churn issues, deceased, domestic violence, billing-only, tech support, natural disasters.\n' +
+    '• Do NOT place any orders before transferring to Retention.\n' +
+    '• Do NOT promise what Retention can do (never say "they can waive fees" or "they can match that offer").\n' +
+    '• Always inform customer they are being transferred. Warm transfer: CRMT, PRC, Abusive customer, CLS1→CLS2 only. All others = informed (cold) transfer.\n' +
+    '• Verify customer in Casa before transferring. Leave detailed account notes.\n' +
+    '• Before transferring to TS: verify service is provisioned in CSR; confirm customer is at home with time for troubleshooting; probe first; select correct TS department.\n\n' +
+    'PLATFORM ROUTING (flag if wrong):\n' +
+    '• Compass customers → Compass CxSS. FIFA/PureFibre → FIFA CxSS.\n' +
+    '• Cease/cancel on PureFibre FIFA → transfer to FFH PureFibre Loyalty CLS.\n' +
+    '• Cease/cancel on Compass → transfer to FFH Copper Loyalty CLS.\n' +
+    '• Escalations → Consumer Escalation Process → CRMT (WLN CRMT EN) if necessary.\n\n' +
+    'SELF-SERVE POLICY (flag violations):\n' +
+    '• Self-serve ONLY transactions (NOT available at call centre): payment arrangements, appointment reschedule, billing address change, My TELUS password reset, WiFi/SSID change, one-time payment, PIN change, e.bill to paper, pre-authorized payments.\n' +
+    '• Check Self Serve Only indicator in Personal profile tab first.\n' +
+    '• Required positioning: "This transaction now needs to be completed online. Would you like me to show you how?"\n' +
+    '• Escalate to CRMT ONLY if customer requests manager/escalation or mentions CCTS. Simply refusing self-serve = NOT valid escalation reason.\n\n' +
+    'CALLBACKS (flag violations):\n' +
+    '• Confirm callback number at start of EVERY call. Update mobile number on profile.\n' +
+    '• Scheduled callbacks: ONLY offer when customer specifically requests (never proactively).\n' +
+    '• INVALID follow-up scenarios: sales/re-contracting, bill review after adjustments, remote resolve, callback for another dept (unless HS CxSS/TS specific exception).\n\n' +
+    'AVOID REPEAT CALLS (flag if missing):\n' +
+    '• MANDATORY end-of-call: "I really value your time — I want to make sure you have everything you need so you don\'t have to call back. Do you need help with any other TELUS services?"\n' +
+    '• Check Repeat Indicator in Casa/Genesys before ending call.\n' +
+    '• Complete ALL commitments made during the call (tickets, follow-ups).\n\n' +
+    'CEB BEHAVIORS (flag if missing):\n' +
+    '• PARAPHRASE & CONFIRM: Paraphrase request back ("Just to be clear, you are calling to..."), check Repeat Indicator, share relevant account context.\n' +
+    '• DISCOVERY: Ask open-ended WHY question FIRST before presenting solution. Use benefit-led transition ("If I was able to...would you consider?").\n' +
+    '• HOLD TECHNIQUES: Lead with benefit before holding, ask permission, get callback number, check in within 2 minutes, thank on return. Use HOLD not MUTE for processing.\n' +
+    '• ENSURING UNDERSTANDING: Give permission to interrupt, ask permission to probe, suggest pen/paper before complex info, ask "What was clear and what needs more review?" after explaining.\n' +
+    '• CAN DO SOLUTIONS: Thank customer → summarize root cause → state what I CAN do → confirm satisfaction before proceeding.\n' +
+    '• CHECK FOR SATISFACTION (MANDATORY every call): "I really value your time... Is there anything else? Do you need help with other TELUS services?" End with name + personalized closing.\n' +
+    '• GREAT RECAPPING: Paraphrase reason for calling → recap steps taken → reinforce extras done for customer → offer to write down.\n';
+  }
+
+  if (lob === 'PF CLS') {
+    return 'LOB ROLE: PF CLS — PureFibre Retention/Loyalty\n\n' +
+    'OFFER BUILDING SEQUENCE (flag violations):\n' +
+    '• STEP 1: Make emotional connection FIRST (empathy, willingness to help) BEFORE any offer.\n' +
+    '• STEP 2: Probe customer needs (What changed? What matters most? What are they paying now? Competitor offer details?).\n' +
+    '• STEP 3: Check Casa Offers FIRST — always before manual CLS codes.\n' +
+    '• STEP 4: Must always offer speed UPGRADE. Present 2 upgrade options: Priority 1 ($20+ lift), Priority 2 ($10+ lift), Priority 3 (same price). Never just one option.\n' +
+    '• Lead with VALUE (5-year price lock, Simple Everyday Pricing) NOT discounts. Call it "loyalty rate" not "regular price."\n' +
+    '• ATL (recommended tile) first; BTL only as back-pocket to close.\n' +
+    '• Do NOT offer legacy/non-current plans — always upgrade to current PureFibre West 2026 plans.\n' +
+    '• OTC: ONLY for genuine competitor offer match. NEVER to close a price gap or when customer just asks for a credit.\n\n' +
+    'COMPETITOR OFFER HANDLING:\n' +
+    '• Ask: total price, ongoing vs promo duration, regular price after promo, equipment/installation fees, additional charges.\n' +
+    '• Lead with TELUS advantages (5-year price lock, symmetrical speeds, direct fibre), not by attacking competitors.\n\n' +
+    'CEASE/CANCEL BEST PRACTICES (flag violations):\n' +
+    '• Date ceases to END of current bill cycle. If customer wants sooner, process and advise partial charges.\n' +
+    '• When applying new offer/renewal: REMOVE ALL existing discounts FIRST.\n' +
+    '• Cease standalone equipment — not doing so prevents BAN closure (CCTS risk).\n' +
+    '• Check TELUS Rewards before ceasing: advise customer they lose points; date cease so they can use outstanding points (do NOT advise to call back).\n' +
+    '• Do NOT proactively offer manager callback. Never refuse manager request.\n' +
+    '• Do NOT place orders before transferring to CLS2.\n\n' +
+    'ETF/SATF RULES (flag if wrong amount or inappropriate waiver):\n' +
+    '• Check SA start date: on/after April 11 2026 = $20/month; before = $15/month per service.\n' +
+    '• Cannot stack Internet ETF + Boost Wi-Fi Easy Payment ETF.\n' +
+    '• GWP cancellation fees: auto-waived for SA entered before July 28 2023 (CRTC). Do not manually charge.\n' +
+    '• ETF waiver sensitive scenarios (NEVER proactively ask): Armed Forces transferred out of province, deceased customer, customer escaping domestic abuse.\n\n' +
+    'PRE-INSTALL SAVE: Max $100 in Casa (not CSR). Tag: #Preinstallsave in comments. No stacking with CSR retention offers.\n\n' +
+    'CCTS HANDLING (flag violations):\n' +
+    '• If customer mentions CCTS/CRTC/BBB/Legal/Office of President: acknowledge → diffuse → warm transfer to CRMT immediately.\n' +
+    '• If customer declines transfer: advise callback + connect with CRMT queue to inform them.\n\n' +
+    'CEB BEHAVIORS (same as PF CxSS — all 7 apply, especially Overcoming Objections and Negotiations).\n';
+  }
+
+  if (lob === 'PF TS') {
+    return 'LOB ROLE: PF TS — PureFibre Technical Support\n\n' +
+    'SUPPORT SCOPE:\n' +
+    'IN SCOPE: Internet/TV troubleshooting, modem issues, wireless connectivity/speed, Optik TV, remote troubleshooting/replacement, port profile changes, outage support, appointment management.\n' +
+    'OUT OF SCOPE (flag if handled incorrectly): Port forwarding/bridge mode, order-related provisioning, Smart Hub, customer device issues (laptops, smart TVs — refer to manufacturer), domain/server support, inside wiring appointments.\n\n' +
+    'BEFORE TRANSFERRING TS → CARE (flag if skipped):\n' +
+    '• Complete all available TS troubleshooting first.\n' +
+    '• Check Dispatch Status Tool for install date before transferring.\n' +
+    '• Transfer to Care for: account changes, billing inquiries, equipment adds/deletions.\n\n' +
+    'ORDER STATUS OWNERSHIP:\n' +
+    '• Initial/Negotiation/Cancelled → always CARE.\n' +
+    '• Delivery (RW/SW/FW completed) → TS owns.\n' +
+    '• Completion/Done → TS owns.\n' +
+    '• Same-day order script: "Your order is dated for today. If services not working by tomorrow morning, please call 310-2255 and select Repair."\n\n' +
+    'CEB BEHAVIORS (apply all 7 CEB items).\n';
+  }
+
+  if (lob === 'SHS CXSS') {
+    return 'LOB ROLE: SHS CxSS — SmartHome Security Frontline\n\n' +
+    'PRE-INSTALL REQUIREMENTS (flag if not covered):\n' +
+    '• Minimum 2 bars cellular coverage required for professionally monitored plans — technician cannot install without it.\n' +
+    '• Authorized user 18+ must be present for full installation — failure = incomplete install.\n' +
+    '• Emergency contacts: 1 site number + 2 alternatives (all unique, Canadian, not toll-free, with person name).\n' +
+    '• 48-hour test mode after install: "Services monitored; however 2-way voice not active and no emergency services dispatched via CMS."\n' +
+    '• Ask about pets (calibrate sensor sensitivity), firearms (inform CMS), age of home (asbestos).\n' +
+    '• Quebec: Smart Thermostat CANNOT be installed by TELUS technicians.\n' +
+    '• MDU: Outdoor cameras and doorbell cameras CANNOT be installed.\n\n' +
+    'EQUIPMENT RETURN (flag if wrong advice):\n' +
+    '• NEVER tell customer to throw away or recycle TELUS equipment.\n' +
+    '• Cease: return Qolsys IQ panel, keypads, cameras, thermostat, garage opener. Leave: door locks, smoke/CO/motion/flood sensors, 4-button remote, legacy panels.\n' +
+    '• 45-day return window, free Canada Post shipping.\n' +
+    '• Both CxSS and CLS can credit unreturned equipment — no need to transfer to CLS for this.\n' +
+    '• Can credit even without waybill if customer confirms equipment returned.\n' +
+    '• SHS wall-mounted panel → issue credit IMMEDIATELY (removing damages wall). Table-mounted → customer returns first, THEN credit.\n\n' +
+    'CANCEL/CEASE ROUTING: ALL SHS cancellations → transfer to SHS Retention (no exceptions).\n\n' +
+    'DECEASED CUSTOMER (flag violations):\n' +
+    '• Death certificate NOT required (removed June 2026).\n' +
+    '• Service MUST be cancelled or transferred within 30 days — beyond 30 days = legally considered fraud.\n' +
+    '• Mandatory: change billing to "Estate of", set up paper billing, send CAM notification via Casa Notify (Level 2 - Related disputes), remove from marketing lists.\n\n' +
+    'CEB BEHAVIORS (apply all 7 CEB items).\n';
+  }
+
+  if (lob === 'SHS CLS') {
+    return 'LOB ROLE: SHS CLS — SmartHome Security Retention\n\n' +
+    'ROUTING RULE: ALL SHS cancellation requests → SHS Retention handles (no exceptions).\n\n' +
+    'SAVE PROCESS (flag if skipped):\n' +
+    '• Attempt save offer FIRST before processing cease. Review cancellation fees with customer.\n' +
+    '• 30-day satisfaction guarantee cancels: attempt save → waive all fees → submit Google form → advise charges on closing statement waived within 1 week.\n' +
+    '• SHS downgrade to Smart Automation Plus (LAST RESORT — CLS only): try renewal offers first (SHSRENEW5/10/15/20). Only use SAP15MTM if all else fails.\n' +
+    '  - Must read mandatory legal script before proceeding (removes 24/7 monitoring — customer responsible for calling 911).\n' +
+    '  - Get verbal consent from customer. Remove ALL existing discounts first. Send go/send confirmation email after order.\n' +
+    '  - Advise customer to contact home insurance and check alarm permit implications.\n\n' +
+    'SHS ETF (flag if wrong):\n' +
+    '• Check SA start date: after Nov 13 2019: Secure/Control = $15/month, Smart Auto Plus = $10/month, Smart Camera = $5/month.\n' +
+    '• Before Jan 26 2019: Secure = $24, Protect = $32, Control = $39/month remaining.\n' +
+    '• If CSA-quoted ETF is LOWER than guidelines → honor the CSA fee (do not adjust upward).\n' +
+    '• Quebec ILEC/NILEC: Maximum $50 cancellation.\n' +
+    '• ETF exceptions (NEVER proactively ask): deceased, Armed Forces transferred out of province, customer escaping domestic abuse.\n\n' +
+    'RENEWALS (flag violations):\n' +
+    '• Never say "contract" — always "Service Agreement."\n' +
+    '• Do NOT select email for CSA notification — advise customer to access via MyTELUS.\n' +
+    '• CxSS cannot renew Migrated customers — transfer to SHS CLS.\n' +
+    '• Migrated renewal: do NOT add any equipment (forces to in-market plan).\n\n' +
+    'CEASE CHECKLIST (flag if missing):\n' +
+    '• Advise customer to download/save videos BEFORE ceasing (cannot retrieve after cancellation).\n' +
+    '• Return equipment: Qolsys panel, keypads, cameras, thermostat, garage opener. Leave: sensors, door locks, legacy panels.\n\n' +
+    'CEB BEHAVIORS (apply all 7 — especially Overcoming Objections and Offering Solutions).\n';
+  }
+
+  if (lob === 'SHS TS') {
+    return 'LOB ROLE: SHS TS — SmartHome Security Technical Support\n\n' +
+    'CAMERA ROUTING (flag if wrong):\n' +
+    '• Each camera needs 2.5 Mbps upload. Up to 4 cameras → SHS Team (BAU). 5+ cameras → Custom Home Team (go/customleads).\n' +
+    '• alarm.com auto-configures to 4 cameras by default — must manually adjust for 5+ or extra cameras will NOT pair.\n' +
+    '• Video Expansion Pack (8,000 clips): offer REACTIVELY ONLY (customer calls about exceeding clips or is churn risk). 24/7 Recording is first offer. Max 8,000 clips cap.\n\n' +
+    'DIRECT FULFILL / SHIPPING (flag violations):\n' +
+    '• Must manually select Shipping in CSR (defaults to Installer Supplied).\n' +
+    '• Sensors CANNOT be shipped (Phase 1) — technician needed.\n' +
+    '• Equipment damage/missing/stolen: ALWAYS waive equipment AND installation charges (regardless of who is liable).\n\n' +
+    'BATTERIES (flag violations):\n' +
+    '• Do NOT charge customer for batteries. Free shipping for most devices.\n' +
+    '• Qolsys Panel battery (IQ Battery): technician dispatch ONLY (complex), waive truck roll fee.\n' +
+    '• Low battery alert = approx. 2 weeks before dies.\n\n' +
+    'HARDWARE SWAPS (flag violations):\n' +
+    '• Complete all troubleshooting FIRST before offering swap.\n' +
+    '• Warranty: TELUS branded equipment = 1 year; Hardware Store devices = 30 days; Non-TELUS Hardware Store = NOT eligible.\n\n' +
+    'CEB BEHAVIORS (apply all 7 CEB items).\n';
+  }
+
+  if (lob === 'MOB CXSS' || lob === 'MOB CLS' || lob === 'MOB TS' ||
+      lob === 'KOODO' || lob === 'KOODO TS') {
+    return 'LOB ROLE: ' + selectedLOB + ' — Wireless\nNote: Wireless-specific evaluation guidelines will be added in a future update. Apply standard CEB behavior evaluation and general TELUS process principles.\n';
+  }
+
+  return '';
+}
+
 // ── Main orchestrator ─────────────────────────────────────────────────────────
-function analyzeTranscript(transcriptText, analysisType, agentName) {
+function analyzeTranscript(transcriptText, analysisType, agentName, selectedLOB) {
   var knowledgeText = '';
   try {
     knowledgeText = analysisType === 'sales'
@@ -1018,8 +1200,8 @@ function analyzeTranscript(transcriptText, analysisType, agentName) {
   } catch(e) { Logger.log('PDF fetch failed (non-fatal): ' + e); }
 
   var prompt = analysisType === 'sales'
-    ? buildSalesPrompt(transcriptText, knowledgeText, agentName)
-    : buildRepeatsPrompt(transcriptText, knowledgeText, agentName);
+    ? buildSalesPrompt(transcriptText, knowledgeText, agentName, selectedLOB)
+    : buildRepeatsPrompt(transcriptText, knowledgeText, agentName, selectedLOB);
 
   return callFuelIX(prompt);
 }

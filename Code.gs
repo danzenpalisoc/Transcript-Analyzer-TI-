@@ -3327,6 +3327,11 @@ function submitTranscript(formData) {
       return { success: false, error: 'SAP ID and transcript are required.' };
     }
 
+    // If QA analyst manually selected a LOB from the modal, use it as the primary LOB
+    if (formData.selectedLOB) {
+      formData.lineOfBusiness = formData.selectedLOB;
+    }
+
     var analysisType  = formData.analysisType || 'repeats';
     var spreadsheet   = getOrCreateSpreadsheet();
     var now           = new Date();
@@ -3433,7 +3438,7 @@ function submitTranscript(formData) {
       transcriptForAnalysis = filterResult.filtered;
       filterStats = filterResult.stats;
     }
-    var rawAI = analyzeTranscript(transcriptForAnalysis, analysisType, participant);
+    var rawAI = analyzeTranscript(transcriptForAnalysis, analysisType, participant, formData.selectedLOB || '');
     Logger.log('AI response length: ' + rawAI.length);
 
     var html = fixBadgeClasses(
@@ -3611,7 +3616,8 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
 
     var firstName  = agentName.split(' ')[0];
     var evalTitle  = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
-    var subject    = 'Real Time Feedback — ' + agentName + ' (' + sapId + ') | BAN: ' + (formData.customerBAN || 'N/A');
+    var lobLabel   = formData.lineOfBusiness || formData.selectedLOB || '';
+    var subject    = 'Real Time Feedback — ' + agentName + ' (' + sapId + ')' + (lobLabel ? ' | ' + lobLabel : '') + ' | BAN: ' + (formData.customerBAN || 'N/A');
 
     var body =
       'Hi ' + firstName + ',\n\n' +
@@ -3744,8 +3750,9 @@ function sendAuditEmail(formData, htmlResult) {
     var analysisLabel = formData.analysisType === 'sales' ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
     var firstName     = agentName.split(' ')[0];
     var evalTitle     = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
+    var lobDisplay    = formData.selectedLOB || formData.lineOfBusiness || 'N/A';
     var subject       = (effectiveMode === 'test' ? '[TEST] ' : '') +
-                        agentName + ' | ' + auditRef + ' | ' + (formData.observerName || 'N/A') + ' | ' + (formData.lineOfBusiness || 'N/A') + ' | ' + (formData.locale || 'N/A');
+                        agentName + ' | ' + auditRef + ' | ' + (formData.observerName || 'N/A') + ' | ' + lobDisplay + ' | ' + (formData.locale || 'N/A');
 
     // ── Plain-text body ───────────────────────────────────────────────────────
     var body =
