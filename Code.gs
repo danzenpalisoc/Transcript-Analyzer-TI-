@@ -3610,13 +3610,14 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
     }
 
     // ── 3. QA Team Leader(s) ─────────────────────────────────────────────────
-    var qaTLEmails = getRecipientsFromRoster(QA_TL_ROLE).map(function(r) { return r.email; });
-
-    // ── 4. Admin/Dev ──────────────────────────────────────────────────────────
-    var adminEmails = getRecipientsFromRoster('Admin/Dev').map(function(r) { return r.email; });
+    var qaTLEmails     = getRecipientsFromRoster(QA_TL_ROLE).map(function(r) { return r.email; });
+    // ── 4. Trainer(s) ────────────────────────────────────────────────────────
+    var trainerEmails  = getRecipientsFromRoster(TRAINER_ROLE).map(function(r) { return r.email; });
+    // ── 5. Admin/Dev ──────────────────────────────────────────────────────────
+    var adminEmails    = getRecipientsFromRoster('Admin/Dev').map(function(r) { return r.email; });
 
     // ── Deduplicate and validate ───────────────────────────────────────────────
-    var allEmails = [teamMemberEmail, qaEmail].concat(qaTLEmails).concat(adminEmails);
+    var allEmails = [teamMemberEmail, qaEmail].concat(qaTLEmails).concat(trainerEmails).concat(adminEmails);
     var validRe   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     var seen      = {};
     var recipients = allEmails.filter(function(e) {
@@ -3743,11 +3744,13 @@ function sendAuditEmail(formData, htmlResult) {
         qaEmailAddr   = qaMatch_.length ? qaMatch_[0].email : resolveEmail(observerName_);
       }
       // QA Team Leaders
-      var qaTLEmails_  = getRecipientsFromRoster(QA_TL_ROLE).map(function(r) { return r.email; });
+      var qaTLEmails_     = getRecipientsFromRoster(QA_TL_ROLE).map(function(r) { return r.email; });
+      // Trainer(s)
+      var trainerEmails_  = getRecipientsFromRoster(TRAINER_ROLE).map(function(r) { return r.email; });
       // Admin/Dev
-      var adminEmails_ = getRecipientsFromRoster('Admin/Dev').map(function(r) { return r.email; });
+      var adminEmails_    = getRecipientsFromRoster('Admin/Dev').map(function(r) { return r.email; });
 
-      var allEmails_ = [agentEmailAddr, agentTLEmail, qaEmailAddr].concat(qaTLEmails_).concat(adminEmails_);
+      var allEmails_ = [agentEmailAddr, agentTLEmail, qaEmailAddr].concat(qaTLEmails_).concat(trainerEmails_).concat(adminEmails_);
       var validRe_   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       var seen_      = {};
       recipients = allEmails_.filter(function(e) {

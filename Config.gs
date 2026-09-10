@@ -49,8 +49,9 @@ var AUDIT_TRACKING_SS_ID = '1wy65jF6bz15tIQs5uozxksA2z7yDwxWOszaOrVCGuaM';
 
 // Role names in the Audit Tracking SS → Roster tab (Col B).
 // Update these if the exact spelling in your sheet differs.
-var QA_ROLE    = 'QA';
-var QA_TL_ROLE = 'QA Team Leader';
+var QA_ROLE      = 'QA';
+var QA_TL_ROLE   = 'QA Team Leader';
+var TRAINER_ROLE = 'Trainer';
 
 // Admin/Dev usernames (part before @) — controls Live/Test toggle visibility
 var ADMIN_USERNAMES = [
