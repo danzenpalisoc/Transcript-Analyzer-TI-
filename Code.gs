@@ -3671,13 +3671,7 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
       analysisLabel, evalUrl
     );
 
-    MailApp.sendEmail({
-      to:       recipients.join(','),
-      subject:  subject,
-      body:     body,
-      htmlBody: htmlBody,
-      name:     'NH Call Analyzer'
-    });
+    sendEmailInBatches_(recipients, subject, body, htmlBody, 'NH Call Analyzer');
 
     Logger.log('Submission email sent to: ' + recipients.join(', '));
     updateDashboardPDFLink(interactionId, 'Auto-sent', recipients, auditRef);
@@ -3809,14 +3803,8 @@ function sendAuditEmail(formData, htmlResult) {
       analysisLabel, evalUrl
     );
 
-    // ── Send email ────────────────────────────────────────────────────────────
-    MailApp.sendEmail({
-      to:      recipients.join(','),
-      subject: subject,
-      body:    body,
-      htmlBody: htmlBody,
-      name:        'NH Call Analyzer'
-    });
+    // ── Send email (in batches to stay under the 50-recipient-per-message limit) ──
+    sendEmailInBatches_(recipients, subject, body, htmlBody, 'NH Call Analyzer');
 
     // ── Update sheets ─────────────────────────────────────────────────────────
     updateDashboardPDFLink(interactionId, 'Sent via email', recipients, auditRef);
@@ -3841,6 +3829,23 @@ function sendAuditEmail(formData, htmlResult) {
   } catch(e) {
     Logger.log('sendAuditEmail error: ' + e.toString());
     return { success: false, error: e.toString() };
+  }
+}
+
+// ── Batch email sender — splits recipients into chunks of 50 to stay under ────
+// ── Google Apps Script's "Email Recipients Per Message" limit ─────────────────
+function sendEmailInBatches_(recipients, subject, body, htmlBody, senderName) {
+  var BATCH_SIZE = 50;
+  for (var i = 0; i < recipients.length; i += BATCH_SIZE) {
+    var chunk = recipients.slice(i, i + BATCH_SIZE);
+    MailApp.sendEmail({
+      to:       chunk.join(','),
+      subject:  subject,
+      body:     body,
+      htmlBody: htmlBody,
+      name:     senderName || 'NH Call Analyzer'
+    });
+    Logger.log('sendEmailInBatches_: sent batch ' + (Math.floor(i / BATCH_SIZE) + 1) + ' (' + chunk.length + ' recipients)');
   }
 }
 
