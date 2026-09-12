@@ -121,23 +121,43 @@ var _CACHE_CHUNK_SIZE = 48000; // safe margin under Google Sheets 50k cell limit
 function saveCachedResult(interactionId, analysisType, htmlResult) {
   if (!interactionId) return;
   try {
-    var html  = htmlResult || '';
-    var atype = (analysisType || '').trim();
-    var id    = interactionId.trim();
+    var html      = htmlResult || '';
+    var atype     = (analysisType || '').trim();
+    var id        = interactionId.trim();
+    var typeLower = atype.toLowerCase();
 
-    // Write to CacheService immediately (next lookup will be O(1))
-    var csKey = _RESULT_CS_PREFIX + id + '_' + atype.toLowerCase();
-    try { CacheService.getScriptCache().put(csKey, html.substring(0, 95000), _RESULT_CS_TTL); } catch(ce) {}
+    // Write to CacheService (skip if payload exceeds 100KB — truncated HTML
+    // causes broken evaluations; the sheet-based path handles large payloads correctly)
+    var csKey = _RESULT_CS_PREFIX + id + '_' + typeLower;
+    var _csHtml = html;
+    if (_csHtml.length <= 99000) {
+      try { CacheService.getScriptCache().put(csKey, _csHtml, _RESULT_CS_TTL); } catch(ce) {}
+    }
 
-    // Write to Cache sheet — split into chunks if needed
+    // Write to Cache sheet — delete any stale rows first (includes chunk rows
+    // like sales_2, sales_3) so a concurrent re-submission does not leave orphaned
+    // rows that findCachedResult would concatenate with the new HTML.
     var ss    = getOrCreateSpreadsheet();
     var sheet = getOrCreateSheet(ss, CACHE_SHEET);
     ensureHeaders(sheet, CACHE_HEADERS);
 
+    var lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      var colAB = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+      for (var d = colAB.length - 1; d >= 0; d--) {
+        var rowId   = (colAB[d][0] || '').toString().trim();
+        var rowType = (colAB[d][1] || '').toString().trim().toLowerCase();
+        if (rowId === id &&
+            (rowType === typeLower || rowType.indexOf(typeLower + '_') === 0)) {
+          sheet.deleteRow(d + 2); // +2: 1-based index + skip header row
+        }
+      }
+    }
+
     var chunkCount = Math.ceil(html.length / _CACHE_CHUNK_SIZE) || 1;
     for (var c = 0; c < chunkCount; c++) {
-      var chunk    = html.substring(c * _CACHE_CHUNK_SIZE, (c + 1) * _CACHE_CHUNK_SIZE);
-      var rowType  = c === 0 ? atype : atype + '_' + (c + 1);
+      var chunk   = html.substring(c * _CACHE_CHUNK_SIZE, (c + 1) * _CACHE_CHUNK_SIZE);
+      var rowType = c === 0 ? atype : atype + '_' + (c + 1);
       sheet.appendRow([id, rowType, new Date(), chunk]);
     }
     Logger.log('Cached result for: ' + id + ' (' + html.length + ' chars, ' + chunkCount + ' chunk(s))');

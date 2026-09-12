@@ -1713,17 +1713,11 @@ function notifyAdmins(formData, auditRef) {
       cleanIntId, direction, duration, evalUrl
     );
 
-    // ── Send one consolidated email to all admins — prevents multiple copies
-    // in shared inboxes when there are multiple Admin/Dev recipients ───────────
+    // ── Send via batch helper — handles Admin/Dev rosters > 50 addresses ────────
     var adminEmails = recipients.map(function(r) { return r.email; });
     try {
-      MailApp.sendEmail({
-        to:       adminEmails.join(','),
-        subject:  subject,
-        body:     plainBody,
-        htmlBody: htmlBody,
-        name:     'NH Call Analyzer — Admin Notifications'
-      });
+      sendEmailInBatches_(adminEmails, subject, plainBody, htmlBody,
+                          'NH Call Analyzer — Admin Notifications');
       Logger.log('Admin notification sent to: ' + adminEmails.join(', '));
     } catch(emailErr) {
       Logger.log('Admin notification failed: ' + emailErr);
@@ -3353,21 +3347,24 @@ function submitTranscript(formData) {
     // Two QA analysts submitting the same Interaction ID concurrently would each
     // pass the cache-miss check, both run the AI (~2-5 min each), and both
     // append duplicate rows to every sheet.  We use a short LockService window
-    // to atomically check/set a ScriptProperties "processing" flag, then release
+    // to atomically check/set a CacheService "processing" flag, then release
     // the lock immediately so the slow AI work does not block other submissions.
+    // CacheService (not PropertiesService) is used because it supports TTL:
+    // if a GAS execution is killed by the 6-minute hard timeout, the flag
+    // auto-expires and the interaction becomes submittable again — PropertiesService
+    // has no expiry and would deadlock that interaction ID permanently.
     var _intIdForLock = (formData.interactionId || '').trim();
     if (_intIdForLock) {
       var _lock = LockService.getScriptLock();
       var _alreadyProcessing = false;
       try {
-        _lock.waitLock(6000); // only hold long enough to read+write one property
-        var _props = PropertiesService.getScriptProperties();
-        var _procKey = 'proc_' + _intIdForLock;
-        if (_props.getProperty(_procKey)) {
+        _lock.waitLock(6000); // only hold long enough to read+write one cache entry
+        var _procCache = CacheService.getScriptCache();
+        var _procKey   = 'proc_' + _intIdForLock;
+        if (_procCache.get(_procKey)) {
           _alreadyProcessing = true;
         } else {
-          // Expires automatically after 8 minutes (GAS execution limit buffer)
-          _props.setProperty(_procKey, String(Date.now()));
+          _procCache.put(_procKey, String(Date.now()), 10 * 60); // auto-expires in 10 min
         }
       } catch(le) {
         Logger.log('submitTranscript: lock acquisition failed — ' + le);
@@ -3596,7 +3593,7 @@ function submitTranscript(formData) {
 
     // ── Release the per-Interaction-ID processing flag ──────────────────────
     if (_intIdForLock) {
-      try { PropertiesService.getScriptProperties().deleteProperty('proc_' + _intIdForLock); } catch(pe) {}
+      try { CacheService.getScriptCache().remove('proc_' + _intIdForLock); } catch(pe) {}
     }
 
     return {
@@ -3624,7 +3621,7 @@ function submitTranscript(formData) {
     // Release the processing flag on error so the analyst can retry
     try {
       var _intIdForLockErr = (formData && formData.interactionId || '').trim();
-      if (_intIdForLockErr) PropertiesService.getScriptProperties().deleteProperty('proc_' + _intIdForLockErr);
+      if (_intIdForLockErr) CacheService.getScriptCache().remove('proc_' + _intIdForLockErr);
     } catch(pe) {}
     return { success: false, error: e.toString() };
   }
