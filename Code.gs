@@ -3700,7 +3700,12 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
                         ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
 
     // ── 1. Team Member (agent being audited) ──────────────────────────────────
-    var teamMemberEmail = lookupAgentEmail(agentName);
+    // Three-level fallback mirrors sendAuditEmail: roster cache → resolveEmail
+    // (secondary roster read) → formData.agentEmail (client-resolved, last resort).
+    // Without this chain, new agents not yet in the roster are silently excluded.
+    var teamMemberEmail = lookupAgentEmail(agentName)
+                        || resolveEmail(agentName)
+                        || (formData.agentEmail || '').trim();
 
     // ── 2. QA / Observer ─────────────────────────────────────────────────────
     var qaEmail = '';
