@@ -14,13 +14,28 @@ function getOrCreateSheet(spreadsheet, sheetName) {
 }
 
 function ensureHeaders(sheet, headers) {
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(headers);
-    sheet.getRange(1, 1, 1, headers.length)
-      .setFontWeight('bold')
-      .setBackground('#4B286D')
-      .setFontColor('#ffffff');
-    sheet.setFrozenRows(1);
+  // Fast path — if headers already exist, skip the lock entirely.
+  if (sheet.getLastRow() > 0) return;
+
+  // Double-checked locking: two concurrent executions can both see getLastRow()===0
+  // and both enter the slow path. Acquiring the lock then re-checking prevents both
+  // from appending a header row, which would corrupt every subsequent cache read
+  // (row 2 would be a second header instead of data).
+  var _ehLock = LockService.getScriptLock();
+  try {
+    _ehLock.waitLock(5000);
+    if (sheet.getLastRow() === 0) { // re-check after acquiring lock
+      sheet.appendRow(headers);
+      sheet.getRange(1, 1, 1, headers.length)
+        .setFontWeight('bold')
+        .setBackground('#4B286D')
+        .setFontColor('#ffffff');
+      sheet.setFrozenRows(1);
+    }
+  } catch(le) {
+    Logger.log('ensureHeaders: lock failed — ' + le);
+  } finally {
+    try { _ehLock.releaseLock(); } catch(le2) {}
   }
 }
 
@@ -173,26 +188,10 @@ function updateCachedResult(interactionId, analysisType, editedHTML) {
     var id        = interactionId.trim();
     var typeLower = (analysisType || '').trim().toLowerCase();
 
-    var ss    = getOrCreateSpreadsheet();
-    var sheet = getOrCreateSheet(ss, CACHE_SHEET);
-    ensureHeaders(sheet, CACHE_HEADERS);
-
-    // Delete all existing rows for this id + type (includes chunks: sales_2, repeats_2, etc.)
-    // Iterate bottom-up so row indices don't shift during deletion
-    var lastRow = sheet.getLastRow();
-    if (lastRow >= 2) {
-      var colAB = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-      for (var i = colAB.length - 1; i >= 0; i--) {
-        var rowId   = (colAB[i][0] || '').toString().trim();
-        var rowType = (colAB[i][1] || '').toString().trim().toLowerCase();
-        if (rowId === id &&
-            (rowType === typeLower || rowType.indexOf(typeLower + '_') === 0)) {
-          sheet.deleteRow(i + 2); // +2: 1-based + skip header
-        }
-      }
-    }
-
-    // Write new chunks with the edited HTML
+    // Deletion of stale chunk rows is handled inside saveCachedResult.
+    // The deletion block that was here previously was redundant dead code —
+    // saveCachedResult performs the identical bottom-up deletion before appending,
+    // so this function's pre-deletion was a no-op that only added sheet API I/O.
     saveCachedResult(id, analysisType, editedHTML);
     Logger.log('updateCachedResult: replaced cache for ' + id + ' (' + typeLower + ')');
   } catch(e) {
