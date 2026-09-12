@@ -4314,6 +4314,16 @@ function escEmail(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+// Full HTML escaping (including double-quotes for href/attribute contexts).
+// NOTE: esc() is used by renderAnalyticsHTML — do NOT remove it when cleaning up
+// the dead-code HTML builders block below.
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Agent-facing evaluation email — friendly intro matching the New Hire design
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4404,7 +4414,7 @@ function buildAgentEmailHTML(evalTitle, firstName, agentName, sapId,
 
       // CTA Button
       '<div style="text-align:center;margin-bottom:28px">' +
-        '<a href="' + (evalUrl || '#') + '" ' +
+        '<a href="' + e(evalUrl || '#') + '" ' +
            'style="display:inline-block;background:#4B286D;color:#fff;text-decoration:none;' +
                   'border-radius:6px;padding:13px 32px;font-size:14px;font-weight:700;' +
                   'letter-spacing:.3px;text-align:center">' +
@@ -4693,15 +4703,9 @@ function _removedServerParseJSON_doNotCall(text) {
 // ─────────────────────────────────────────────────────────────────────────────
 // DEAD CODE — HTML builders below are no longer called.
 // The project switched to AI returning HTML directly (prompt-based approach).
-// Kept commented out to avoid breaking any lingering references during cleanup.
-// Safe to delete entirely in a future cleanup pass.
+// Safe to delete in a future cleanup pass — EXCEPT: esc() has been moved above
+// this block (near escEmail) because renderAnalyticsHTML() is live and uses it.
 // ─────────────────────────────────────────────────────────────────────────────
-function esc(s) {
-  if (s === null || s === undefined) return '';
-  return String(s)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
 
 function buildResultHTML(d, analysisType) {
   return analysisType === 'sales'
