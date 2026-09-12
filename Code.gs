@@ -79,6 +79,36 @@ function diagnoseSalesEvaluations() {
 
 // Step 2a — repair ONE entry at a time (safe for 6-min GAS timeout).
 // Run this function repeatedly until diagnoseSalesEvaluations() shows Truncated: 0.
+// ── Clears ev2_ CacheService entries for all audit refs tied to an interaction ID ──
+// Called after repair functions so EvalView pages serve the repaired HTML immediately
+// instead of serving stale broken HTML until the 6-hour CacheService TTL expires.
+function _clearEv2CacheForInteraction_(interactionId, ss) {
+  if (!interactionId) return;
+  try {
+    var logSheet = getOrCreateSheet(ss || getOrCreateSpreadsheet(), AUDIT_LOG_SHEET);
+    var lastRow  = logSheet.getLastRow();
+    if (lastRow < 2) return;
+    var headers  = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0];
+    var idCol    = headers.indexOf('Interaction ID');
+    var refCol   = headers.indexOf('Audit Ref');
+    if (idCol < 0 || refCol < 0) return;
+    var data = logSheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+    var sc   = CacheService.getScriptCache();
+    data.forEach(function(row) {
+      if ((row[idCol] || '').toString().trim() === interactionId) {
+        var auditRef = (row[refCol] || '').toString().trim();
+        if (auditRef) {
+          var evKey = 'ev2_' + Utilities.base64Encode(auditRef).substring(0, 200);
+          try { sc.remove(evKey); } catch(ce) {}
+        }
+      }
+    });
+    Logger.log('_clearEv2CacheForInteraction_: cleared ev2_ entries for ' + interactionId);
+  } catch(e) {
+    Logger.log('_clearEv2CacheForInteraction_ error: ' + e);
+  }
+}
+
 function repairNextTruncated() {
   var diagnosis = diagnoseSalesEvaluations();
   if (!diagnosis || !diagnosis.truncatedList || !diagnosis.truncatedList.length) {
@@ -138,6 +168,11 @@ function repairNextTruncated() {
   saveCachedResult(entry.interactionId.trim(), 'sales', newHtml);
   SpreadsheetApp.flush();
 
+  // Clear ev2_ CacheService entries for all audit refs tied to this interaction.
+  // Without this, EvalView pages loaded before the repair continue serving the old
+  // broken HTML until the 6-hour CacheService TTL expires on its own.
+  _clearEv2CacheForInteraction_(entry.interactionId.trim(), ss);
+
   var chunks = Math.ceil(newHtml.length / 48000);
   Logger.log('✅ Repaired id=' + entry.interactionId.substring(0,8) + '...' +
              ' len=' + newHtml.length + ' chunks=' + chunks +
@@ -192,8 +227,9 @@ function repairTruncatedSalesEvaluations() {
       // than the truncation it was trying to fix.
       saveCachedResult(entry.interactionId, 'sales', newHtml);
 
-      // Invalidate ev2_ CacheService entry for all audits referencing this interaction
-      var sc = CacheService.getScriptCache();
+      // Clear ev2_ CacheService entries so EvalView pages serve the repaired HTML
+      // immediately instead of waiting up to 6 hours for the TTL to expire.
+      _clearEv2CacheForInteraction_(entry.interactionId.trim(), ss);
       Logger.log('Repaired: ' + entry.interactionId + ' (new len=' + newHtml.length + ')');
       repaired++;
       Utilities.sleep(2000); // avoid rate limiting between AI calls
@@ -3803,10 +3839,11 @@ function sendAuditEmail(formData, htmlResult) {
       var qaTLEmails_     = getRecipientsFromRoster(QA_TL_ROLE).map(function(r) { return r.email; });
       // Trainer(s)
       var trainerEmails_  = getRecipientsFromRoster(TRAINER_ROLE).map(function(r) { return r.email; });
-      // Admin/Dev
-      var adminEmails_    = getRecipientsFromRoster('Admin/Dev').map(function(r) { return r.email; });
+      // Admin/Dev is intentionally excluded here: notifyAdmins() sends a dedicated
+      // notification to Admin/Dev at the end of this function. Including adminEmails_
+      // here caused a guaranteed double-send to every Admin/Dev address on every audit.
 
-      var allEmails_ = [agentEmailAddr, agentTLEmail, qaEmailAddr].concat(qaTLEmails_).concat(trainerEmails_).concat(adminEmails_);
+      var allEmails_ = [agentEmailAddr, agentTLEmail, qaEmailAddr].concat(qaTLEmails_).concat(trainerEmails_);
       var validRe_   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       var seen_      = {};
       recipients = allEmails_.filter(function(e) {
@@ -3880,7 +3917,11 @@ function sendAuditEmail(formData, htmlResult) {
       recipients, auditRef);
 
     Logger.log('Audit email ' + (_auditEmailErr ? 'PARTIALLY' : '') + ' sent to: ' + recipients.join(', '));
-    try { notifyAdmins(formData, auditRefCheck); } catch(ne) { Logger.log('notifyAdmins failed: ' + ne); }
+    // notifyAdmins only runs in live mode. In test mode the main email already went
+    // exclusively to Admin/Dev, so calling notifyAdmins would cause a double-send.
+    if (effectiveMode === 'live') {
+      try { notifyAdmins(formData, auditRefCheck); } catch(ne) { Logger.log('notifyAdmins failed: ' + ne); }
+    }
 
     // Update Cache Sheet with user-edited HTML so EvalView shows the edited version
     try {
