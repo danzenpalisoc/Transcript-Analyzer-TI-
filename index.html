@@ -2235,6 +2235,9 @@ function debounceSapLookup() {
 
     // ── Cache miss — fetch from server ────────────────────────────────────────
     google.script.run
+      .withFailureHandler(function(err) {
+        console.error('[SAP Lookup] getRosterBySapId failed:', err && err.message);
+      })
       .withSuccessHandler(function (row) {
         if (!row) return;
         _applyRosterRow(row);
@@ -2253,6 +2256,9 @@ function debounceLookupSap() {
     var name = document.getElementById('participant').value.trim();
     if (name) {
       google.script.run
+        .withFailureHandler(function(err) {
+          console.error('[Name→SAP Lookup] getSapIdForParticipant failed:', err && err.message);
+        })
         .withSuccessHandler(function (id) { if (id) document.getElementById('sapId').value = id; })
         .getSapIdForParticipant(name);
     }
