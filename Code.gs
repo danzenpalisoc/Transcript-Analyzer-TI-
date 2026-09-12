@@ -3671,10 +3671,18 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
       analysisLabel, evalUrl
     );
 
-    sendEmailInBatches_(recipients, subject, body, htmlBody, 'NH Call Analyzer');
+    // Wrap sendEmailInBatches_ so a partial batch failure doesn't skip the
+    // dashboard update or admin notification — both always run.
+    var _subEmailErr = null;
+    try {
+      sendEmailInBatches_(recipients, subject, body, htmlBody, 'NH Call Analyzer');
+    } catch(emailEx) {
+      _subEmailErr = emailEx.toString();
+      Logger.log('sendSubmissionEmail: partial email failure — ' + _subEmailErr);
+    }
 
-    Logger.log('Submission email sent to: ' + recipients.join(', '));
-    updateDashboardPDFLink(interactionId, 'Auto-sent', recipients, auditRef);
+    Logger.log('Submission email ' + (_subEmailErr ? 'PARTIALLY' : '') + ' sent to: ' + recipients.join(', '));
+    updateDashboardPDFLink(interactionId, _subEmailErr ? 'Partial send' : 'Auto-sent', recipients, auditRef);
     try { notifyAdmins(formData, auditRef); } catch(ne) { Logger.log('notifyAdmins failed: ' + ne); }
 
   } catch(e) {
@@ -3803,13 +3811,21 @@ function sendAuditEmail(formData, htmlResult) {
       analysisLabel, evalUrl
     );
 
-    // ── Send email (in batches to stay under the 50-recipient-per-message limit) ──
-    sendEmailInBatches_(recipients, subject, body, htmlBody, 'NH Call Analyzer');
+    // ── Send email (in batches — wrapped so partial failure doesn't skip sheets) ──
+    var _auditEmailErr = null;
+    try {
+      sendEmailInBatches_(recipients, subject, body, htmlBody, 'NH Call Analyzer');
+    } catch(emailEx) {
+      _auditEmailErr = emailEx.toString();
+      Logger.log('sendAuditEmail: partial email failure — ' + _auditEmailErr);
+    }
 
-    // ── Update sheets ─────────────────────────────────────────────────────────
-    updateDashboardPDFLink(interactionId, 'Sent via email', recipients, auditRef);
+    // ── Update sheets — always runs even on partial email failure ─────────────
+    updateDashboardPDFLink(interactionId,
+      _auditEmailErr ? 'Partial send' : 'Sent via email',
+      recipients, auditRef);
 
-    Logger.log('Audit email sent to: ' + recipients.join(', '));
+    Logger.log('Audit email ' + (_auditEmailErr ? 'PARTIALLY' : '') + ' sent to: ' + recipients.join(', '));
     try { notifyAdmins(formData, auditRefCheck); } catch(ne) { Logger.log('notifyAdmins failed: ' + ne); }
 
     // Update Cache Sheet with user-edited HTML so EvalView shows the edited version
@@ -3824,6 +3840,9 @@ function sendAuditEmail(formData, htmlResult) {
       }
     } catch(ue) { Logger.log('updateCachedResult in sendAuditEmail failed: ' + ue); }
 
+    if (_auditEmailErr) {
+      return { success: false, error: _auditEmailErr, recipients: recipients, auditRef: auditRef };
+    }
     return { success: true, recipients: recipients, auditRef: auditRef };
 
   } catch(e) {
@@ -3834,18 +3853,40 @@ function sendAuditEmail(formData, htmlResult) {
 
 // ── Batch email sender — splits recipients into chunks of 50 to stay under ────
 // ── Google Apps Script's "Email Recipients Per Message" limit ─────────────────
+// Continues ALL batches even if one fails, then throws a summary error so the
+// caller can detect partial failures without leaving later batches un-attempted.
 function sendEmailInBatches_(recipients, subject, body, htmlBody, senderName) {
+  if (!recipients || recipients.length === 0) {
+    Logger.log('sendEmailInBatches_: recipients list is empty — no email sent');
+    return;
+  }
   var BATCH_SIZE = 50;
+  var failedBatches = [];
   for (var i = 0; i < recipients.length; i += BATCH_SIZE) {
+    var batchNum = Math.floor(i / BATCH_SIZE) + 1;
     var chunk = recipients.slice(i, i + BATCH_SIZE);
-    MailApp.sendEmail({
-      to:       chunk.join(','),
-      subject:  subject,
-      body:     body,
-      htmlBody: htmlBody,
-      name:     senderName || 'NH Call Analyzer'
-    });
-    Logger.log('sendEmailInBatches_: sent batch ' + (Math.floor(i / BATCH_SIZE) + 1) + ' (' + chunk.length + ' recipients)');
+    try {
+      MailApp.sendEmail({
+        to:       chunk.join(','),
+        subject:  subject,
+        body:     body,
+        htmlBody: htmlBody,
+        name:     senderName || 'NH Call Analyzer'
+      });
+      Logger.log('sendEmailInBatches_: batch ' + batchNum + ' sent (' + chunk.length + ' recipients)');
+    } catch(e) {
+      Logger.log('sendEmailInBatches_: batch ' + batchNum + ' FAILED (' + chunk.length + ' recipients skipped): ' + e);
+      failedBatches.push({ batch: batchNum, count: chunk.length, error: e.toString() });
+    }
+  }
+  // Throw summary only after ALL batches have been attempted so partial sends
+  // don't block later batches. Caller decides how to surface this.
+  if (failedBatches.length > 0) {
+    throw new Error(
+      'sendEmailInBatches_: ' + failedBatches.length + ' of ' +
+      Math.ceil(recipients.length / BATCH_SIZE) + ' batch(es) failed. ' +
+      'First error: ' + failedBatches[0].error
+    );
   }
 }
 
