@@ -771,11 +771,16 @@ function translateTranscriptText(text) {
     stream:     false,
     max_tokens: 8000
   };
+  // deadline capped at 55s (not 120s) because translateTranscriptText runs inside
+  // submitTranscript BEFORE the main AI analysis call (deadline 270s). The GAS hard
+  // execution limit is 360s. Budget: 6s lock + 55s translate + 270s AI + ~20s I/O = 351s.
+  // A 120s translate deadline would leave only 360-120-6-20 = 214s for AI analysis,
+  // which is not enough for large Sales transcripts requiring max_tokens:20000.
   var options = {
     method: 'post', contentType: 'application/json',
     headers: { 'Authorization': 'Bearer ' + FUELIX_CONFIG.apiKey, 'Content-Type': 'application/json' },
     payload: JSON.stringify(payload),
-    muteHttpExceptions: true, deadline: 120
+    muteHttpExceptions: true, deadline: 55
   };
 
   try {
@@ -3773,11 +3778,15 @@ function sendAuditEmail(formData, htmlResult) {
       var adminList = getRecipientsFromRoster('Admin/Dev');
       recipients = adminList.map(function(r) { return r.email; }).filter(Boolean);
     } else {
-      // Agent being audited — use formData.agentEmail if already resolved, else name lookup, then Global Roster fallback
+      // Agent being audited — resolve server-side first (roster lookup), then fall back
+      // to formData.agentEmail only if all server-side paths return nothing.
+      // formData.agentEmail is client-controlled (populated from the DOM) and must NOT
+      // be used as the primary source: any authenticated user could supply an arbitrary
+      // email address and redirect the evaluation report to someone else.
       var _agentParticipant = (formData.participant || '').trim();
-      var agentEmailAddr  = (formData.agentEmail || '').trim()
-                          || lookupAgentEmail(_agentParticipant)
-                          || resolveEmail(_agentParticipant);
+      var agentEmailAddr  = lookupAgentEmail(_agentParticipant)
+                          || resolveEmail(_agentParticipant)
+                          || (formData.agentEmail || '').trim();
       // Agent's Team Leader
       var agentTLEmail    = resolveEmail(formData.teamLeader);
       // QA / Observer who submitted
