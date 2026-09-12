@@ -3715,11 +3715,13 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
     var qaTLEmails     = getRecipientsFromRoster(QA_TL_ROLE).map(function(r) { return r.email; });
     // ── 4. Trainer(s) ────────────────────────────────────────────────────────
     var trainerEmails  = getRecipientsFromRoster(TRAINER_ROLE).map(function(r) { return r.email; });
-    // ── 5. Admin/Dev ──────────────────────────────────────────────────────────
-    var adminEmails    = getRecipientsFromRoster('Admin/Dev').map(function(r) { return r.email; });
+    // Admin/Dev is intentionally excluded here: notifyAdmins() sends a dedicated
+    // admin notification at the end of this function. Including adminEmails here
+    // causes a double-send — once in an agent-addressed evaluation email and once
+    // as a proper admin notification — on every auto-submission.
 
     // ── Deduplicate and validate ───────────────────────────────────────────────
-    var allEmails = [teamMemberEmail, qaEmail].concat(qaTLEmails).concat(trainerEmails).concat(adminEmails);
+    var allEmails = [teamMemberEmail, qaEmail].concat(qaTLEmails).concat(trainerEmails);
     var validRe   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     var seen      = {};
     var recipients = allEmails.filter(function(e) {
