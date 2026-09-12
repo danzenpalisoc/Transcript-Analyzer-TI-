@@ -1560,7 +1560,8 @@ function getRecipientsFromRoster(roleFilter) {
             supervisorEmail: supEmailCol > -1 ? (row[supEmailCol] || '').toString().trim() : ''
           };
         });
-        try { cache.put(cacheKey, JSON.stringify(allRows).substring(0, 95000), 2 * 60 * 60); } catch(e) {}
+        var _ar = JSON.stringify(allRows);
+        if (_ar.length <= 99000) { try { cache.put(cacheKey, _ar, 2 * 60 * 60); } catch(e) {} }
         _rosterRecipientsInMemory = allRows;
       }
     }
@@ -1630,7 +1631,8 @@ function _getAgentEmailMap() {
       var email = (row[emailCol] || '').toString().trim();
       if (name && email) map[name] = email;
     });
-    try { cache.put(cacheKey, JSON.stringify(map).substring(0, 95000), 2 * 60 * 60); } catch(e) {}
+    var _em = JSON.stringify(map);
+    if (_em.length <= 99000) { try { cache.put(cacheKey, _em, 2 * 60 * 60); } catch(e) {} }
     _agentEmailMapInMemory = map;
     Logger.log('_getAgentEmailMap: loaded ' + Object.keys(map).length + ' entries');
     return map;
@@ -3027,7 +3029,8 @@ function readAuditLog() {
       return obj;
     });
 
-    try { cache.put(AUDIT_LOG_CACHE_KEY, JSON.stringify(result).substring(0, 95000), AUDIT_LOG_CACHE_TTL); } catch(e) {}
+    var _al = JSON.stringify(result);
+    if (_al.length <= 99000) { try { cache.put(AUDIT_LOG_CACHE_KEY, _al, AUDIT_LOG_CACHE_TTL); } catch(e) {} }
     return result;
   } catch(e) { Logger.log('readAuditLog: ' + e); return []; }
 }
@@ -3458,7 +3461,7 @@ function submitTranscript(formData) {
         return {
           success: false,
           error: 'Access denied: You need Editor (not Viewer) access to the "' + SPREADSHEET_NAME + '" spreadsheet. ' +
-                 'Please ask your admin (danzen.palisoc@telus.com) to update your sharing permissions.'
+                 'Please ask your admin to update your sharing permissions to Editor access.'
         };
       }
       throw we;

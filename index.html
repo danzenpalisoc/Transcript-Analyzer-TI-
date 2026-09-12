@@ -2745,9 +2745,13 @@ function _doSubmit(formData) {
       _renderFilterStats(result.filterStats);
 
       // Background enrichment: fills RCA Category / Product Opportunity / Sales Attempted
-      // after the result is already shown. Fire-and-forget — no handlers needed.
+      // after the result is already shown. Fire-and-forget (no user-visible impact),
+      // but a failure handler ensures silent failures appear in the browser console.
       if (!result.fromCache && result.auditRef) {
         google.script.run
+          .withFailureHandler(function(err) {
+            console.warn('[RCA Enrichment] background enrichment failed — dashboard RCA columns may be empty:', err && err.message);
+          })
           .enrichDashboardRCA(result.auditRef, formData.analysisType, result.html);
       }
     })

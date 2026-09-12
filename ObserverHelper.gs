@@ -48,7 +48,8 @@ function getQAUsersFromSheet() {
       });
     }
 
-    try { cache.put(cacheKey, JSON.stringify(users).substring(0, 95000), 60 * 60); } catch(e) {}
+    var _qu = JSON.stringify(users);
+    if (_qu.length <= 99000) { try { cache.put(cacheKey, _qu, 60 * 60); } catch(e) {} }
     Logger.log('getQAUsersFromSheet: ' + users.length + ' users loaded');
     return users;
   } catch(e) {
