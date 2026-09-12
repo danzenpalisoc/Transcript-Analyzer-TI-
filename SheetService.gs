@@ -135,6 +135,13 @@ var _CACHE_CHUNK_SIZE = 48000; // safe margin under Google Sheets 50k cell limit
 
 function saveCachedResult(interactionId, analysisType, htmlResult) {
   if (!interactionId) return;
+  // Guard: empty HTML would delete all existing rows (deletion runs before append)
+  // then write a blank entry — permanently destroying the previous cached result.
+  // Math.ceil(0 / CHUNK_SIZE) === 0, and 0 || 1 === 1, so a blank row IS appended.
+  if (!htmlResult) {
+    Logger.log('saveCachedResult: empty htmlResult for ' + interactionId + '/' + analysisType + ' — skipping to preserve existing cache');
+    return;
+  }
   try {
     var html      = htmlResult || '';
     var atype     = (analysisType || '').trim();

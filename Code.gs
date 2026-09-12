@@ -150,6 +150,14 @@ function repairNextTruncated() {
     newHtml.replace(/^```html\s*/i,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim()
   );
 
+  // Guard: if the AI returned empty, skip the repair entirely — deleting the old
+  // rows before this check would permanently destroy the previous (truncated but
+  // at least partial) cached result with nothing to replace it.
+  if (!newHtml) {
+    Logger.log('repairNextTruncated: AI returned empty for ' + entry.interactionId + ' — skipping');
+    return;
+  }
+
   // Delete all old rows for this interaction ID (main + chunks) bottom-to-top
   // so row numbers stay valid while deleting, and no ghost empty rows remain
   var deleteFinder = cacheSheet.getRange('A:A').createTextFinder(entry.interactionId.trim()).matchEntireCell(true);
@@ -3640,6 +3648,14 @@ function submitTranscript(formData) {
       try { CacheService.getScriptCache().remove('proc_' + _intIdForLock); } catch(pe) {}
     }
 
+    // ── Auto-send submission email (Agent + QA + QA TLs + Trainers + Admin/Dev) ──
+    // Wrapped in try-catch so an email failure never blocks the submission result.
+    // sendSubmissionEmail was previously dead code (zero call sites) — wiring it
+    // here fulfils its stated intent: "Auto-send email on every submission."
+    try { sendSubmissionEmail(formData, html, auditRef); } catch(se) {
+      Logger.log('sendSubmissionEmail (auto) error: ' + se);
+    }
+
     return {
       success:      true,
       html:         sharedCSS() + html,
@@ -3990,6 +4006,12 @@ function resolveEmail(name) {
   if (!name) return '';
   try {
     var nameLower = name.trim().toLowerCase();
+
+    // 0. Fast path: check the in-memory/CacheService agent email map first.
+    //    _getAgentEmailMap() reads the sheet once per execution then caches in
+    //    memory, so this avoids an additional uncached sheet read on every call.
+    var _emailMap = _getAgentEmailMap();
+    if (_emailMap && _emailMap[nameLower]) return _emailMap[nameLower];
 
     // 1. Primary Roster — match on Agent_Name column only (col C, index 2)
     var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
