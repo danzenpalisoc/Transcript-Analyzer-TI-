@@ -88,7 +88,10 @@ function _getRosterSheetData() {
     var data = sheet.getDataRange().getValues();
     // Store only rows 1+ (skip header)
     var serializable = data.slice(1);
-    try { cache.put(cacheKey, JSON.stringify(serializable).substring(0, 95000), 4 * 60 * 60); } catch(e) {}
+    // Skip if payload exceeds 100KB — truncated JSON silently breaks every
+    // subsequent parse, causing an unbounded sheet read on every invocation.
+    var _rs = JSON.stringify(serializable);
+    if (_rs.length <= 99000) { try { cache.put(cacheKey, _rs, 4 * 60 * 60); } catch(e) {} }
     _rosterDataInMemory = serializable;
     return serializable;
   } catch(e) { Logger.log('_getRosterSheetData: ' + e); return []; }
@@ -135,7 +138,8 @@ function getAllRosterData() {
         locale:         (row[ROSTER_COL_LOCALE]       || '').toString().trim()
       });
     }
-    try { cache.put(cacheKey, JSON.stringify(result).substring(0, 95000), 4 * 60 * 60); } catch(e) {}
+    var _rr = JSON.stringify(result);
+    if (_rr.length <= 99000) { try { cache.put(cacheKey, _rr, 4 * 60 * 60); } catch(e) {} }
     return result;
   } catch(e) { Logger.log('getAllRosterData: ' + e); return []; }
 }
@@ -181,7 +185,8 @@ function _getATDataGCPSheetData() {
     var sheet = ss.getSheetByName('Roster') || ss.getSheetByName('roster') || ss.getSheets()[0];
     var data  = sheet.getDataRange().getValues();
     // Store the full 2D array — callers use data[0] for header and data[i] for rows
-    try { cache.put(cacheKey, JSON.stringify(data).substring(0, 95000), 4 * 60 * 60); } catch(e) {}
+    var _ad = JSON.stringify(data);
+    if (_ad.length <= 99000) { try { cache.put(cacheKey, _ad, 4 * 60 * 60); } catch(e) {} }
     _atDataInMemory = data;
     Logger.log('AT Data GCP loaded from sheet: ' + (data.length - 1) + ' rows');
     return _atDataInMemory;
@@ -206,7 +211,8 @@ function _getGlobalRosterData() {
     if (!sheet) return { header: [], rows: [] };
     var data    = sheet.getDataRange().getValues();
     var payload = { header: data[0] || [], rows: data.slice(1) };
-    try { cache.put(cacheKey, JSON.stringify(payload).substring(0, 95000), 4 * 60 * 60); } catch(e) {}
+    var _gp = JSON.stringify(payload);
+    if (_gp.length <= 99000) { try { cache.put(cacheKey, _gp, 4 * 60 * 60); } catch(e) {} }
     _globalRosterDataInMemory = payload;
     return payload;
   } catch(e) { Logger.log('_getGlobalRosterData: ' + e); return { header: [], rows: [] }; }

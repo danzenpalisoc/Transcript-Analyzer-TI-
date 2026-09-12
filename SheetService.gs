@@ -96,7 +96,13 @@ function findCachedResult(interactionId, analysisType) {
 
         Logger.log('Cache HIT (sheet) for: ' + target + ' (assembled ' + html.length + ' chars)');
         // Promote to CacheService for next lookup
-        try { CacheService.getScriptCache().put(csKey, html.substring(0, 95000), _RESULT_CS_TTL); } catch(ce) {}
+        // Only cache if payload fits within CacheService's 100KB limit.
+        // Truncating to 95000 bytes silently breaks large HTML (broken tables,
+        // missing closing tags). Skipping CacheService for oversized payloads
+        // is safer — the sheet-based multi-chunk path still serves them correctly.
+        if (html.length <= 99000) {
+          try { CacheService.getScriptCache().put(csKey, html, _RESULT_CS_TTL); } catch(ce) {}
+        }
         return html;
       }
     }

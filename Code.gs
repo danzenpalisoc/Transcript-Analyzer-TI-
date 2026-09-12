@@ -185,8 +185,12 @@ function repairTruncatedSalesEvaluations() {
       newHtml = fixBadgeClasses(newHtml
         .replace(/^```html\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim());
 
-      // Update Cache sheet cell
-      cacheSheet.getRange(entry.row, 4).setValue(newHtml);
+      // Use saveCachedResult so chunk rows are properly deleted before writing.
+      // The old approach (direct setValue on entry.row) only updated the primary
+      // chunk but left any sales_2/sales_3 rows intact — causing findCachedResult
+      // to concatenate new HTML + stale old chunks, producing worse corruption
+      // than the truncation it was trying to fix.
+      saveCachedResult(entry.interactionId, 'sales', newHtml);
 
       // Invalidate ev2_ CacheService entry for all audits referencing this interaction
       var sc = CacheService.getScriptCache();
@@ -3345,6 +3349,37 @@ function submitTranscript(formData) {
       return { success: false, error: 'SAP ID and transcript are required.' };
     }
 
+    // ── Per-Interaction-ID duplicate-submission guard ──────────────────────────
+    // Two QA analysts submitting the same Interaction ID concurrently would each
+    // pass the cache-miss check, both run the AI (~2-5 min each), and both
+    // append duplicate rows to every sheet.  We use a short LockService window
+    // to atomically check/set a ScriptProperties "processing" flag, then release
+    // the lock immediately so the slow AI work does not block other submissions.
+    var _intIdForLock = (formData.interactionId || '').trim();
+    if (_intIdForLock) {
+      var _lock = LockService.getScriptLock();
+      var _alreadyProcessing = false;
+      try {
+        _lock.waitLock(6000); // only hold long enough to read+write one property
+        var _props = PropertiesService.getScriptProperties();
+        var _procKey = 'proc_' + _intIdForLock;
+        if (_props.getProperty(_procKey)) {
+          _alreadyProcessing = true;
+        } else {
+          // Expires automatically after 8 minutes (GAS execution limit buffer)
+          _props.setProperty(_procKey, String(Date.now()));
+        }
+      } catch(le) {
+        Logger.log('submitTranscript: lock acquisition failed — ' + le);
+        // Non-fatal: proceed without the guard rather than blocking the user
+      } finally {
+        try { _lock.releaseLock(); } catch(le2) {}
+      }
+      if (_alreadyProcessing) {
+        return { success: false, error: 'This interaction is already being processed. Please wait a moment and refresh.' };
+      }
+    }
+
     // If QA analyst manually selected a LOB from the modal, use it as the primary LOB
     if (formData.selectedLOB) {
       formData.lineOfBusiness = formData.selectedLOB;
@@ -3559,6 +3594,11 @@ function submitTranscript(formData) {
       warnings.push('Audit log entry failed to save — contact admin with ref ' + auditRef);
     }
 
+    // ── Release the per-Interaction-ID processing flag ──────────────────────
+    if (_intIdForLock) {
+      try { PropertiesService.getScriptProperties().deleteProperty('proc_' + _intIdForLock); } catch(pe) {}
+    }
+
     return {
       success:      true,
       html:         sharedCSS() + html,
@@ -3581,6 +3621,11 @@ function submitTranscript(formData) {
 
   } catch (e) {
     Logger.log('submitTranscript error: ' + e.toString());
+    // Release the processing flag on error so the analyst can retry
+    try {
+      var _intIdForLockErr = (formData && formData.interactionId || '').trim();
+      if (_intIdForLockErr) PropertiesService.getScriptProperties().deleteProperty('proc_' + _intIdForLockErr);
+    } catch(pe) {}
     return { success: false, error: e.toString() };
   }
 }
