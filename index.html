@@ -923,6 +923,40 @@ body {
 .modal-divider { border: none; border-top: 1px solid var(--telus-grey-bd); margin: 4px 0 18px; }
 .modal-results-label { font-size: 12px; font-weight: 700; color: var(--telus-subtext); margin-bottom: 12px; text-transform: uppercase; letter-spacing: .4px; }
 
+/* ── Add a Flag button & panel ── */
+.btn-add-flag {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #4B286D; color: #fff; border: none; border-radius: 6px;
+  padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+  margin-top: 12px; transition: background .15s;
+}
+.btn-add-flag:hover { background: #3a1f57; }
+#add-flag-panel {
+  background: #F5F0FF; border: 1px solid #D1B8E8; border-radius: 8px;
+  padding: 14px 16px; margin-top: 10px;
+}
+#flag-dropdown {
+  width: 100%; padding: 8px 10px; font-size: 13px;
+  border: 1px solid #C5A8E8; border-radius: 6px;
+  background: #fff; color: #1A1A2E; margin-bottom: 8px;
+}
+#flag-comment {
+  width: 100%; height: 72px; padding: 8px 10px; font-size: 13px;
+  border: 1px solid #C5A8E8; border-radius: 6px;
+  resize: vertical; font-family: inherit; box-sizing: border-box;
+}
+.add-flag-actions { display: flex; gap: 8px; margin-top: 8px; }
+.btn-add-flag-submit {
+  background: #2B8000; color: #fff; border: none; border-radius: 6px;
+  padding: 7px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.btn-add-flag-submit:hover { background: #1e5c00; }
+.btn-add-flag-cancel {
+  background: #F4F4F7; color: #54565A; border: 1px solid #D8D8D8;
+  border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+}
+.btn-add-flag-cancel:hover { background: #E8E8E8; }
+
 /* ── LOB Selection Modal ── */
 #lob-overlay {
   display: none;
@@ -2818,9 +2852,25 @@ function openModal(transcriptText, resultHTML) {
     '<div class="modal-script-box">' + escHtml(transcriptText) + '</div>' +
     '<hr class="modal-divider"/>' +
     '<p class="modal-results-label">Analysis Results</p>' +
-    '<div id="modal-ai-result">' + sanitiseResultHTML(resultHTML) + '</div>';
+    '<div id="modal-ai-result">' + sanitiseResultHTML(resultHTML) + '</div>' +
+    '<div class="report-manual-flags" id="manual-flags-section">' +
+      '<div class="report-manual-flags-head">&#128205; Manually Added Flags</div>' +
+      '<div class="report-manual-flags-body" id="manual-flags-body">' +
+        '<p class="report-manual-empty" id="manual-flags-empty">No manually added flags yet.</p>' +
+      '</div>' +
+    '</div>' +
+    '<button class="btn-add-flag" onclick="_openAddFlagPanel()">&#43; Add a Flag</button>' +
+    '<div id="add-flag-panel" hidden>' +
+      '<select id="flag-dropdown"><option value="">Loading options…</option></select>' +
+      '<textarea id="flag-comment" placeholder="Add notes or context about this flag…"></textarea>' +
+      '<div class="add-flag-actions">' +
+        '<button class="btn-add-flag-submit" onclick="_submitAddFlag()">Add Flag</button>' +
+        '<button class="btn-add-flag-cancel" onclick="_closeAddFlagPanel()">Cancel</button>' +
+      '</div>' +
+    '</div>';
   document.getElementById('analysis-modal').classList.add('visible');
   initPlayButtons();
+  _loadFlagDropdownOptions();
 }
 function closeModal()  { document.getElementById('analysis-modal').classList.remove('visible'); }
 function reOpenModal() { if (_lastHTML) openModal(document.getElementById('transcript').value, _lastHTML); }
@@ -2864,6 +2914,65 @@ function _injectFlagDeleteBtns(container) {
     });
     flag.appendChild(btn);
   });
+}
+
+var _flagDropdownCache = null; // cached options from GAS so we only call once
+
+function _loadFlagDropdownOptions() {
+  var sel = document.getElementById('flag-dropdown');
+  if (!sel) return;
+  if (_flagDropdownCache) { _populateFlagDropdown(sel, _flagDropdownCache); return; }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      _flagDropdownCache = (res && res.options) ? res.options : [];
+      _populateFlagDropdown(sel, _flagDropdownCache);
+    })
+    .withFailureHandler(function() {
+      sel.innerHTML = '<option value="">Unable to load options</option>';
+    })
+    .getFlagDropdownOptions();
+}
+
+function _populateFlagDropdown(sel, options) {
+  sel.innerHTML = '<option value="">— Select a flag type —</option>';
+  options.forEach(function(opt) {
+    var o = document.createElement('option');
+    o.value = opt; o.textContent = opt;
+    sel.appendChild(o);
+  });
+}
+
+function _openAddFlagPanel() {
+  var panel = document.getElementById('add-flag-panel');
+  if (panel) panel.hidden = false;
+}
+
+function _closeAddFlagPanel() {
+  var panel = document.getElementById('add-flag-panel');
+  if (!panel) return;
+  panel.hidden = true;
+  var sel = document.getElementById('flag-dropdown');
+  var txt = document.getElementById('flag-comment');
+  if (sel) sel.value = '';
+  if (txt) txt.value = '';
+}
+
+function _submitAddFlag() {
+  var sel     = document.getElementById('flag-dropdown');
+  var txt     = document.getElementById('flag-comment');
+  var body    = document.getElementById('manual-flags-body');
+  var empty   = document.getElementById('manual-flags-empty');
+  var flagType = sel ? sel.value.trim() : '';
+  if (!flagType) { alert('Please select a flag type.'); return; }
+  if (empty) empty.remove();
+  var card = document.createElement('div');
+  card.className = 'ai-flag';
+  card.innerHTML =
+    '<div class="ai-flag-title">&#9888; ' + escHtml(flagType) + '</div>' +
+    '<div class="ai-flag-detail" contenteditable="true">' + escHtml((txt ? txt.value : '') || '') + '</div>';
+  body.appendChild(card);
+  _injectFlagDeleteBtns(body);
+  _closeAddFlagPanel();
 }
 
 function initPlayButtons() {
@@ -2926,28 +3035,45 @@ function _tryWebSpeech(text) {
 // ── Apply & Close ─────────────────────────────────────────────────────────────
 function applyAndClose() {
   var out = document.getElementById('applied-output');
-  // Capture the user's edited content from the modal, not the original _lastHTML
   var modalAIResult = document.getElementById('modal-ai-result');
-  // Strip injected delete buttons before serializing — innerHTML drops event listeners,
-  // so the serialized button HTML would be dead. Re-inject after setting out.innerHTML.
-  if (modalAIResult) {
-    modalAIResult.querySelectorAll('.ai-flag-del').forEach(function(b) { b.remove(); });
-    // Also clear the injected position:relative so _lastHTML stays clean for email/PDF fallback
-    modalAIResult.querySelectorAll('.ai-flag').forEach(function(f) { f.style.position = ''; });
-  }
-  var editedHTML = modalAIResult ? modalAIResult.innerHTML : sanitiseResultHTML(_lastHTML);
+  var manualSection = document.getElementById('manual-flags-section');
+
+  // Strip injected delete buttons before serializing — innerHTML drops event listeners.
+  // Re-inject after setting out.innerHTML.
+  [modalAIResult, manualSection].forEach(function(el) {
+    if (!el) return;
+    el.querySelectorAll('.ai-flag-del').forEach(function(b) { b.remove(); });
+    el.querySelectorAll('.ai-flag').forEach(function(f) { f.style.position = ''; });
+  });
+
+  // Combine AI result + manually added flags section
+  var aiHTML     = modalAIResult ? modalAIResult.innerHTML : sanitiseResultHTML(_lastHTML);
+  var manualHTML = manualSection ? manualSection.outerHTML : '';
+  var editedHTML = aiHTML + manualHTML;
   out.innerHTML = editedHTML;
+
   // Keep _lastHTML in sync so getEffectiveHTML() fallback is also correct
   _lastHTML = editedHTML;
+
   // Inject fresh delete buttons with live event listeners in the applied view
   _injectFlagDeleteBtns(out);
-  // Ensure all relevant elements are editable (safety net for any AI-omitted attributes)
-  out.querySelectorAll('.r-summary-box,.r-pos-stmt,.r-systemic').forEach(function(el) {
-    el.setAttribute('contenteditable', 'true');
+
+  // Safety net: ensure editable on new layout elements + legacy elements
+  var editableSelectors = [
+    '.ai-summary',
+    '.report-col-list li',
+    '.ai-flag-stmt',
+    '.ai-flag-detail',
+    // legacy (kept for cached reports)
+    '.r-summary-box', '.r-pos-stmt', '.r-systemic',
+    'td:not(.r-table-label)', '.r-hl-box li', '.r-coaching-list li'
+  ];
+  editableSelectors.forEach(function(sel) {
+    out.querySelectorAll(sel).forEach(function(el) {
+      el.setAttribute('contenteditable', 'true');
+    });
   });
-  out.querySelectorAll('td:not(.r-table-label),.r-hl-box li,.r-coaching-list li').forEach(function(el) {
-    el.setAttribute('contenteditable', 'true');
-  });
+
   closeModal();
   var section = document.getElementById('applied-section');
   section.classList.add('visible');
@@ -2959,12 +3085,11 @@ function applyAndClose() {
 function getEffectiveHTML() {
   var applied = document.getElementById('applied-output');
   if (applied && applied.innerHTML && applied.innerHTML.trim().length > 100) {
-    // Clone and strip all delete button artifacts before returning to email/PDF/print callers:
-    // 1. Remove injected button elements
-    // 2. Remove position:relative inline style (set by _injectFlagDeleteBtns, not in original AI output)
     var clone = applied.cloneNode(true);
     clone.querySelectorAll('.ai-flag-del').forEach(function(b) { b.remove(); });
     clone.querySelectorAll('.ai-flag').forEach(function(f) { f.style.position = ''; });
+    // Remove the "Add a Flag" UI elements — they are modal-only controls
+    clone.querySelectorAll('.btn-add-flag, #add-flag-panel').forEach(function(el) { el.remove(); });
     return clone.innerHTML;
   }
   return _lastHTML;

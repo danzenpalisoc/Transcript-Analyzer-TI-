@@ -677,70 +677,118 @@ function filterTranscriptByAgent(transcriptText, targetAgentName) {
 // ─────────────────────────────────────────────────────────────────────────────
 function sharedCSS() {
   return '<style>' +
+    // ── Base reset & font ──────────────────────────────────────────────────────
+    '.report-wrap *{box-sizing:border-box}' +
+    // ── Header ────────────────────────────────────────────────────────────────
+    '.report-header{background:linear-gradient(135deg,#4B286D 0%,#7B4FA0 100%);' +
+      'border-radius:12px;padding:24px 28px;margin-bottom:16px;color:#fff;' +
+      'font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
+    '.report-header-title{font-size:20px;font-weight:800;letter-spacing:.2px;margin-bottom:4px}' +
+    '.report-header-sub{font-size:13px;opacity:.85;font-weight:400}' +
+    // ── Meta chips (reuse old ai-chip classes for extraction compatibility) ────
+    '.ai-info{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:16px}' +
+    '.ai-chip{background:#F4F4F7;border:1px solid #D8D8D8;border-radius:6px;' +
+      'padding:8px 12px;min-width:100px;font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
+    '.ai-chip-label{font-size:10px;font-weight:700;color:#54565A;text-transform:uppercase;' +
+      'letter-spacing:.4px;display:block;margin-bottom:3px}' +
+    '.ai-chip-val{font-size:13px;font-weight:600;color:#1A1A2E}' +
+    '.report-badge-yes{display:inline-block;background:#2B8000;color:#fff;border-radius:4px;' +
+      'padding:2px 10px;font-size:12px;font-weight:700}' +
+    '.report-badge-no{display:inline-block;background:#C12335;color:#fff;border-radius:4px;' +
+      'padding:2px 10px;font-size:12px;font-weight:700}' +
+    // ── Call summary section ───────────────────────────────────────────────────
+    '.report-summary-wrap{background:#F9F9F9;border:1px solid #E0E0E0;border-radius:8px;' +
+      'padding:16px 20px;margin-bottom:16px;font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
+    '.report-summary-label{font-size:11px;font-weight:700;color:#4B286D;' +
+      'text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}' +
+    // ai-summary kept for extractTextBlock() compatibility
+    '.ai-summary{font-size:13px;line-height:1.75;color:#1A1A2E;' +
+      'min-height:48px;outline:none;padding:2px 0}' +
+    '.report-summary-meta{font-size:12px;color:#767676;margin-top:10px;' +
+      'padding-top:8px;border-top:1px solid #E8E8E8}' +
+    // ── 3-column coaching grid ─────────────────────────────────────────────────
+    '.report-3col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px}' +
+    '.report-col{border-radius:8px;padding:16px;font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
+    '.report-col-working{background:#EDF7E6;border:1px solid #B3DFA0}' +
+    '.report-col-change{background:#FFF5F5;border:1px solid #F5AAAA}' +
+    '.report-col-howto{background:#F5F0FF;border:1px solid #D1B8E8}' +
+    '.report-col-head{font-size:12px;font-weight:700;margin-bottom:10px;' +
+      'padding-bottom:6px;border-bottom:2px solid rgba(0,0,0,.08)}' +
+    '.report-col-working .report-col-head{color:#2B8000}' +
+    '.report-col-change .report-col-head{color:#C12335}' +
+    '.report-col-howto .report-col-head{color:#4B286D}' +
+    '.report-col-list{padding-left:18px;font-size:13px;line-height:1.8;margin:0}' +
+    '.report-col-list li{margin-bottom:6px}' +
+    '.report-col-roleplays{list-style:none;padding-left:0}' +
+    '.report-col-roleplays li{margin-bottom:12px}' +
+    // ── AI Spotted Flags section ───────────────────────────────────────────────
+    '.report-flags{margin-bottom:16px}' +
+    '.report-flags-head{font-size:13px;font-weight:700;color:#C12335;' +
+      'padding:10px 14px;background:#FFF0F0;border:1px solid #F5AAAA;' +
+      'border-radius:6px 6px 0 0;border-bottom:none}' +
+    '.report-flags-body{border:1px solid #F5AAAA;border-top:none;' +
+      'border-radius:0 0 6px 6px;padding:12px;background:#fff}' +
+    // ── Manually Added Flags section ───────────────────────────────────────────
+    '.report-manual-flags{margin-bottom:16px}' +
+    '.report-manual-flags-head{font-size:13px;font-weight:700;color:#4B286D;' +
+      'padding:10px 14px;background:#F5F0FF;border:1px solid #D1B8E8;' +
+      'border-radius:6px 6px 0 0;border-bottom:none}' +
+    '.report-manual-flags-body{border:1px solid #D1B8E8;border-top:none;' +
+      'border-radius:0 0 6px 6px;padding:12px;background:#fff;min-height:36px}' +
+    '.report-manual-empty{color:#767676;font-size:12px;font-style:italic;padding:4px 0}' +
+    // ── Footer ────────────────────────────────────────────────────────────────
+    '.report-footer{background:#F4F4F7;border:1px solid #E0E0E0;border-radius:8px;' +
+      'padding:12px 20px;display:flex;justify-content:space-between;align-items:center;' +
+      'font-size:12px;color:#54565A;margin-top:8px;' +
+      'font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
+    '.report-footer-ref{font-weight:700;color:#4B286D}' +
+    '.report-footer-obs{color:#767676}' +
+    // ── Flag cards (kept for _injectFlagDeleteBtns + Dashboard extraction) ──────
+    '.ai-flag{background:#FFF5F5;border:1px solid #F5AAAA;border-left:4px solid #C12335;' +
+      'border-radius:6px;padding:14px 16px;margin-bottom:11px;position:relative;' +
+      'font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
+    '.ai-flag-title{font-weight:700;color:#C12335;font-size:13px;margin-bottom:5px}' +
+    '.ai-flag-detail{font-size:13px;color:#444;line-height:1.65;outline:none}' +
+    // ── Roleplay statements (kept for initPlayButtons TTS) ─────────────────────
+    '.ai-flag-rl-label{font-size:10px;font-weight:700;text-transform:uppercase;' +
+      'color:#4B286D;letter-spacing:.5px;margin-bottom:4px;margin-top:4px}' +
+    '.ai-flag-stmt{background:#F0EAF8;border:1px solid #C5A8E8;border-radius:4px;' +
+      'padding:9px 12px;font-size:13px;color:#3A1060;font-style:italic;' +
+      'line-height:1.6;outline:none}' +
+    // ── Legacy classes (kept for old cached reports) ───────────────────────────
     '.ai-section{margin-bottom:22px}' +
     '.ai-title{font-size:13px;font-weight:700;color:#4B286D;padding:8px 12px;' +
       'background:#F5F0FF;border-left:4px solid #4B286D;border-radius:0 4px 4px 0;' +
       'margin-bottom:11px;font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
-    '.ai-summary{background:#F9F9F9;border:1px solid #D8D8D8;border-radius:4px;' +
-      'padding:12px 14px;font-size:13px;line-height:1.75;min-height:64px;' +
-      'font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
-    '.ai-info{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:6px}' +
-    '.ai-chip{background:#F4F4F7;border:1px solid #D8D8D8;border-radius:4px;' +
-      'padding:7px 12px;min-width:100px;font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
-    '.ai-chip-label{font-size:10px;font-weight:700;color:#54565A;text-transform:uppercase;' +
-      'letter-spacing:.4px;display:block;margin-bottom:2px}' +
-    '.ai-chip-val{font-size:13px;font-weight:600;color:#1A1A2E}' +
     '.ai-table{width:100%;border-collapse:collapse;font-size:13px;' +
       'font-family:Helvetica Neue,Helvetica,Arial,sans-serif;margin-bottom:4px}' +
     '.ai-table thead tr{background:#4B286D}' +
-    '.ai-table th{padding:10px 14px;text-align:left;font-size:12px;' +
-      'font-weight:700;color:#fff;letter-spacing:.3px}' +
-    '.ai-table td{padding:10px 14px;border-bottom:1px solid #EBEBEB;' +
-      'vertical-align:top;line-height:1.65;font-size:13px}' +
+    '.ai-table th{padding:10px 14px;text-align:left;font-size:12px;font-weight:700;color:#fff;letter-spacing:.3px}' +
+    '.ai-table td{padding:10px 14px;border-bottom:1px solid #EBEBEB;vertical-align:top;line-height:1.65;font-size:13px}' +
     '.ai-table tbody tr:nth-child(even) td{background:#FAFAFA}' +
     '.ai-table tbody tr:last-child td{border-bottom:none}' +
     '.ai-label-col{font-weight:600;color:#1A1A2E;width:22%;white-space:nowrap}' +
-    '.ai-flag{background:#FFF5F5;border:1px solid #F5AAAA;border-left:4px solid #C12335;' +
-      'border-radius:4px;padding:14px 16px;margin-bottom:11px;' +
-      'font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
-    '.ai-flag-title{font-weight:700;color:#C12335;font-size:13px;margin-bottom:5px}' +
-    '.ai-flag-detail{font-size:12px;color:#444;line-height:1.65;margin-bottom:8px}' +
-    '.ai-flag-rl-label{font-size:10px;font-weight:700;text-transform:uppercase;' +
-      'color:#2B8000;letter-spacing:.5px;margin-bottom:4px}' +
-    '.ai-flag-stmt{background:#EDF7E6;border:1px solid #B3DFA0;border-radius:4px;' +
-      'padding:9px 12px;font-size:13px;color:#1A5E00;font-style:italic;line-height:1.6}' +
     '.ai-hl-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}' +
-    '.ai-hl-box{border-radius:6px;padding:14px 16px;' +
-      'font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
+    '.ai-hl-box{border-radius:6px;padding:14px 16px;font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
     '.ai-hl-high{background:#EDF7E6;border:1px solid #B3DFA0}' +
     '.ai-hl-low{background:#FFF5F5;border:1px solid #F5AAAA}' +
     '.ai-hl-title{font-size:12px;font-weight:700;margin-bottom:8px}' +
     '.ai-hl-high .ai-hl-title{color:#2B8000}' +
     '.ai-hl-low  .ai-hl-title{color:#C12335}' +
     '.ai-hl-box ul{padding-left:16px;font-size:13px;line-height:1.9}' +
-    '.ai-coaching{padding-left:20px;font-size:13px;line-height:1.9;' +
-      'font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
+    '.ai-coaching{padding-left:20px;font-size:13px;line-height:1.9;font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
     '.ai-coaching li{margin-bottom:4px}' +
-    '.ai-score-panel{background:#F5F0FF;border:1px solid #D1B8E8;border-radius:6px;' +
-      'padding:14px 18px;font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
-    '.ai-score-row{display:flex;align-items:center;justify-content:space-between;' +
-      'padding:6px 0;border-bottom:1px solid #E4D8F5;font-size:13px}' +
+    '.ai-score-panel{background:#F5F0FF;border:1px solid #D1B8E8;border-radius:6px;padding:14px 18px;font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
+    '.ai-score-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #E4D8F5;font-size:13px}' +
     '.ai-score-row:last-child{border-bottom:none;font-weight:700}' +
-    '.ai-badge{display:inline-block;border-radius:4px;padding:3px 10px;' +
-      'font-size:12px;font-weight:700;color:#fff;min-width:44px;text-align:center}' +
+    '.ai-badge{display:inline-block;border-radius:4px;padding:3px 10px;font-size:12px;font-weight:700;color:#fff;min-width:44px;text-align:center}' +
     '.ai-badge-good{background:#2B8000}' +
     '.ai-badge-mid{background:#8C4A00}' +
     '.ai-badge-bad{background:#C12335}' +
-    '.ai-call-badge{display:inline-block;background:#4B286D;color:#fff;font-size:11px;' +
-      'font-weight:700;padding:3px 12px;border-radius:12px;margin-bottom:13px;' +
-      'letter-spacing:.5px;font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
-    '.ai-call-block{border:1px solid #D8D8D8;border-radius:6px;padding:18px 20px;' +
-      'margin-bottom:20px;background:#fff}' +
-    '.ai-perfect{background:#EDF7E6;border:1px solid #B3DFA0;border-radius:4px;' +
-      'padding:10px 14px;font-size:13px;line-height:1.6;margin-top:10px;' +
-      'font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
-    '.ai-warning{background:#FFF0F0;border:1px solid #F5AAAA;border-left:4px solid #C12335;' +
-      'border-radius:4px;padding:12px 16px;font-size:13px;color:#C12335;margin-top:8px}' +
+    '.ai-call-badge{display:inline-block;background:#4B286D;color:#fff;font-size:11px;font-weight:700;padding:3px 12px;border-radius:12px;margin-bottom:13px;letter-spacing:.5px;font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
+    '.ai-call-block{border:1px solid #D8D8D8;border-radius:6px;padding:18px 20px;margin-bottom:20px;background:#fff}' +
+    '.ai-perfect{background:#EDF7E6;border:1px solid #B3DFA0;border-radius:4px;padding:10px 14px;font-size:13px;line-height:1.6;margin-top:10px;font-family:Helvetica Neue,Helvetica,Arial,sans-serif}' +
+    '.ai-warning{background:#FFF0F0;border:1px solid #F5AAAA;border-left:4px solid #C12335;border-radius:4px;padding:12px 16px;font-size:13px;color:#C12335;margin-top:8px}' +
     '</style>';
 }
 
@@ -753,128 +801,146 @@ function buildRepeatsPrompt(transcriptText, knowledgeText, agentName, selectedLO
     : '';
   var lobKb = selectedLOB ? getLOBKnowledge(selectedLOB) : '';
   var lobBlock = lobKb
-    ? '\n\nLOB & ROLE-SPECIFIC EVALUATION GUIDELINES:\nThe agent being audited is in the role: ' + selectedLOB + '. Apply the following role-specific criteria when identifying opportunities and generating coaching recommendations. Flag any deviations from these process requirements prominently in your Critical Flags section.\n\n' + lobKb + '\n\n'
+    ? '\n\nLOB & ROLE-SPECIFIC EVALUATION GUIDELINES:\nAgent role: ' + selectedLOB + '. Flag any process deviations prominently in the AI Spotted Flags section.\n\n' + lobKb + '\n\n'
     : '';
   var focusLine = agentName
-    ? 'IMPORTANT: This transcript may contain multiple agents. Evaluate ONLY the performance of ' + agentName + '. Any other agents are context only — do not evaluate or score their performance.\n\n'
+    ? 'IMPORTANT: Evaluate ONLY the performance of ' + agentName + '. Other agents in the transcript are context only.\n\n'
     : '';
 
   return 'You are a Quality Analyst. Analyze the call transcript(s) below.\n' +
     focusLine +
     'PURPOSE: Identify FCR opportunities, reduce repeat call rate and transfer rate.\n\n' +
-    'EVALUATION FRAMEWORK — TELUS CUSTOMER EXPERIENCE BLUEPRINT:\n' +
-    'Use these 4 pillars as your evaluation lens for ALL insights, coaching tips, and sample positioning statements:\n' +
-    '• ENGAGE: Empathy vs Acknowledging — Acknowledge the OCCURRENCE (the event), validate the EMOTION. Scripted openers like "I\'m sorry" or "I apologize" without context show a lack of personalization and imply a mistake before understanding the situation.\n' +
-    '• UNDERSTAND: Confirm vs Asking Questions — Ask open-ended questions to EXPLORE before confirming. Jumping to confirm before exploring means solving the wrong problem fast. Asking questions surfaces what the customer has not said yet.\n' +
-    '• SOLVE: Explain vs Bridging — Explaining tells the customer what something is (information). Bridging shows WHY it matters to THEM specifically (connection). The customer should walk away thinking "that\'s exactly what I need" not just "I understand that."\n' +
-    '• IMPRESS: Checking Understanding vs Setting Expectations — Checking understanding is REACTIVE (asks if the customer got it). Setting expectations is PROACTIVE (tells what comes next before they have to ask). Goal: customer leaves feeling informed, not just answered.\n' +
-    'Non-Negotiables that must never be missing: Qualification → Research → Solve → Explain → Change → Summarize.\n' +
-    'When writing insights, coaching tips, and sample positioning statements — ground them naturally in these CX Blueprint concepts. Use pillar language in your output (e.g. "The agent explained the solution but did not bridge it to the customer\'s specific situation" or "The agent confirmed an assumption instead of asking an open question to explore further").\n\n' +
-    'CRITICAL INSTRUCTION: Return ONLY valid HTML. No markdown, no explanations, no JSON.\n' +
-    'Your entire response must be HTML that uses exactly these CSS classes:\n\n' +
-    'For each call, wrap everything in: <div class="ai-call-block">\n' +
-    'Start with: <div class="ai-call-badge">Call 1</div>\n\n' +
-    'Use this exact structure. START with the Overall Recommendation summary card BEFORE anything else:\n\n' +
-    '<!-- OVERALL RECOMMENDATION SUMMARY — APPEARS FIRST AT THE TOP -->\n' +
-    '<div class="ai-section" style="background:#FFF8E1;border:2px solid #F9A825;border-radius:8px;padding:16px 20px;margin-bottom:20px">\n' +
-    '<div class="ai-title" style="background:#F9A825;color:#fff;border-left:4px solid #E65100;">&#128161; Overall Recommendation &amp; Coaching Summary</div>\n' +
-    '<p contenteditable="true" style="font-size:13px;font-weight:700;margin-bottom:8px">&#128313; Summary: [2-3 sentence overall assessment of the agent performance on this call]</p>\n' +
-    '<p contenteditable="true" style="font-size:13px;margin-bottom:8px">&#127919; Top Priority for Next Call: [The single most impactful action the agent must take immediately — be specific]</p>\n' +
-    '<p style="font-size:12px;font-weight:700;color:#7B3F00;margin:0 0 4px">&#127919; SMART Coaching Focus Areas <em style="font-weight:400;font-size:11px">(Specific · Measurable · Attainable · Realistic · Time-bound)</em></p>\n' +
-    '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px">\n' +
-    '<thead><tr style="background:#FDE8B0"><th style="padding:4px 8px;text-align:left;width:5%">#</th><th style="padding:4px 8px;text-align:left;width:20%">S — Specific Behavior</th><th style="padding:4px 8px;text-align:left;width:19%">M — How to Measure</th><th style="padding:4px 8px;text-align:left;width:16%">A — Attainable Target</th><th style="padding:4px 8px;text-align:left;width:16%">R — Realistic</th><th style="padding:4px 8px;text-align:left;width:24%">T — Timeline</th></tr></thead>\n' +
-    '<tbody>\n' +
-    '<tr><td style="padding:4px 8px;border-bottom:1px solid #fde">1</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Exact behavior to change]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[e.g. Repeat rate drops below 20%]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Achievable for this agent\'s current skill level]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Why this is realistic — e.g. low-effort change, already done on some calls]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[By next 1-on-1 / within 2 weeks]</td></tr>\n' +
-    '<tr><td style="padding:4px 8px;border-bottom:1px solid #fde">2</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Behavior 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Measurement 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Target 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Realistic 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Timeline 2]</td></tr>\n' +
-    '<tr><td style="padding:4px 8px">3</td><td contenteditable="true" style="padding:4px 8px">[Behavior 3]</td><td contenteditable="true" style="padding:4px 8px">[Measurement 3]</td><td contenteditable="true" style="padding:4px 8px">[Target 3]</td><td contenteditable="true" style="padding:4px 8px">[Realistic 3]</td><td contenteditable="true" style="padding:4px 8px">[Timeline 3]</td></tr>\n' +
-    '</tbody></table>\n' +
-    '<p contenteditable="true" style="font-size:13px;">&#127775; Manager Coaching Tip: [Specific tip for the Team Leader on how to coach this agent — what to reinforce and what to redirect]</p>\n' +
+    'CX BLUEPRINT LENS:\n' +
+    '• ENGAGE: Acknowledge the OCCURRENCE; validate the EMOTION — not scripted apologies.\n' +
+    '• UNDERSTAND: Ask open-ended questions to EXPLORE before confirming.\n' +
+    '• SOLVE: BRIDGE solutions to why they matter to THIS customer specifically.\n' +
+    '• IMPRESS: Set expectations PROACTIVELY — customer leaves informed, not just answered.\n\n' +
+    'CRITICAL INSTRUCTION: Return ONLY valid HTML. No markdown. No text outside the tags.\n' +
+    'Use EXACTLY these CSS classes in this exact structure:\n\n' +
+    '<div class="report-wrap">\n\n' +
+
+    '<!-- HEADER -->\n' +
+    '<div class="report-header">\n' +
+    '  <div class="report-header-title">&#128204; TELUS NH Analyzer</div>\n' +
+    '  <div class="report-header-sub">Repeats &amp; Transfer Audit Report</div>\n' +
     '</div>\n\n' +
-    '<!-- COACHING TAKEAWAYS SUMMARY — APPEARS SECOND -->\n' +
-    '<div class="ai-section" style="background:#E8F5E9;border:2px solid #2B8000;border-radius:8px;padding:14px 18px;margin-bottom:20px">\n' +
-    '<div class="ai-title" style="background:#2B8000;color:#fff;border-left:4px solid #1B5E20;">&#127979; Key Coaching Takeaways</div>\n' +
-    '<ol class="ai-coaching" style="padding-left:20px;font-size:13px;line-height:2.1">\n' +
-    '<li contenteditable="true">[Most impactful takeaway — cite a verbatim moment from this call and the SMART action to replace it]</li>\n' +
-    '<li contenteditable="true">[Second takeaway — specific, actionable, and measurable]</li>\n' +
-    '<li contenteditable="true">[Third takeaway]</li>\n' +
-    '</ol>\n' +
-    '</div>\n\n' +
-    'Then for EACH call use this structure:\n\n' +
-    '<div class="ai-call-block">\n' +
-    '<div class="ai-call-badge">Call 1</div>\n\n' +
-    '<!-- CALL SUMMARY -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#128222; Call Summary</div>\n' +
-    '<div class="ai-summary">[100-word summary of what happened in the call]</div>\n' +
-    '</div>\n\n' +
-    '<!-- CALL INFORMATION -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#128100; Call Information</div>\n' +
+
+    '<!-- META ROW: fill values from transcript -->\n' +
     '<div class="ai-info">\n' +
-    '  <div class="ai-chip"><span class="ai-chip-label">Agent</span><span class="ai-chip-val">[name]</span></div>\n' +
-    '  <div class="ai-chip"><span class="ai-chip-label">Date</span><span class="ai-chip-val">[date]</span></div>\n' +
-    '  <div class="ai-chip"><span class="ai-chip-label">Phone</span><span class="ai-chip-val">[phone or N/A]</span></div>\n' +
-    '  <div class="ai-chip"><span class="ai-chip-label">Country</span><span class="ai-chip-val">[country]</span></div>\n' +
-    '  <div class="ai-chip"><span class="ai-chip-label">Department</span><span class="ai-chip-val">[dept]</span></div>\n' +
-    '  <div class="ai-chip"><span class="ai-chip-label">Issue Resolved</span><span class="ai-chip-val">[Yes/No]</span></div>\n' +
-    '  <div class="ai-chip"><span class="ai-chip-label">Repeat Risk</span><span class="ai-chip-val">[0-100%]</span></div>\n' +
+    '  <div class="ai-chip">' +
+    '<span class="ai-chip-label">Agent Name</span>' +
+    '<span class="ai-chip-val">[agent full name]</span></div>\n' +
+    '  <div class="ai-chip">' +
+    '<span class="ai-chip-label">Call Date</span>' +
+    '<span class="ai-chip-val">[date from transcript]</span></div>\n' +
+    '  <div class="ai-chip">' +
+    '<span class="ai-chip-label">Interaction Date</span>' +
+    '<span class="ai-chip-val">[interaction date or N/A]</span></div>\n' +
+    '  <div class="ai-chip">' +
+    '<span class="ai-chip-label">Issue Resolution</span>' +
+    '<span class="ai-chip-val"><span class="report-badge-[yes|no]">[Yes or No]</span></span></div>\n' +
+    '  <div class="ai-chip">' +
+    '<span class="ai-chip-label">Repeat Risk</span>' +
+    '<span class="ai-chip-val">[0-100]%</span></div>\n' +
+    '  <div class="ai-chip">' +
+    '<span class="ai-chip-label">Audit Reference</span>' +
+    '<span class="ai-chip-val">__AUDIT_REF__</span></div>\n' +
+    '</div>\n\n' +
+
+    '<!-- CALL SUMMARY & KEY INTERACTION DETAILS -->\n' +
+    '<div class="report-summary-wrap">\n' +
+    '  <div class="report-summary-label">&#128222; Call Summary &amp; Key Interaction Details</div>\n' +
+    '  <div class="ai-summary" contenteditable="true">' +
+    '[100-word summary: customer reason for call, key moments, outcome, ' +
+    'any transfers or callbacks, tone of interaction]' +
+    '</div>\n' +
+    '  <div class="report-summary-meta">' +
+    'Duration: [X min] &nbsp;|&nbsp; Direction: [Inbound/Outbound] &nbsp;|&nbsp; ' +
+    'Transfer: [Yes/No]' +
     '</div>\n' +
     '</div>\n\n' +
-    '<!-- ANALYSIS TABLE -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#128203; Analysis — Opportunities &amp; Recommendations</div>\n' +
-    '<table class="ai-table">\n' +
-    '<thead><tr><th style="width:20%">Parameter</th><th style="width:28%">Finding / Detail</th><th style="width:52%">SMART Recommendation <span style="font-size:10px;font-weight:400">(Specific · Measurable · Attainable · Realistic · Time-bound)</span></th></tr></thead>\n' +
-    '<tbody>\n' +
-    '<tr><td class="ai-label-col">Repeat Projection</td><td contenteditable="true">[% and drivers]</td><td contenteditable="true">[S: exact behavior to change · M: target repeat % · A: achievable step · R: realistic given agent\'s current skill · T: by next audit or 2 weeks]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Issue Resolution</td><td contenteditable="true">[what was/was not resolved]</td><td contenteditable="true">[S: specific resolution step missed · M: measure by FCR rate · A: achievable · R: realistic — low effort to fix · T: apply from next call]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Process / Policy Gaps</td><td contenteditable="true">[gaps found]</td><td contenteditable="true">[S: which policy step · M: zero policy misses on next 5 calls · A: achievable with coaching · R: realistic — agent has tools · T: within 1 week]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Missing Steps</td><td contenteditable="true">[steps agent skipped]</td><td contenteditable="true">[S: name the exact missed step · M: applied on every relevant call · A: yes · R: realistic — already knows the step · T: immediately]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Callback Policy</td><td contenteditable="true">[followed or not]</td><td contenteditable="true">[S: exact policy requirement · M: 100% compliance on next calls · A: yes · R: realistic — simple script change · T: next call]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Transfer Analysis</td><td contenteditable="true">[transfer occurred? valid?]</td><td contenteditable="true">[S: correct transfer criteria · M: 0 invalid transfers next month · A: achievable · R: realistic — criteria are clear · T: by next QA review]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Probing Questions</td><td contenteditable="true">[questions used by agent]</td><td contenteditable="true">[S: 2 specific open-ended questions · M: used on every call · A: easy to practice · R: realistic — short habit to build · T: next call]</td></tr>\n' +
-    '<tr><td class="ai-label-col">Agent Strengths</td><td contenteditable="true">[what agent did well]</td><td contenteditable="true">[S: keep doing X · M: maintain on 90% of calls · A: already demonstrated · R: natural strength · T: ongoing]</td></tr>\n' +
-    '<tr><td class="ai-label-col">FCR Assessment</td><td contenteditable="true">[could this be 1 call?]</td><td contenteditable="true">[S: what would make it 1-call · M: FCR rate target · A: achievable · R: realistic with coaching · T: within 2 weeks]</td></tr>\n' +
-    '<tr><td class="ai-label-col">3 SMART Actions</td><td contenteditable="true" colspan="2">[1. S:[action] M:[metric] A:[target] R:[why realistic] T:[timeline]   2. S:[action] M:[metric] A:[target] R:[why realistic] T:[timeline]   3. S:[action] M:[metric] A:[target] R:[why realistic] T:[timeline]]</td></tr>\n' +
-    '</tbody>\n' +
-    '</table>\n' +
+
+    '<!-- 3-COLUMN COACHING GRID -->\n' +
+    '<div class="report-3col">\n\n' +
+
+    '  <!-- COLUMN 1: What\'s Working — exactly 2 items -->\n' +
+    '  <div class="report-col report-col-working">\n' +
+    '    <div class="report-col-head">&#9989; What\'s Working</div>\n' +
+    '    <ul class="report-col-list">\n' +
+    '      <li contenteditable="true">' +
+    '[Most impactful highlight — specific behavior with a brief example or verbatim quote]' +
+    '</li>\n' +
+    '      <li contenteditable="true">' +
+    '[Second specific strength from this call]' +
+    '</li>\n' +
+    '    </ul>\n' +
+    '  </div>\n\n' +
+
+    '  <!-- COLUMN 2: What Needs to Change — exactly 2 items -->\n' +
+    '  <div class="report-col report-col-change">\n' +
+    '    <div class="report-col-head">&#128205; What Needs to Change</div>\n' +
+    '    <ul class="report-col-list">\n' +
+    '      <li contenteditable="true">' +
+    '[Most critical behavior — specific and actionable; name why it increases repeat call risk]' +
+    '</li>\n' +
+    '      <li contenteditable="true">' +
+    '[Second behavior — specific and tied to FCR or customer experience]' +
+    '</li>\n' +
+    '    </ul>\n' +
+    '  </div>\n\n' +
+
+    '  <!-- COLUMN 3: How to Change It: Roleplays and Samples -->\n' +
+    '  <div class="report-col report-col-howto">\n' +
+    '    <div class="report-col-head">&#127908; How to Change It: Roleplays and Samples</div>\n' +
+    '    <ul class="report-col-list report-col-roleplays">\n' +
+    '      <li>\n' +
+    '        <div class="ai-flag-rl-label">Roleplay Scenario 1</div>\n' +
+    '        <div class="ai-flag-stmt" contenteditable="true">' +
+    '"[Verbatim statement addressing What Needs to Change item 1 — complete, natural, roleplay-ready]"' +
+    '</div>\n' +
+    '      </li>\n' +
+    '      <li>\n' +
+    '        <div class="ai-flag-rl-label">Roleplay Scenario 2</div>\n' +
+    '        <div class="ai-flag-stmt" contenteditable="true">' +
+    '"[Verbatim statement addressing What Needs to Change item 2]"' +
+    '</div>\n' +
+    '      </li>\n' +
+    '    </ul>\n' +
+    '  </div>\n\n' +
+
     '</div>\n\n' +
-    '<!-- CRITICAL FLAGS -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#128681; Critical Flags &amp; Positioning Statements</div>\n' +
-    '[Repeat this block for EACH critical flag found:]\n' +
-    '<div class="ai-flag">\n' +
-    '  <div class="ai-flag-title">&#9888; [Name of missed parameter or behavior]</div>\n' +
-    '  <div class="ai-flag-detail">[Detailed explanation of what was missed and why it matters to the customer and FCR]</div>\n' +
-    '  <div style="background:#FFF3E0;border:1px solid #FFB74D;border-radius:4px;padding:8px 12px;margin:8px 0;font-size:12px">\n' +
-    '    <strong style="color:#E65100">&#127919; SMART Coaching Goal:</strong><br/>\n' +
-    '    <span contenteditable="true">S: [Specific behavior to change for this flag] | M: [How success is measured — e.g. 0 occurrences in next 5 calls] | A: [Achievable target] | R: [Why this is realistic — e.g. agent already has the knowledge, low-effort fix] | T: [Timeline — e.g. within 2 coaching sessions]</span>\n' +
+
+    '<!-- AI SPOTTED FLAGS: 2-5 flags; ai-flag class = X-button works; ai-flag-title = Dashboard extraction -->\n' +
+    '<div class="report-flags">\n' +
+    '  <div class="report-flags-head">&#128681; AI Spotted Flags</div>\n' +
+    '  <div class="report-flags-body">\n' +
+    '    [Repeat for EACH critical flag (min 2, max 5):]\n' +
+    '    <div class="ai-flag">\n' +
+    '      <div class="ai-flag-title">&#9888; [Specific missed behavior or policy deviation]</div>\n' +
+    '      <div class="ai-flag-detail" contenteditable="true">' +
+    '[2-3 sentences: what was missed, why it matters for FCR, verbatim example from transcript]' +
+    '</div>\n' +
+    '    </div>\n' +
     '  </div>\n' +
-    '  <div class="ai-flag-rl-label">&#127908; Sample Positioning Statement — Roleplay &amp; Practice</div>\n' +
-    '  <div class="ai-flag-stmt" contenteditable="true">"[A complete, roleplay-ready statement the coach can say verbatim — e.g. \'[Agent name], when a customer asks X, try saying: [exact words]. This will help them feel Y and reduce repeat calls by Z%.\'  ]"</div>\n' +
-    '</div>\n' +
     '</div>\n\n' +
+
+    '<!-- FOOTER -->\n' +
+    '<div class="report-footer">\n' +
+    '  <span class="report-footer-ref">Audit Ref: __AUDIT_REF__</span>\n' +
+    '  <span class="report-footer-obs">Observer: __OBSERVER__</span>\n' +
     '</div>\n\n' +
-    '<!-- HIGHLIGHTS AND LOWLIGHTS (outside call blocks, once at the end) -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#9733; Highlights &amp; Lowlights</div>\n' +
-    '<div class="ai-hl-grid">\n' +
-    '<div class="ai-hl-box ai-hl-high"><div class="ai-hl-title">&#10003; Highlights</div><ul>\n' +
-    '<li contenteditable="true">[highlight 1]</li>\n' +
-    '<li contenteditable="true">[highlight 2]</li>\n' +
-    '</ul></div>\n' +
-    '<div class="ai-hl-box ai-hl-low"><div class="ai-hl-title">&#10007; Lowlights / Recommendations</div><ul>\n' +
-    '<li contenteditable="true">[lowlight 1]</li>\n' +
-    '<li contenteditable="true">[lowlight 2]</li>\n' +
-    '</ul></div>\n' +
-    '</div>\n' +
+
     '</div>\n\n' +
-    'REPLACE all [placeholder] text with actual SMART analysis from the transcript.\n' +
-    'Do NOT include any text outside the HTML tags.\n' +
-    'Do NOT use markdown.\n' +
-    'Make all contenteditable="true" attributes present on td and li elements.\n\n' +
-    kb +
-    lobBlock +
+
+    'RULES:\n' +
+    '1. Replace ALL [placeholder] text with real analysis from the transcript.\n' +
+    '2. Issue Resolution badge: class="report-badge-yes" for Yes, class="report-badge-no" for No.\n' +
+    '3. Keep __AUDIT_REF__ and __OBSERVER__ as literal text — do NOT replace them.\n' +
+    '4. Keep contenteditable="true" on all elements shown with it.\n' +
+    '5. Exactly 2 li items in What\'s Working and What Needs to Change.\n' +
+    '6. AI Spotted Flags: 2-5 flags. Each title MUST have class="ai-flag-title".\n' +
+    '7. Do NOT include any text outside the HTML. Do NOT use markdown.\n\n' +
+    kb + lobBlock +
     'TRANSCRIPT:\n\n' + transcriptText;
 }
 
@@ -887,140 +953,149 @@ function buildSalesPrompt(transcriptText, knowledgeText, agentName, selectedLOB)
     : '';
   var lobKb = selectedLOB ? getLOBKnowledge(selectedLOB) : '';
   var lobBlock = lobKb
-    ? '\n\nLOB & ROLE-SPECIFIC EVALUATION GUIDELINES:\nThe agent being audited is in the role: ' + selectedLOB + '. Apply the following role-specific criteria when evaluating sales performance. Flag any deviations prominently in your Critical Flags section.\n\n' + lobKb + '\n\n'
+    ? '\n\nLOB & ROLE-SPECIFIC EVALUATION GUIDELINES:\nAgent role: ' + selectedLOB + '. Flag any deviations prominently in the AI Spotted Flags section.\n\n' + lobKb + '\n\n'
     : '';
   var focusLine = agentName
-    ? 'IMPORTANT: This transcript may contain multiple agents. Evaluate ONLY the performance of ' + agentName + '. Any other agents are context only — do not evaluate or score their performance.\n\n'
+    ? 'IMPORTANT: Evaluate ONLY the sales performance of ' + agentName + '. Other agents in the transcript are context only.\n\n'
     : '';
 
   return 'You are an expert sales performance analyst for TELUS. Evaluate the call transcript.\n' +
     focusLine +
     'PURPOSE: Identify sales opportunities and coach agents to increase sales.\n\n' +
-    'EVALUATION FRAMEWORK — TELUS CUSTOMER EXPERIENCE BLUEPRINT:\n' +
-    'Use these 4 pillars as your evaluation lens for ALL insights, coaching tips, and sample positioning statements:\n' +
-    '• ENGAGE: Empathy vs Acknowledging — Acknowledge the OCCURRENCE (the event), validate the EMOTION. Scripted openers like "I\'m sorry" or "I apologize" without context show a lack of personalization and imply a mistake before understanding the situation.\n' +
-    '• UNDERSTAND: Confirm vs Asking Questions — Ask open-ended questions to EXPLORE before confirming. Jumping to confirm before exploring means solving the wrong problem fast. Asking questions surfaces what the customer has not said yet.\n' +
-    '• SOLVE: Explain vs Bridging — Explaining tells the customer what something is (information). Bridging shows WHY it matters to THEM specifically (connection). The customer should walk away thinking "that\'s exactly what I need" not just "I understand that." This is the core of value-based selling.\n' +
-    '• IMPRESS: Checking Understanding vs Setting Expectations — Checking understanding is REACTIVE (asks if the customer got it). Setting expectations is PROACTIVE (tells what comes next before they have to ask). Goal: customer leaves feeling informed, not just answered.\n' +
-    'Non-Negotiables that must never be missing: Qualification → Research → Solve → Explain → Change → Summarize.\n' +
-    'When writing insights, coaching tips, and sample positioning statements — ground them naturally in these CX Blueprint concepts. Use pillar language in your output (e.g. "The agent explained the product features but did not bridge to why it matters to this customer\'s specific situation" or "The agent confirmed the need without asking open questions to fully explore it first").\n\n' +
-    'CRITICAL INSTRUCTION: Return ONLY valid HTML. No markdown, no explanations, no JSON.\n' +
-    'Your entire response must be HTML using exactly these CSS classes:\n\n' +
-    'Use this exact structure. START with the Overall Recommendation and Coaching Takeaways summary cards at the very TOP before the score panel:\n\n' +
-    '<!-- OVERALL RECOMMENDATION SUMMARY — FIRST THING AT THE TOP -->\n' +
-    '<div class="ai-section" style="background:#FFF8E1;border:2px solid #F9A825;border-radius:8px;padding:16px 20px;margin-bottom:20px">\n' +
-    '<div class="ai-title" style="background:#F9A825;color:#fff;border-left:4px solid #E65100;">&#128161; Overall Recommendation &amp; Coaching Summary</div>\n' +
-    '<p contenteditable="true" style="font-size:13px;font-weight:700;margin-bottom:8px">&#128313; Summary: [2-3 sentence overall assessment of the agent sales performance on this call]</p>\n' +
-    '<p contenteditable="true" style="font-size:13px;margin-bottom:8px">&#127919; Top Priority for Next Call: [The single most impactful sales action the agent must apply immediately — be specific and actionable]</p>\n' +
-    '<p style="font-size:12px;font-weight:700;color:#7B3F00;margin:0 0 4px">&#127919; SMART Coaching Focus Areas <em style="font-weight:400;font-size:11px">(Specific · Measurable · Attainable · Realistic · Time-bound)</em></p>\n' +
-    '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px">\n' +
-    '<thead><tr style="background:#FDE8B0"><th style="padding:4px 8px;text-align:left;width:5%">#</th><th style="padding:4px 8px;text-align:left;width:20%">S — Specific Sales Behavior</th><th style="padding:4px 8px;text-align:left;width:19%">M — How to Measure</th><th style="padding:4px 8px;text-align:left;width:16%">A — Attainable Target</th><th style="padding:4px 8px;text-align:left;width:16%">R — Realistic</th><th style="padding:4px 8px;text-align:left;width:24%">T — Timeline</th></tr></thead>\n' +
-    '<tbody>\n' +
-    '<tr><td style="padding:4px 8px;border-bottom:1px solid #fde">1</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Exact sales behavior — e.g. Always present the bundle after identifying the need]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[e.g. Conversion rate or offer-made rate on next 5 calls]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Achievable step for this agent]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Why realistic — e.g. agent knows the product, small habit shift]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[By next 1-on-1 / within 2 weeks]</td></tr>\n' +
-    '<tr><td style="padding:4px 8px;border-bottom:1px solid #fde">2</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Sales behavior 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Measurement 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Target 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Realistic 2]</td><td contenteditable="true" style="padding:4px 8px;border-bottom:1px solid #fde">[Timeline 2]</td></tr>\n' +
-    '<tr><td style="padding:4px 8px">3</td><td contenteditable="true" style="padding:4px 8px">[Sales behavior 3]</td><td contenteditable="true" style="padding:4px 8px">[Measurement 3]</td><td contenteditable="true" style="padding:4px 8px">[Target 3]</td><td contenteditable="true" style="padding:4px 8px">[Realistic 3]</td><td contenteditable="true" style="padding:4px 8px">[Timeline 3]</td></tr>\n' +
-    '</tbody></table>\n' +
-    '<p contenteditable="true" style="font-size:13px;">&#127775; Manager Coaching Tip: [Specific tip for the Team Leader on how to coach this agent — what to reinforce and what to redirect]</p>\n' +
+    'CX BLUEPRINT LENS:\n' +
+    '• ENGAGE: Acknowledge the OCCURRENCE; validate the EMOTION — not scripted apologies.\n' +
+    '• UNDERSTAND: Ask open-ended questions to EXPLORE before confirming.\n' +
+    '• SOLVE: BRIDGE solutions — show WHY they matter to THIS customer specifically.\n' +
+    '• IMPRESS: Set expectations PROACTIVELY — customer leaves informed and confident.\n\n' +
+    'CRITICAL INSTRUCTION: Return ONLY valid HTML. No markdown. No text outside the tags.\n' +
+    'Use EXACTLY these CSS classes in this exact structure:\n\n' +
+    '<div class="report-wrap">\n\n' +
+
+    '<!-- HEADER -->\n' +
+    '<div class="report-header">\n' +
+    '  <div class="report-header-title">&#128204; TELUS NH Analyzer</div>\n' +
+    '  <div class="report-header-sub">Sales Performance Audit Report</div>\n' +
     '</div>\n\n' +
-    '<!-- COACHING TAKEAWAYS SUMMARY — SECOND AT THE TOP -->\n' +
-    '<div class="ai-section" style="background:#E8F5E9;border:2px solid #2B8000;border-radius:8px;padding:14px 18px;margin-bottom:20px">\n' +
-    '<div class="ai-title" style="background:#2B8000;color:#fff;border-left:4px solid #1B5E20;">&#127979; Key Coaching Takeaways</div>\n' +
-    '<ol class="ai-coaching" style="padding-left:20px;font-size:13px;line-height:2.1">\n' +
-    '<li contenteditable="true">[Most impactful sales coaching takeaway — cite a verbatim moment from this call + the SMART action to replace it]</li>\n' +
-    '<li contenteditable="true">[Second takeaway — specific, actionable, and measurable]</li>\n' +
-    '<li contenteditable="true">[Third takeaway]</li>\n' +
-    '</ol>\n' +
-    '</div>\n\n' +
-    '<!-- SCORE PANEL -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#128200; Overall Performance Score</div>\n' +
-    '<div class="ai-score-panel">\n' +
-    '  <div class="ai-score-row"><span>Building Rapport</span><span class="ai-badge [ai-badge-good OR ai-badge-mid OR ai-badge-bad]">[0-5]/5</span></div>\n' +
-    '  <div class="ai-score-row"><span>Needs Identification</span><span class="ai-badge [class]">[0-5]/5</span></div>\n' +
-    '  <div class="ai-score-row"><span>Product Presentation</span><span class="ai-badge [class]">[0-5]/5</span></div>\n' +
-    '  <div class="ai-score-row"><span>Objection Handling</span><span class="ai-badge [class]">[0-5]/5</span></div>\n' +
-    '  <div class="ai-score-row"><span>Closing Techniques</span><span class="ai-badge [class]">[0-5]/5</span></div>\n' +
-    '  <div class="ai-score-row"><span><strong>Total Score</strong></span><span class="ai-badge [class]"><strong>[avg]/5</strong></span></div>\n' +
-    '</div>\n' +
-    '</div>\n\n' +
-    '<!-- CALL SUMMARY -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#128222; Call Summary</div>\n' +
-    '<div class="ai-summary">[max 200-word linear description of customer experience]</div>\n' +
-    '</div>\n\n' +
-    '<!-- INTERACTION OVERVIEW -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#128100; Interaction Overview</div>\n' +
+
+    '<!-- META ROW: fill values from transcript -->\n' +
     '<div class="ai-info">\n' +
-    '  <div class="ai-chip"><span class="ai-chip-label">Sale Occurred</span><span class="ai-chip-val">[Yes/No]</span></div>\n' +
-    '  <div class="ai-chip"><span class="ai-chip-label">Product Sold</span><span class="ai-chip-val">[name or N/A]</span></div>\n' +
-    '  <div class="ai-chip"><span class="ai-chip-label">Sale Initiator</span><span class="ai-chip-val">[Agent/Client]</span></div>\n' +
+    '  <div class="ai-chip">' +
+    '<span class="ai-chip-label">Agent Name</span>' +
+    '<span class="ai-chip-val">[agent full name]</span></div>\n' +
+    '  <div class="ai-chip">' +
+    '<span class="ai-chip-label">Call Date</span>' +
+    '<span class="ai-chip-val">[date from transcript]</span></div>\n' +
+    '  <div class="ai-chip">' +
+    '<span class="ai-chip-label">Interaction Date</span>' +
+    '<span class="ai-chip-val">[interaction date or N/A]</span></div>\n' +
+    '  <div class="ai-chip">' +
+    '<span class="ai-chip-label">Issue Resolution</span>' +
+    '<span class="ai-chip-val"><span class="report-badge-[yes|no]">[Yes or No]</span></span></div>\n' +
+    '  <div class="ai-chip">' +
+    '<span class="ai-chip-label">Pitched a Sale?</span>' +
+    '<span class="ai-chip-val"><span class="report-badge-[yes|no]">[Yes or No]</span></span></div>\n' +
+    '  <div class="ai-chip">' +
+    '<span class="ai-chip-label">Audit Reference</span>' +
+    '<span class="ai-chip-val">__AUDIT_REF__</span></div>\n' +
+    '</div>\n\n' +
+
+    '<!-- CALL SUMMARY & KEY INTERACTION DETAILS -->\n' +
+    '<div class="report-summary-wrap">\n' +
+    '  <div class="report-summary-label">&#128222; Call Summary &amp; Key Interaction Details</div>\n' +
+    '  <div class="ai-summary" contenteditable="true">' +
+    '[100-word summary: customer reason for call, key sales moments, ' +
+    'whether a sale was attempted or completed, outcome, tone of interaction]' +
     '</div>\n' +
-    '[If no sale: <div class="ai-perfect"><strong>Perfect Sales Moment:</strong> [where in transcript + suggested statement]</div>]\n' +
+    '  <div class="report-summary-meta">' +
+    'Duration: [X min] &nbsp;|&nbsp; Direction: [Inbound/Outbound] &nbsp;|&nbsp; ' +
+    'Sale Outcome: [Sold / Not Sold / Attempted]' +
+    '</div>\n' +
     '</div>\n\n' +
-    '<!-- ONE TABLE PER FRAMEWORK ELEMENT -->\n' +
-    'Repeat this block for EACH of the 5 elements: Building Rapport, Needs Identification, Product Presentation, Objection Handling, Closing Techniques.\n' +
-    'Each table now has 5 columns — Skill Name, Score, Analysis & Strengths, Areas of Opportunity, AND a new Recommendation + Sample Positioning Statement column.\n\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">[Element Name]</div>\n' +
-    '<table class="ai-table">\n' +
-    '<thead><tr>\n' +
-    '  <th style="width:18%">Skill Name</th>\n' +
-    '  <th style="width:6%">Score</th>\n' +
-    '  <th style="width:20%">Analysis &amp; Strengths</th>\n' +
-    '  <th style="width:20%">Areas of Opportunity</th>\n' +
-    '  <th style="width:36%">SMART Recommendation &amp; Sample Positioning Statement</th>\n' +
-    '</tr></thead>\n' +
-    '<tbody>\n' +
-    '[One row per subelement — fill all 5 cells with actual analysis:]\n' +
-    '<tr>\n' +
-    '  <td class="ai-label-col">[subelement name]</td>\n' +
-    '  <td><span class="ai-badge [class]">[0-5]/5</span></td>\n' +
-    '  <td contenteditable="true">[what agent did well + verbatim quote]</td>\n' +
-    '  <td contenteditable="true">[specific gap + verbatim missed moment]</td>\n' +
-    '  <td contenteditable="true"><strong>Coaching:</strong> [1-sentence SMART action — exact behavior, how to measure, by when]<br/>&#127908; <em>"[Roleplay — max 25 words]"</em></td>\n' +
-    '</tr>\n' +
-    '</tbody>\n' +
-    '</table>\n' +
+
+    '<!-- 3-COLUMN COACHING GRID -->\n' +
+    '<div class="report-3col">\n\n' +
+
+    '  <!-- COLUMN 1: What\'s Working — exactly 2 items -->\n' +
+    '  <div class="report-col report-col-working">\n' +
+    '    <div class="report-col-head">&#9989; What\'s Working</div>\n' +
+    '    <ul class="report-col-list">\n' +
+    '      <li contenteditable="true">' +
+    '[Most impactful sales strength — specific behavior with example or verbatim quote]' +
+    '</li>\n' +
+    '      <li contenteditable="true">' +
+    '[Second specific strength — what the agent did well that drove value]' +
+    '</li>\n' +
+    '    </ul>\n' +
+    '  </div>\n\n' +
+
+    '  <!-- COLUMN 2: What Needs to Change — exactly 2 items -->\n' +
+    '  <div class="report-col report-col-change">\n' +
+    '    <div class="report-col-head">&#128205; What Needs to Change</div>\n' +
+    '    <ul class="report-col-list">\n' +
+    '      <li contenteditable="true">' +
+    '[Most critical sales gap — specific missed opportunity or technique; ' +
+    'name why it cost the sale or damaged the customer experience]' +
+    '</li>\n' +
+    '      <li contenteditable="true">' +
+    '[Second gap — specific behavior change tied to conversion or CX]' +
+    '</li>\n' +
+    '    </ul>\n' +
+    '  </div>\n\n' +
+
+    '  <!-- COLUMN 3: How to Change It: Roleplays and Samples -->\n' +
+    '  <div class="report-col report-col-howto">\n' +
+    '    <div class="report-col-head">&#127908; How to Change It: Roleplays and Samples</div>\n' +
+    '    <ul class="report-col-list report-col-roleplays">\n' +
+    '      <li>\n' +
+    '        <div class="ai-flag-rl-label">Roleplay Scenario 1</div>\n' +
+    '        <div class="ai-flag-stmt" contenteditable="true">' +
+    '"[Verbatim sales statement addressing What Needs to Change item 1 — ' +
+    'complete, natural, roleplay-ready, bridges value to this customer]"' +
+    '</div>\n' +
+    '      </li>\n' +
+    '      <li>\n' +
+    '        <div class="ai-flag-rl-label">Roleplay Scenario 2</div>\n' +
+    '        <div class="ai-flag-stmt" contenteditable="true">' +
+    '"[Verbatim sales statement addressing What Needs to Change item 2]"' +
+    '</div>\n' +
+    '      </li>\n' +
+    '    </ul>\n' +
+    '  </div>\n\n' +
+
     '</div>\n\n' +
-    '<!-- CRITICAL FLAGS -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#128681; Critical Flags &amp; Positioning Statements</div>\n' +
-    '[For each critical flag:]\n' +
-    '<div class="ai-flag">\n' +
-    '  <div class="ai-flag-title">&#9888; [Missed parameter or behavior]</div>\n' +
-    '  <div class="ai-flag-detail">[Detailed explanation of what was missed and why it matters to the customer and the sale]</div>\n' +
-    '  <div style="background:#FFF3E0;border:1px solid #FFB74D;border-radius:4px;padding:8px 12px;margin:8px 0;font-size:12px">\n' +
-    '    <strong style="color:#E65100">&#127919; SMART Coaching Goal:</strong><br/>\n' +
-    '    <span contenteditable="true">S: [Specific sales behavior to change] | M: [How success is measured — e.g. offer made on every eligible call] | A: [Achievable target] | R: [Why realistic — e.g. agent understands the product, simple technique to apply] | T: [Timeline — e.g. within 2 coaching sessions / by next QA review]</span>\n' +
+
+    '<!-- AI SPOTTED FLAGS: 2-5 flags; ai-flag class = X-button works; ai-flag-title = Dashboard extraction -->\n' +
+    '<div class="report-flags">\n' +
+    '  <div class="report-flags-head">&#128681; AI Spotted Flags</div>\n' +
+    '  <div class="report-flags-body">\n' +
+    '    [Repeat for EACH critical flag (min 2, max 5):]\n' +
+    '    <div class="ai-flag">\n' +
+    '      <div class="ai-flag-title">&#9888; [Specific missed sales behavior or compliance deviation]</div>\n' +
+    '      <div class="ai-flag-detail" contenteditable="true">' +
+    '[2-3 sentences: what was missed, why it matters for the sale or customer trust, ' +
+    'verbatim example from transcript]' +
+    '</div>\n' +
+    '    </div>\n' +
     '  </div>\n' +
-    '  <div class="ai-flag-rl-label">&#127908; Sample Positioning Statement — Roleplay &amp; Practice</div>\n' +
-    '  <div class="ai-flag-stmt" contenteditable="true">"[Complete, roleplay-ready statement the coach can say verbatim — e.g. \'[Agent], when the customer says X, try: [exact sales phrase]. This makes the offer feel relevant and personal — and it closes more naturally.\']"</div>\n' +
-    '</div>\n' +
     '</div>\n\n' +
-    '<!-- HIGHLIGHTS AND LOWLIGHTS -->\n' +
-    '<div class="ai-section">\n' +
-    '<div class="ai-title">&#9733; Highlights &amp; Lowlights — This Call</div>\n' +
-    '<div class="ai-hl-grid">\n' +
-    '<div class="ai-hl-box ai-hl-high"><div class="ai-hl-title">&#10003; Highlights</div><ul>\n' +
-    '<li contenteditable="true">[Specific strength from this call with verbatim example]</li>\n' +
-    '<li contenteditable="true">[Another highlight — be specific about what worked well]</li>\n' +
-    '<li contenteditable="true">[Third highlight]</li>\n' +
-    '</ul></div>\n' +
-    '<div class="ai-hl-box ai-hl-low"><div class="ai-hl-title">&#10007; Lowlights</div><ul>\n' +
-    '<li contenteditable="true">[Specific missed opportunity with verbatim example of what was said vs what should have been said]</li>\n' +
-    '<li contenteditable="true">[Another lowlight — be specific]</li>\n' +
-    '<li contenteditable="true">[Third lowlight]</li>\n' +
-    '</ul></div>\n' +
-    '</div>\n' +
+
+    '<!-- FOOTER -->\n' +
+    '<div class="report-footer">\n' +
+    '  <span class="report-footer-ref">Audit Ref: __AUDIT_REF__</span>\n' +
+    '  <span class="report-footer-obs">Observer: __OBSERVER__</span>\n' +
     '</div>\n\n' +
-    'Badge class rules: score 3-5 = ai-badge-good (green), score 2-2.9 = ai-badge-mid (amber), score 1-1.9 = ai-badge-bad (red), score 0 = ai-badge-zero (grey)\n' +
-    'CRITICAL: Every framework table MUST have 5 columns including the Recommendation & Sample Positioning Statement column.\n' +
-    'REPLACE all [placeholder] text with actual analysis from the transcript.\n' +
-    'Do NOT include any text outside the HTML tags.\n' +
-    'Make all td and li elements contenteditable="true".\n\n' +
-    kb +
-    lobBlock +
+
+    '</div>\n\n' +
+
+    'RULES:\n' +
+    '1. Replace ALL [placeholder] text with real analysis from the transcript.\n' +
+    '2. Issue Resolution badge and Pitched a Sale? badge: class="report-badge-yes" for Yes, class="report-badge-no" for No.\n' +
+    '3. Keep __AUDIT_REF__ and __OBSERVER__ as literal text — do NOT replace them.\n' +
+    '4. Keep contenteditable="true" on all elements shown with it.\n' +
+    '5. Exactly 2 li items in What\'s Working and What Needs to Change.\n' +
+    '6. AI Spotted Flags: 2-5 flags. Each title MUST have class="ai-flag-title".\n' +
+    '7. Do NOT include any text outside the HTML. Do NOT use markdown.\n\n' +
+    kb + lobBlock +
     'TRANSCRIPT:\n\n' + transcriptText;
 }
 

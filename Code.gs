@@ -3047,6 +3047,32 @@ function resolveObserver() {
   }
 }
 
+// ── Flag dropdown options (loaded dynamically from Google Sheet) ───────────────
+function getFlagDropdownOptions() {
+  try {
+    var ss    = SpreadsheetApp.openById('1baZbWTLNw7_ij04oH3aO_xT4eOTffcUwRRL836cHzJo');
+    var sheet = ss.getSheetByName('Add a Flag');
+    if (!sheet) return { success: false, options: [], error: 'Tab "Add a Flag" not found' };
+    var data    = sheet.getDataRange().getValues();
+    if (!data || !data.length) return { success: true, options: [] };
+    var headers = data[0];
+    var colIdx  = -1;
+    for (var i = 0; i < headers.length; i++) {
+      if ((headers[i] + '').trim().toLowerCase() === 'dropdowns') { colIdx = i; break; }
+    }
+    if (colIdx === -1) return { success: false, options: [], error: 'Column "Dropdowns" not found' };
+    var options = [];
+    for (var r = 1; r < data.length; r++) {
+      var val = (data[r][colIdx] + '').trim();
+      if (val) options.push(val);
+    }
+    return { success: true, options: options };
+  } catch(e) {
+    Logger.log('getFlagDropdownOptions error: ' + e);
+    return { success: false, options: [], error: e.toString() };
+  }
+}
+
 // ── Read Audit_Log for dashboard tab 3 (cached 10 min) ───────────────────────
 var AUDIT_LOG_CACHE_KEY = 'audit_log_data_v2';
 var AUDIT_LOG_CACHE_TTL = 20 * 60; // 20 minutes — localStorage handles the faster layer
@@ -3550,6 +3576,11 @@ function submitTranscript(formData) {
         .replace(/\s*```$/,      '')
         .trim()
     );
+
+    // Replace placeholders injected by the AI prompt
+    html = html
+      .replace(/__AUDIT_REF__/g, auditRef     || '')
+      .replace(/__OBSERVER__/g,  observerName || 'N/A');
 
     // ── 5. Save to Cache sheet FIRST — so a retry after any downstream failure ──
     //      hits the cache instead of re-running the paid AI call and duplicating rows.
