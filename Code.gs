@@ -2242,9 +2242,11 @@ function extractTextBlock(html, keyword) {
     if (m4) return decode(m4[1]).substring(0, 500);
 
     // 5. ai-chip label → ai-chip-val span (info bar chips like Call Reason, Issue Resolved)
-    var re5 = new RegExp('<span[^>]*ai-chip-label[^>]*>[^<]*' + keyword + '[^<]*<\\/span>\\s*<span[^>]*ai-chip-val[^>]*>([^<]*)<\\/span>', 'i');
+    // Uses [\s\S]*? so nested badge spans (<span class="report-badge-yes">Yes</span>) are captured
+    // and stripped by decode(), returning the clean text value (e.g. "Yes", "72%").
+    var re5 = new RegExp('<span[^>]*ai-chip-label[^>]*>[^<]*' + keyword + '[^<]*<\\/span>\\s*<span[^>]*ai-chip-val[^>]*>([\\s\\S]*?)<\\/span>', 'i');
     var m5   = html.match(re5);
-    if (m5) return m5[1].trim().substring(0, 200);
+    if (m5) return decode(m5[1]).substring(0, 200);
 
     // 6. Broad keyword anywhere in text — last resort, grab surrounding sentence
     var reB = new RegExp('[^.]{0,100}' + keyword + '[^.]{0,200}\\.', 'i');
@@ -3608,7 +3610,7 @@ function submitTranscript(formData) {
       var opportunities    = extractTextBlock(html, 'Opportunities')     || '';
       var recommendations  = extractTextBlock(html, 'Recommendation')    || '';
       var criticalFlags    = extractTextBlock(html, 'Critical Flag')     || '';
-      var repeatPct        = extractTextBlock(html, 'Repeat Projection') || '';
+      var repeatPct        = extractTextBlock(html, 'Repeat Risk')       || '';
       var issueResolved    = extractTextBlock(html, 'Issue Resolution')  || '';
       var transferOccurred = extractTextBlock(html, 'Transfer')          || '';
 
@@ -4202,6 +4204,44 @@ function buildEvalFormHTML(formData, auditRef, analysisResult) {
   /* ── SMART tables (amber header) — even tighter ── */
   'table[style*="FDE8B0"] th,table[style*="FDE8B0"] td,' +
   'table[style*="F5F0FF"] th,table[style*="F5F0FF"] td{font-size:8px!important;padding:2px 3px!important}' +
+  /* ── Compact card layout — PDF-safe overrides (CSS grid → table model) ── */
+  '.report-wrap *{box-sizing:border-box!important}' +
+  '.report-header{background:#4B286D!important;border-radius:6px!important;padding:10px 14px!important;margin-bottom:10px!important;color:#fff!important}' +
+  '.report-header-title{font-size:13px!important;font-weight:800!important;color:#fff!important}' +
+  '.report-header-sub{font-size:9px!important;color:#ddd!important}' +
+  '.ai-info{display:block!important;margin-bottom:10px!important}' +
+  '.ai-chip{display:inline-block!important;background:#F4F4F7!important;border:1px solid #D8D8D8!important;border-radius:4px!important;padding:3px 7px!important;margin:2px!important;font-size:8px!important;vertical-align:top!important}' +
+  '.ai-chip-label{font-size:7px!important;font-weight:700!important;color:#54565A!important;text-transform:uppercase!important;display:block!important}' +
+  '.ai-chip-val{font-size:9px!important;font-weight:600!important;color:#1A1A2E!important}' +
+  '.report-badge-yes{display:inline-block!important;background:#2B8000!important;color:#fff!important;border-radius:3px!important;padding:1px 5px!important;font-size:8px!important;font-weight:700!important}' +
+  '.report-badge-no{display:inline-block!important;background:#C12335!important;color:#fff!important;border-radius:3px!important;padding:1px 5px!important;font-size:8px!important;font-weight:700!important}' +
+  '.report-summary-wrap{background:#F9F9F9!important;border:1px solid #E0E0E0!important;border-radius:5px!important;padding:8px 12px!important;margin-bottom:10px!important}' +
+  '.report-summary-label{font-size:8px!important;font-weight:700!important;color:#4B286D!important;text-transform:uppercase!important;margin-bottom:5px!important}' +
+  '.ai-summary{font-size:9px!important;line-height:1.5!important;color:#1A1A2E!important}' +
+  '.report-summary-meta{font-size:8px!important;color:#767676!important;margin-top:6px!important;border-top:1px solid #E8E8E8!important;padding-top:5px!important}' +
+  '.report-3col{display:table!important;width:100%!important;table-layout:fixed!important;border-collapse:separate!important;border-spacing:4px!important;margin-bottom:12px!important}' +
+  '.report-col{display:table-cell!important;width:33.33%!important;border-radius:5px!important;padding:8px 10px!important;vertical-align:top!important}' +
+  '.report-col-working{background:#EDF7E6!important;border:1px solid #B3DFA0!important}' +
+  '.report-col-change{background:#FFF5F5!important;border:1px solid #F5AAAA!important}' +
+  '.report-col-howto{background:#F5F0FF!important;border:1px solid #D1B8E8!important}' +
+  '.report-col-head{font-size:8.5px!important;font-weight:700!important;margin-bottom:6px!important;padding-bottom:4px!important;border-bottom:1px solid rgba(0,0,0,.1)!important}' +
+  '.report-col-working .report-col-head{color:#2B8000!important}' +
+  '.report-col-change .report-col-head{color:#C12335!important}' +
+  '.report-col-howto .report-col-head{color:#4B286D!important}' +
+  '.report-col-list{padding-left:12px!important;font-size:8.5px!important;line-height:1.6!important;margin:0!important}' +
+  '.report-col-list li{margin-bottom:3px!important}' +
+  '.report-col-roleplays{list-style:none!important;padding-left:0!important}' +
+  '.report-col-roleplays li{margin-bottom:8px!important}' +
+  '.report-flags{margin-bottom:10px!important}' +
+  '.report-flags-head{font-size:9.5px!important;font-weight:700!important;color:#C12335!important;padding:5px 8px!important;background:#FFF0F0!important;border:1px solid #F5AAAA!important;border-radius:4px 4px 0 0!important}' +
+  '.report-flags-body{border:1px solid #F5AAAA!important;border-top:none!important;border-radius:0 0 4px 4px!important;padding:8px!important;background:#fff!important}' +
+  '.report-manual-flags{margin-bottom:10px!important}' +
+  '.report-manual-flags-head{font-size:9.5px!important;font-weight:700!important;color:#4B286D!important;padding:5px 8px!important;background:#F5F0FF!important;border:1px solid #D1B8E8!important;border-radius:4px 4px 0 0!important}' +
+  '.report-manual-flags-body{border:1px solid #D1B8E8!important;border-top:none!important;border-radius:0 0 4px 4px!important;padding:8px!important;background:#fff!important}' +
+  '.report-footer{background:#F4F4F7!important;border:1px solid #E0E0E0!important;border-radius:5px!important;padding:6px 12px!important;display:block!important;font-size:8px!important;color:#54565A!important;margin-top:6px!important}' +
+  '.report-footer-ref{font-weight:700!important;color:#4B286D!important}' +
+  '.report-footer-obs{color:#767676!important}' +
+  '.ai-flag-rl-label{font-size:8px!important;font-weight:700!important;color:#4B286D!important;text-transform:uppercase!important}' +
   '@media print{html,body{margin:0!important;padding:1px 2px!important}}' +
   '</style></head><body>' +
 
