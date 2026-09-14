@@ -2150,11 +2150,49 @@ var _sapTimer      = null;
 // When true, transcript autofill will never overwrite it.
 var _sapResolvedParticipant = false;
 
+// Client-side transcript parser — identical regexes to server-side parseTranscriptMetadata.
+// Fills basic fields instantly (no GAS round-trip) so users see them within 1 second of pasting.
+function _parseTranscriptLocally(txt) {
+  var meta = {};
+  var pats = {
+    interactionId: /Interaction ID[:\s]+([^\n\r]+)/i,
+    startTime:     /Transcript Start Time[:\s]+([^\n\r]+)/i,
+    duration:      /Transcript Duration[:\s]+([^\n\r]+)/i,
+    direction:     /Direction[:\s]+([^\n\r]+)/i,
+    participant:   /Internal Participant\(s\)[:\s]+([^\n\r]+)/i
+  };
+  for (var k in pats) { var m = txt.match(pats[k]); if (m) meta[k] = m[1].trim(); }
+  var banPats = [/\bBAN[:\s#]+([A-Z0-9]{5,15})\b/i, /\baccount\s*(?:number|#|no\.?)[:\s]+([A-Z0-9]{5,15})\b/i];
+  for (var bi = 0; bi < banPats.length; bi++) { var bm = txt.match(banPats[bi]); if (bm) { meta.customerBAN = bm[1].trim(); break; } }
+  return meta;
+}
+
 function scheduleAutofill() {
   clearTimeout(_autofillTimer);
   _autofillTimer = setTimeout(function () {
     var txt = document.getElementById('transcript').value;
     if (!txt.trim()) return;
+
+    // ── Step 1: Instant — fill basic fields from client-side regex (no GAS wait) ──
+    var local = _parseTranscriptLocally(txt);
+    setIfEmpty('interactionId', local.interactionId);
+    setIfEmpty('startTime',     local.startTime);
+    setIfEmpty('duration',      local.duration);
+    if (local.direction && !document.getElementById('direction').value) {
+      var dirSel = document.getElementById('direction');
+      for (var di = 0; di < dirSel.options.length; di++) {
+        if (dirSel.options[di].text.toLowerCase() === local.direction.trim().toLowerCase()) { dirSel.selectedIndex = di; break; }
+      }
+    }
+    if (!document.getElementById('customerBAN').value && local.customerBAN) {
+      var rawBAN0 = local.customerBAN.trim();
+      document.getElementById('customerBAN').value = /^\d+$/.test(rawBAN0) ? rawBAN0 : 'Not Available';
+    }
+    if (!_sapResolvedParticipant && local.participant && !document.getElementById('sapId').value) {
+      document.getElementById('participant').value = local.participant;
+    }
+
+    // ── Step 2: GAS call — fills SAP ID, Team Leader, Ops Manager, LOB, Locale, VTID ──
     // Single combined call: parses transcript + resolves SAP + returns full roster in one round-trip
     // so Team Member, SAP ID, Team Leader, Ops Manager, LOB, and Locale all populate simultaneously.
     google.script.run
@@ -2164,7 +2202,7 @@ function scheduleAutofill() {
         var meta = payload.meta;
         if (!meta) return;
 
-        // Fill call detail fields
+        // Backfill any call detail fields the local parse may have missed
         setIfEmpty('interactionId', meta.interactionId);
         setIfEmpty('startTime',     meta.startTime);
         setIfEmpty('duration',      meta.duration);
@@ -3244,11 +3282,9 @@ function _updateEmailModeBtn() {
       })
       .getObserverInfo();
 
-    // Pre-warm roster data in background so SAP lookups are instant
-    google.script.run
-      .withSuccessHandler(function() {}) // fire and forget — just warms server cache
-      .withFailureHandler(function() {})
-      .getRosterAll();
+    // Pre-warm all lookup caches in background so autofill is fast when transcript is pasted
+    google.script.run.withSuccessHandler(function() {}).withFailureHandler(function() {}).getRosterAll();
+    google.script.run.withSuccessHandler(function() {}).withFailureHandler(function() {}).warmLookupCaches();
   }
 })();
 

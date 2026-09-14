@@ -97,6 +97,13 @@ function _getRosterSheetData() {
   } catch(e) { Logger.log('_getRosterSheetData: ' + e); return []; }
 }
 
+// ── Pre-warm Global Roster + AT Data GCP caches on page load ─────────────────
+// Called fire-and-forget from the client so autofill is fast when transcript is pasted.
+function warmLookupCaches() {
+  try { _getGlobalRosterData(); } catch(e) {}
+  try { _getATDataGCPSheetData(); } catch(e) {}
+}
+
 // ── Roster lookup by participant name (reverse — name → SAP ID, cached) ──────
 function lookupSapId(participantName) {
   try {
