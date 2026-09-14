@@ -1643,6 +1643,63 @@ function getAdminRecipients() {
   return getRecipientsFromRoster('Admin/Dev');
 }
 
+/**
+ * Builds the deduplicated recipient list for an audit email.
+ *
+ * Trainee  (SAP ID found in trainee roster):
+ *   Team Member + Trainer Email + Trainer Supervisor Email + QA Observer
+ * Tenured  (SAP ID not in trainee roster):
+ *   Team Member + Team Leader Email + OM Email + QA Observer
+ *
+ * Admin/Dev is intentionally excluded — notifyAdmins() handles that separately.
+ */
+function buildAuditRecipients(formData) {
+  var agentName = (formData.participant || '').trim();
+  var sapId     = (formData.sapId       || '').trim();
+
+  // ── 1. Team Member ────────────────────────────────────────────────────────
+  var teamMemberEmail = lookupAgentEmail(agentName)
+                      || resolveEmail(agentName)
+                      || (formData.agentEmail || '').trim();
+
+  // ── 2. Trainee or Tenured routing ────────────────────────────────────────
+  var recipientB = '', recipientC = '';
+  var traineeInfo = getTraineeInfo(sapId);
+
+  if (traineeInfo) {
+    // Trainee — use username from trainee sheet for team member email
+    if (traineeInfo.username) teamMemberEmail = traineeInfo.username + '@telus.com';
+    var trainerInfo = getTrainerInfo(traineeInfo.facilitator);
+    recipientB = trainerInfo ? trainerInfo.trainerEmail    : '';
+    recipientC = trainerInfo ? trainerInfo.supervisorEmail : '';
+    Logger.log('buildAuditRecipients [trainee]: facilitator=' + traineeInfo.facilitator +
+               ' trainerEmail=' + recipientB + ' supervisorEmail=' + recipientC);
+  } else {
+    // Tenured — Team Leader + OM from formData (names resolved via Global Roster)
+    recipientB = resolveEmail(formData.teamLeader || '');
+    recipientC = resolveEmail(formData.opsManager || '');
+    Logger.log('buildAuditRecipients [tenured]: TL=' + recipientB + ' OM=' + recipientC);
+  }
+
+  // ── 3. QA / Observer ─────────────────────────────────────────────────────
+  var observerName = (formData.observerName  || '').trim();
+  var qaEmail      = (formData.observerEmail || '').trim();
+  if (!qaEmail && observerName) {
+    var qaRows  = getRecipientsFromRoster(QA_ROLE);
+    var qaMatch = qaRows.filter(function(r) { return r.name.toLowerCase() === observerName.toLowerCase(); });
+    qaEmail = qaMatch.length ? qaMatch[0].email : resolveEmail(observerName);
+  }
+
+  // ── Deduplicate + validate ────────────────────────────────────────────────
+  var validRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  var seen = {};
+  return [teamMemberEmail, recipientB, recipientC, qaEmail].filter(function(e) {
+    if (!e || !validRe.test(e) || seen[e.toLowerCase()]) return false;
+    seen[e.toLowerCase()] = true;
+    return true;
+  });
+}
+
 // ── Agent email lookup from main roster file ──────────────────────────────────
 // Builds a name → email map from the "Team Member Email" column once per execution,
 // cached in CacheService for 2 hours to avoid repeated sheet reads.
@@ -3732,41 +3789,7 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
     var analysisLabel = formData.analysisType === 'sales'
                         ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
 
-    // ── 1. Team Member (agent being audited) ──────────────────────────────────
-    // Three-level fallback mirrors sendAuditEmail: roster cache → resolveEmail
-    // (secondary roster read) → formData.agentEmail (client-resolved, last resort).
-    // Without this chain, new agents not yet in the roster are silently excluded.
-    var teamMemberEmail = lookupAgentEmail(agentName)
-                        || resolveEmail(agentName)
-                        || (formData.agentEmail || '').trim();
-
-    // ── 2. QA / Observer ─────────────────────────────────────────────────────
-    var qaEmail = '';
-    if (observerName) {
-      var qaRows      = getRecipientsFromRoster(QA_ROLE);
-      var nameLower   = observerName.toLowerCase();
-      var qaMatch     = qaRows.filter(function(r) { return r.name.toLowerCase() === nameLower; });
-      qaEmail = qaMatch.length ? qaMatch[0].email : resolveEmail(observerName);
-    }
-
-    // ── 3. QA Team Leader(s) ─────────────────────────────────────────────────
-    var qaTLEmails     = getRecipientsFromRoster(QA_TL_ROLE).map(function(r) { return r.email; });
-    // ── 4. Trainer(s) ────────────────────────────────────────────────────────
-    var trainerEmails  = getRecipientsFromRoster(TRAINER_ROLE).map(function(r) { return r.email; });
-    // Admin/Dev is intentionally excluded here: notifyAdmins() sends a dedicated
-    // admin notification at the end of this function. Including adminEmails here
-    // causes a double-send — once in an agent-addressed evaluation email and once
-    // as a proper admin notification — on every auto-submission.
-
-    // ── Deduplicate and validate ───────────────────────────────────────────────
-    var allEmails = [teamMemberEmail, qaEmail].concat(qaTLEmails).concat(trainerEmails);
-    var validRe   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    var seen      = {};
-    var recipients = allEmails.filter(function(e) {
-      if (!e || !validRe.test(e) || seen[e.toLowerCase()]) return false;
-      seen[e.toLowerCase()] = true;
-      return true;
-    });
+    var recipients = buildAuditRecipients(formData);
 
     if (!recipients.length) {
       Logger.log('sendSubmissionEmail: no valid recipients — skipping');
@@ -3870,43 +3893,7 @@ function sendAuditEmail(formData, htmlResult) {
       var adminList = getRecipientsFromRoster('Admin/Dev');
       recipients = adminList.map(function(r) { return r.email; }).filter(Boolean);
     } else {
-      // Agent being audited — resolve server-side first (roster lookup), then fall back
-      // to formData.agentEmail only if all server-side paths return nothing.
-      // formData.agentEmail is client-controlled (populated from the DOM) and must NOT
-      // be used as the primary source: any authenticated user could supply an arbitrary
-      // email address and redirect the evaluation report to someone else.
-      var _agentParticipant = (formData.participant || '').trim();
-      var agentEmailAddr  = lookupAgentEmail(_agentParticipant)
-                          || resolveEmail(_agentParticipant)
-                          || (formData.agentEmail || '').trim();
-      // Agent's Team Leader
-      var agentTLEmail    = resolveEmail(formData.teamLeader);
-      // QA / Observer who submitted
-      var observerName_   = (formData.observerName || '').trim();
-      // Use observerEmail directly (passed from client — always the logged-in QA's real email)
-      // Fall back to name-based lookup only if observerEmail is missing
-      var qaEmailAddr     = (formData.observerEmail || '').trim();
-      if (!qaEmailAddr && observerName_) {
-        var qaRows_   = getRecipientsFromRoster(QA_ROLE);
-        var qaMatch_  = qaRows_.filter(function(r) { return r.name.toLowerCase() === observerName_.toLowerCase(); });
-        qaEmailAddr   = qaMatch_.length ? qaMatch_[0].email : resolveEmail(observerName_);
-      }
-      // QA Team Leaders
-      var qaTLEmails_     = getRecipientsFromRoster(QA_TL_ROLE).map(function(r) { return r.email; });
-      // Trainer(s)
-      var trainerEmails_  = getRecipientsFromRoster(TRAINER_ROLE).map(function(r) { return r.email; });
-      // Admin/Dev is intentionally excluded here: notifyAdmins() sends a dedicated
-      // notification to Admin/Dev at the end of this function. Including adminEmails_
-      // here caused a guaranteed double-send to every Admin/Dev address on every audit.
-
-      var allEmails_ = [agentEmailAddr, agentTLEmail, qaEmailAddr].concat(qaTLEmails_).concat(trainerEmails_);
-      var validRe_   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      var seen_      = {};
-      recipients = allEmails_.filter(function(e) {
-        if (!e || !validRe_.test(e) || seen_[e.toLowerCase()]) return false;
-        seen_[e.toLowerCase()] = true;
-        return true;
-      });
+      recipients = buildAuditRecipients(formData);
     }
 
     if (!recipients.length) {

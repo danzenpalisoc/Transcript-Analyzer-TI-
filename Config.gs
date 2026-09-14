@@ -47,6 +47,11 @@ var AI_ANALYTICS_SHEET   = 'AI_Analytics';
 // External audit tracking spreadsheet (shared by user)
 var AUDIT_TRACKING_SS_ID = '1wy65jF6bz15tIQs5uozxksA2z7yDwxWOszaOrVCGuaM';
 
+// Trainee roster — maps SAP ID → Facilitator (Trainer) name + username
+var TRAINEE_ROSTER_SS_ID = '1EQ1QDTgXukygNlt6mOJ92jFWP5sc-X0AWq8wreVy3ls';
+// Trainer email lookup — maps Trainer Name → Trainer Email + Supervisor Email
+var TRAINER_LOOKUP_SS_ID = '1nqHtScRcW7xdMOi8OPcpgxEmm4DBWuopoqp030DtBXk';
+
 // Role names in the Audit Tracking SS → Roster tab (Col B).
 // Update these if the exact spelling in your sheet differs.
 var QA_ROLE      = 'QA';

@@ -104,6 +104,76 @@ function warmLookupCaches() {
   try { _getATDataGCPSheetData(); } catch(e) {}
 }
 
+// ── Trainee roster cache (in-memory, 4h TTL) ──────────────────────────────────
+var _traineeRosterInMemory = null;
+function _getTraineeRosterData() {
+  if (_traineeRosterInMemory && (Date.now() - _traineeRosterInMemory.ts < 4 * 60 * 60 * 1000)) {
+    return _traineeRosterInMemory.rows;
+  }
+  var ss   = SpreadsheetApp.openById(TRAINEE_ROSTER_SS_ID);
+  var sh   = ss.getSheetByName('Roster');
+  var rows = sh.getDataRange().getValues();
+  _traineeRosterInMemory = { rows: rows, ts: Date.now() };
+  return rows;
+}
+
+// ── Trainer email lookup cache (in-memory, 4h TTL) ────────────────────────────
+var _trainerLookupInMemory = null;
+function _getTrainerLookupData() {
+  if (_trainerLookupInMemory && (Date.now() - _trainerLookupInMemory.ts < 4 * 60 * 60 * 1000)) {
+    return _trainerLookupInMemory.rows;
+  }
+  var ss   = SpreadsheetApp.openById(TRAINER_LOOKUP_SS_ID);
+  var sh   = ss.getSheetByName('Roster');
+  var rows = sh.getDataRange().getValues();
+  _trainerLookupInMemory = { rows: rows, ts: Date.now() };
+  return rows;
+}
+
+/**
+ * Returns trainee info for a given SAP ID, or null if the agent is tenured.
+ * Trainee Roster columns: A=Production ID, B=Agent, C=Facilitator, D=username
+ */
+function getTraineeInfo(sapId) {
+  if (!sapId) return null;
+  var rows   = _getTraineeRosterData();
+  var header = rows[0];
+  var sapStr = String(sapId).trim();
+  for (var i = 1; i < rows.length; i++) {
+    var rowSap = String(rows[i][0]).trim();
+    if (rowSap === sapStr || Number(rowSap) === Number(sapStr)) {
+      return {
+        sapId:       rowSap,
+        agentName:   String(rows[i][1]).trim(),
+        facilitator: String(rows[i][2]).trim(),
+        username:    String(rows[i][3]).trim()
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns trainer contact info by facilitator/trainer name, or null if not found.
+ * Trainer Lookup columns: A=Trainer Name, B=Trainer Email, C=Supervisor Name, D=Trainer Supervisor Email
+ */
+function getTrainerInfo(facilitatorName) {
+  if (!facilitatorName) return null;
+  var rows    = _getTrainerLookupData();
+  var nameLow = facilitatorName.toLowerCase().trim();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]).toLowerCase().trim() === nameLow) {
+      return {
+        trainerName:    String(rows[i][0]).trim(),
+        trainerEmail:   String(rows[i][1]).trim(),
+        supervisorName: String(rows[i][2]).trim(),
+        supervisorEmail:String(rows[i][3]).trim()
+      };
+    }
+  }
+  return null;
+}
+
 // ── Roster lookup by participant name (reverse — name → SAP ID, cached) ──────
 function lookupSapId(participantName) {
   try {
