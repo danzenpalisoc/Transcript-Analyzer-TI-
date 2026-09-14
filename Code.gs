@@ -3106,7 +3106,9 @@ function resolveObserver() {
   }
 }
 
-// ── Flag dropdown options (loaded dynamically from Google Sheet) ───────────────
+// ── Dynamic flag dropdown options from Google Sheet ───────────────────────────
+// Reads "Dropdowns" column from "Add a Flag" tab — never hardcoded so future
+// additions to the sheet appear automatically without any code change.
 function getFlagDropdownOptions() {
   try {
     var ss    = SpreadsheetApp.openById('1baZbWTLNw7_ij04oH3aO_xT4eOTffcUwRRL836cHzJo');
@@ -3636,7 +3638,8 @@ function submitTranscript(formData) {
         .trim()
     );
 
-    // Replace placeholders injected by the AI prompt
+    // Replace report placeholders with actual values so cache, email, and
+    // Dashboard all receive the final content (no deferred substitution needed).
     html = html
       .replace(/__AUDIT_REF__/g, auditRef     || '')
       .replace(/__OBSERVER__/g,  observerName || 'N/A');
@@ -5098,5 +5101,83 @@ function buildFallbackHTML(rawText) {
   });
   html += '</div>';
   return html;
+}
+
+// ── Action Registry logging — called from append_registry.py via Web App POST ──
+var REGISTRY_SECRET = 'NH_REGISTRY_2026_DPZ';
+
+function doPost(e) {
+  try {
+    var payload = JSON.parse(e.postData.contents);
+    if (payload.key !== REGISTRY_SECRET) {
+      return ContentService.createTextOutput(JSON.stringify({success: false, error: 'Unauthorized'}))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    var result = appendRegistryRow(payload.data || {});
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({success: false, error: err.toString()}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function appendRegistryRow(data) {
+  var REGISTRY_SS_ID = '1a58nCQPv9B0C1E0m30x5fibDrgnaJL6A7Pyz265Fjac';
+  var ss = SpreadsheetApp.openById(REGISTRY_SS_ID);
+  var sh = ss.getSheetByName('Registry');
+  if (!sh) throw new Error('Registry sheet not found');
+
+  var lastRow = sh.getLastRow();
+  var nextNum = '001';
+  if (lastRow > 1) {
+    var lastVal = sh.getRange(lastRow, 1).getValue();
+    var n = parseInt(String(lastVal), 10);
+    nextNum = isNaN(n) ? String(lastRow) : String(n + 1);
+    while (nextNum.length < 3) nextNum = '0' + nextNum;
+  }
+
+  var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  var row = [
+    nextNum,
+    data.date || today,
+    data.type || 'Bug Fix',
+    data.scope || 'NH',
+    data.issue || '',
+    data.resolution || '',
+    data.files || '',
+    data.author || 'Danzen',
+    data.status || 'Done'
+  ];
+  sh.appendRow(row);
+  SpreadsheetApp.flush();
+
+  var newRow = sh.getLastRow();
+  var cols   = sh.getLastColumn();
+
+  var bg = (newRow % 2 === 0) ? '#F8F9FA' : '#FFFFFF';
+  sh.getRange(newRow, 1, 1, cols).setBackground(bg);
+  sh.setRowHeight(newRow, 80);
+  sh.getRange(newRow, 1, 1, cols).setWrap(true).setVerticalAlignment('middle');
+
+  var typeColors = {
+    'Bug Fix':     {bg: '#FEE2E2', fg: '#991B1B'},
+    'Feature':     {bg: '#DCFCE7', fg: '#166534'},
+    'Enhancement': {bg: '#DBEAFE', fg: '#1E40AF'},
+    'Performance': {bg: '#FEF3C7', fg: '#92400E'},
+    'Maintenance': {bg: '#F3E8FF', fg: '#6B21A8'}
+  };
+  var tc = typeColors[data.type] || {bg: '#F3F4F6', fg: '#374151'};
+  sh.getRange(newRow, 3).setBackground(tc.bg).setFontColor(tc.fg).setFontWeight('bold');
+
+  var statusColors = {
+    'Done':        {bg: '#D1FAE5', fg: '#065F46'},
+    'In Progress': {bg: '#FEF3C7', fg: '#92400E'},
+    'Pending':     {bg: '#E5E7EB', fg: '#374151'}
+  };
+  var sc = statusColors[data.status] || {bg: '#E5E7EB', fg: '#374151'};
+  sh.getRange(newRow, 9).setBackground(sc.bg).setFontColor(sc.fg).setFontWeight('bold');
+
+  return {success: true, rowNum: nextNum, sheetRow: newRow};
 }
 
