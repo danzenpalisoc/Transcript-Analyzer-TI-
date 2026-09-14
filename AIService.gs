@@ -104,73 +104,117 @@ function warmLookupCaches() {
   try { _getATDataGCPSheetData(); } catch(e) {}
 }
 
-// ── Trainee roster cache (in-memory, 4h TTL) ──────────────────────────────────
+// ── Trainee Roster — maps SAP ID → Facilitator (trainer) name + username ─────
+// Sheet: TRAINEE_ROSTER_SS_ID, Tab: Roster
+// Columns: Production ID (SAP ID), Agent, Facilitator, username
 var _traineeRosterInMemory = null;
 function _getTraineeRosterData() {
-  if (_traineeRosterInMemory && (Date.now() - _traineeRosterInMemory.ts < 4 * 60 * 60 * 1000)) {
-    return _traineeRosterInMemory.rows;
-  }
-  var ss   = SpreadsheetApp.openById(TRAINEE_ROSTER_SS_ID);
-  var sh   = ss.getSheetByName('Roster');
-  var rows = sh.getDataRange().getValues();
-  _traineeRosterInMemory = { rows: rows, ts: Date.now() };
-  return rows;
+  if (_traineeRosterInMemory) return _traineeRosterInMemory;
+  try {
+    var cache    = CacheService.getScriptCache();
+    var cacheKey = 'trainee_roster_v1';
+    var cached   = cache.get(cacheKey);
+    if (cached) { try { _traineeRosterInMemory = JSON.parse(cached); return _traineeRosterInMemory; } catch(e) {} }
+    var ss    = SpreadsheetApp.openById(TRAINEE_ROSTER_SS_ID);
+    var sheet = ss.getSheetByName('Roster') || ss.getSheetByName('roster');
+    if (!sheet) { Logger.log('_getTraineeRosterData: Roster tab not found'); return []; }
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) return [];
+    var hdrs = data[0];
+    var sapCol = -1, agentCol = -1, facilitatorCol = -1, usernameCol = -1;
+    hdrs.forEach(function(h, i) {
+      var hl = h.toString().toLowerCase().trim();
+      if (hl === 'production id') sapCol         = i;
+      if (hl === 'agent')         agentCol       = i;
+      if (hl === 'facilitator')   facilitatorCol = i;
+      if (hl === 'username')      usernameCol    = i;
+    });
+    var result = data.slice(1).map(function(row) {
+      return {
+        sapId:       (row[sapCol]         || '').toString().trim(),
+        agentName:   (row[agentCol]       || '').toString().trim(),
+        facilitator: (row[facilitatorCol] || '').toString().trim(),
+        username:    (row[usernameCol]    || '').toString().trim()
+      };
+    }).filter(function(r) { return r.sapId; });
+    var json = JSON.stringify(result);
+    if (json.length <= 99000) { try { cache.put(cacheKey, json, 4 * 60 * 60); } catch(e) {} }
+    _traineeRosterInMemory = result;
+    Logger.log('_getTraineeRosterData: loaded ' + result.length + ' trainees');
+    return result;
+  } catch(e) { Logger.log('_getTraineeRosterData error: ' + e); return []; }
 }
 
-// ── Trainer email lookup cache (in-memory, 4h TTL) ────────────────────────────
+// ── Trainer Lookup — maps Trainer Name → Trainer Email + Supervisor Email ─────
+// Sheet: TRAINER_LOOKUP_SS_ID, Tab: Roster
+// Columns: Trainer Name, Trainer Email, Supervisor Name, Trainer Supervisor Email
 var _trainerLookupInMemory = null;
 function _getTrainerLookupData() {
-  if (_trainerLookupInMemory && (Date.now() - _trainerLookupInMemory.ts < 4 * 60 * 60 * 1000)) {
-    return _trainerLookupInMemory.rows;
-  }
-  var ss   = SpreadsheetApp.openById(TRAINER_LOOKUP_SS_ID);
-  var sh   = ss.getSheetByName('Roster');
-  var rows = sh.getDataRange().getValues();
-  _trainerLookupInMemory = { rows: rows, ts: Date.now() };
-  return rows;
+  if (_trainerLookupInMemory) return _trainerLookupInMemory;
+  try {
+    var cache    = CacheService.getScriptCache();
+    var cacheKey = 'trainer_lookup_v1';
+    var cached   = cache.get(cacheKey);
+    if (cached) { try { _trainerLookupInMemory = JSON.parse(cached); return _trainerLookupInMemory; } catch(e) {} }
+    var ss    = SpreadsheetApp.openById(TRAINER_LOOKUP_SS_ID);
+    var sheet = ss.getSheetByName('Roster') || ss.getSheetByName('roster');
+    if (!sheet) { Logger.log('_getTrainerLookupData: Roster tab not found'); return []; }
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) return [];
+    var hdrs = data[0];
+    var nameCol = -1, emailCol = -1, supNameCol = -1, supEmailCol = -1;
+    hdrs.forEach(function(h, i) {
+      var hl = h.toString().toLowerCase().trim();
+      if (hl === 'trainer name')             nameCol     = i;
+      if (hl === 'trainer email')            emailCol    = i;
+      if (hl === 'supervisor name')          supNameCol  = i;
+      if (hl === 'trainer supervisor email') supEmailCol = i;
+    });
+    var result = data.slice(1).map(function(row) {
+      return {
+        trainerName:     (row[nameCol]     || '').toString().trim(),
+        trainerEmail:    (row[emailCol]    || '').toString().trim(),
+        supervisorName:  (row[supNameCol]  || '').toString().trim(),
+        supervisorEmail: (row[supEmailCol] || '').toString().trim()
+      };
+    }).filter(function(r) { return r.trainerName; });
+    var json = JSON.stringify(result);
+    if (json.length <= 99000) { try { cache.put(cacheKey, json, 4 * 60 * 60); } catch(e) {} }
+    _trainerLookupInMemory = result;
+    Logger.log('_getTrainerLookupData: loaded ' + result.length + ' trainers');
+    return result;
+  } catch(e) { Logger.log('_getTrainerLookupData error: ' + e); return []; }
 }
 
-/**
- * Returns trainee info for a given SAP ID, or null if the agent is tenured.
- * Trainee Roster columns: A=Production ID, B=Agent, C=Facilitator, D=username
- */
+// Returns trainee row if SAP ID is in trainee roster; null if agent is tenured.
 function getTraineeInfo(sapId) {
   if (!sapId) return null;
-  var rows   = _getTraineeRosterData();
-  var header = rows[0];
-  var sapStr = String(sapId).trim();
-  for (var i = 1; i < rows.length; i++) {
-    var rowSap = String(rows[i][0]).trim();
-    if (rowSap === sapStr || Number(rowSap) === Number(sapStr)) {
-      return {
-        sapId:       rowSap,
-        agentName:   String(rows[i][1]).trim(),
-        facilitator: String(rows[i][2]).trim(),
-        username:    String(rows[i][3]).trim()
-      };
+  var rows = _getTraineeRosterData();
+  var target = sapId.toString().trim();
+  var targetNum = Number(target);
+  for (var i = 0; i < rows.length; i++) {
+    var s = rows[i].sapId;
+    if (s === target || (!isNaN(targetNum) && !isNaN(Number(s)) && Number(s) === targetNum)) {
+      Logger.log('getTraineeInfo: ' + target + ' is a trainee, facilitator=' + rows[i].facilitator);
+      return rows[i];
     }
   }
+  Logger.log('getTraineeInfo: ' + target + ' not found — treating as tenured');
   return null;
 }
 
-/**
- * Returns trainer contact info by facilitator/trainer name, or null if not found.
- * Trainer Lookup columns: A=Trainer Name, B=Trainer Email, C=Supervisor Name, D=Trainer Supervisor Email
- */
+// Returns trainer email + supervisor email for a given facilitator name; null if not found.
 function getTrainerInfo(facilitatorName) {
   if (!facilitatorName) return null;
-  var rows    = _getTrainerLookupData();
-  var nameLow = facilitatorName.toLowerCase().trim();
-  for (var i = 1; i < rows.length; i++) {
-    if (String(rows[i][0]).toLowerCase().trim() === nameLow) {
-      return {
-        trainerName:    String(rows[i][0]).trim(),
-        trainerEmail:   String(rows[i][1]).trim(),
-        supervisorName: String(rows[i][2]).trim(),
-        supervisorEmail:String(rows[i][3]).trim()
-      };
+  var rows = _getTrainerLookupData();
+  var target = facilitatorName.trim().toLowerCase();
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].trainerName.toLowerCase() === target) {
+      Logger.log('getTrainerInfo: ' + facilitatorName + ' → ' + rows[i].trainerEmail);
+      return rows[i];
     }
   }
+  Logger.log('getTrainerInfo: no match for facilitator "' + facilitatorName + '"');
   return null;
 }
 
