@@ -968,6 +968,18 @@ body {
 }
 .btn-add-flag-cancel:hover { background: #E8E8E8; }
 
+/* ── Audit Type Selection Modal ── */
+#audit-type-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.7);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+}
+#audit-type-overlay.visible { display: flex; }
+
 /* ── LOB Selection Modal ── */
 #lob-overlay {
   display: none;
@@ -1051,6 +1063,34 @@ body {
   font-family: inherit;
 }
 #lob-badge-bar .lob-chg-btn:hover { background: #4B286D; color: #fff; }
+
+/* Audit Type badge bar */
+#audit-type-badge-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: #e8f5e0;
+  border: 1px solid #b8d89e;
+  border-radius: 7px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2B8000;
+}
+#audit-type-badge-bar .lob-chg-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid #2B8000;
+  color: #2B8000;
+  border-radius: 4px;
+  padding: 2px 9px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: inherit;
+}
+#audit-type-badge-bar .lob-chg-btn:hover { background: #2B8000; color: #fff; }
 
 /* ═══════════════════════════════════════════════════════════════
    RESULT COMPONENTS  (used both in modal and applied view)
@@ -1345,6 +1385,13 @@ body {
             &#10005; Clear All
           </button>
         </div>
+      </div>
+
+      <!-- Audit Type Badge — shown after Audit Type is selected -->
+      <div id="audit-type-badge-bar">
+        <span>&#127897;</span>
+        <span id="audit-type-badge-text">—</span>
+        <button class="lob-chg-btn" onclick="showAuditTypeModal()">Change</button>
       </div>
 
       <!-- LOB Badge — shown after LOB is selected -->
@@ -2063,6 +2110,26 @@ body {
 
 </div><!-- /dashboard-panel -->
 
+<!-- ══════════════════════════════════════════════════════════
+     AUDIT TYPE SELECTION MODAL — appears before LOB modal
+══════════════════════════════════════════════════════════ -->
+<div id="audit-type-overlay">
+  <div class="lob-card">
+    <p class="lob-card-title">&#127897; Select Audit Type</p>
+    <p class="lob-card-sub">Choose the audit recording type before starting.</p>
+
+    <div class="lob-level-label">Audit Type</div>
+    <div class="lob-radio-group" id="audit-type-group">
+      <label class="lob-radio-opt">
+        <input type="radio" name="audit-type" value="Live"> Live
+      </label>
+      <label class="lob-radio-opt">
+        <input type="radio" name="audit-type" value="Recorded"> Recorded
+      </label>
+    </div>
+  </div>
+</div>
+
 <!-- Email sending overlay -->
 <div id="email-overlay">
   <div class="email-card">
@@ -2092,9 +2159,7 @@ body {
 </div>
 
 <!-- Speaker confirmation modal (P1/P4) -->
-<!-- ══════════════════════════════════════════════════════════
-     LOB SELECTION MODAL — appears on page load
-══════════════════════════════════════════════════════════ -->
+
 <div id="lob-overlay">
   <div class="lob-card">
     <p class="lob-card-title">&#128203; Select Line of Business</p>
@@ -2565,18 +2630,22 @@ function clearAllFields() {
   var y = now.getFullYear(), mo = String(now.getMonth()+1).padStart(2,'0'), d = String(now.getDate()).padStart(2,'0');
   document.getElementById('audit-ref-display').textContent = 'NHA-' + y + mo + d + '-…';
 
-  // Reset LOB selection and re-show modal for the new audit
-  // Cancel any pending auto-close timer to prevent it from immediately hiding the freshly shown modal
+  // Reset Audit Type and LOB selections, then show Audit Type modal for the new audit
+  if (_auditTypeCloseTimer) { clearTimeout(_auditTypeCloseTimer); _auditTypeCloseTimer = null; }
+  _selectedAuditType = null;
+  document.querySelectorAll('#audit-type-group input[type="radio"]').forEach(function(r) { r.checked = false; });
+  document.querySelectorAll('#audit-type-group .lob-radio-opt').forEach(function(el) { el.classList.remove('lob-selected'); });
+  updateAuditTypeBadge();
+
   if (_lobCloseTimer) { clearTimeout(_lobCloseTimer); _lobCloseTimer = null; }
   _selectedLOB = null;
   _selectedLOBCategory = null;
-  // Clear all radio button selections in the LOB modal
   document.querySelectorAll('#lob-cat-group input[type="radio"]').forEach(function(r) { r.checked = false; });
   document.querySelectorAll('#lob-spec-group input[type="radio"]').forEach(function(r) { r.checked = false; });
   document.querySelectorAll('#lob-cat-group .lob-radio-opt').forEach(function(el) { el.classList.remove('lob-selected'); });
   document.getElementById('lob-specific-wrap').style.display = 'none';
   updateLOBBadge();
-  showLOBModal();
+  showAuditTypeModal();
 }
 
 // ── Submit ────────────────────────────────────────────────────────────────────
@@ -2713,10 +2782,12 @@ function handleSubmit() {
     translateToEnglish: document.getElementById('translate-toggle').checked,
     observerName:      _currentObserver.name || _currentObserver.email || '',
     observerEmail:     _currentObserver.email || '',
-    selectedLOB:       _selectedLOB || ''
+    selectedLOB:       _selectedLOB || '',
+    auditType:         _selectedAuditType || ''
   };
-  if (!formData.sapId)      { showError('Please fill in: SAP ID'); return; }
-  if (!formData.transcript) { showError('Please paste a call transcript'); return; }
+  if (!formData.sapId)       { showError('Please fill in: SAP ID'); return; }
+  if (!formData.transcript)  { showError('Please paste a call transcript'); return; }
+  if (!formData.auditType)   { showAuditTypeModal(); showError('Please select an Audit Type first.'); return; }
   if (!formData.selectedLOB) { showLOBModal(); showError('Please select a Line of Business first.'); return; }
 
   var _btnProcess = document.getElementById('btn-process');
@@ -3017,6 +3088,7 @@ function _injectFlagDeleteBtns(container) {
   });
 }
 
+// ── Add a Flag: dropdown, panel, and submission ────────────────────────────────
 var _flagDropdownCache = null; // cached options from GAS so we only call once
 
 function _loadFlagDropdownOptions() {
@@ -3045,7 +3117,7 @@ function _populateFlagDropdown(sel, options) {
 
 function _openAddFlagPanel() {
   var panel = document.getElementById('add-flag-panel');
-  if (panel) panel.hidden = false;
+  if (panel) { panel.hidden = false; }
 }
 
 function _closeAddFlagPanel() {
@@ -3061,17 +3133,23 @@ function _closeAddFlagPanel() {
 function _submitAddFlag() {
   var sel     = document.getElementById('flag-dropdown');
   var txt     = document.getElementById('flag-comment');
-  var body    = document.getElementById('manual-flags-body');
-  var empty   = document.getElementById('manual-flags-empty');
   var flagType = sel ? sel.value.trim() : '';
+  var comment  = txt ? txt.value.trim() : '';
   if (!flagType) { alert('Please select a flag type.'); return; }
+
+  var body  = document.getElementById('manual-flags-body');
+  var empty = document.getElementById('manual-flags-empty');
   if (empty) empty.remove();
+
+  // Build a flag card compatible with _injectFlagDeleteBtns (uses ai-flag + ai-flag-title)
   var card = document.createElement('div');
   card.className = 'ai-flag';
   card.innerHTML =
     '<div class="ai-flag-title">&#9888; ' + escHtml(flagType) + '</div>' +
-    '<div class="ai-flag-detail" contenteditable="true">' + escHtml((txt ? txt.value : '') || '') + '</div>';
+    '<div class="ai-flag-detail" contenteditable="true">' + escHtml(comment || '') + '</div>';
   body.appendChild(card);
+
+  // Inject X button on the new card
   _injectFlagDeleteBtns(body);
   _closeAddFlagPanel();
 }
@@ -3225,6 +3303,27 @@ var _currentAuditRef  = '';
 var _currentObserver  = { name: '', sapId: '', email: '', isAdmin: false };
 var _emailMode        = 'live'; // 'live' | 'test' — toggled by Admin/Dev only
 
+// ── Audit Type Selection ───────────────────────────────────────────────────────
+var _selectedAuditType   = null;
+var _auditTypeCloseTimer = null;
+
+function showAuditTypeModal() {
+  document.getElementById('audit-type-overlay').classList.add('visible');
+}
+function hideAuditTypeModal() {
+  document.getElementById('audit-type-overlay').classList.remove('visible');
+}
+function updateAuditTypeBadge() {
+  var bar  = document.getElementById('audit-type-badge-bar');
+  var text = document.getElementById('audit-type-badge-text');
+  if (_selectedAuditType) {
+    text.textContent = _selectedAuditType;
+    bar.style.display = 'flex';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
 // ── LOB Selection ─────────────────────────────────────────────────────────────
 var _selectedLOB         = null;
 var _selectedLOBCategory = null;
@@ -3267,6 +3366,25 @@ function _buildLOBSpecificOptions(category) {
   document.getElementById('lob-specific-wrap').style.display = 'block';
   // Listener is registered once globally in DOMContentLoaded — not here
 }
+// Audit Type listener registered ONCE via DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function() {
+  var auditTypeGroup = document.getElementById('audit-type-group');
+  auditTypeGroup.addEventListener('change', function(e) {
+    if (e.target.name !== 'audit-type') return;
+    _selectedAuditType = e.target.value;
+    auditTypeGroup.querySelectorAll('.lob-radio-opt').forEach(function(el) {
+      el.classList.toggle('lob-selected', el.querySelector('input').value === _selectedAuditType);
+    });
+    hideError();
+    _auditTypeCloseTimer = setTimeout(function() {
+      _auditTypeCloseTimer = null;
+      hideAuditTypeModal();
+      updateAuditTypeBadge();
+      showLOBModal();
+    }, 150);
+  });
+});
+
 // Category + specific LOB listeners registered ONCE via DOMContentLoaded (no accumulation)
 document.addEventListener('DOMContentLoaded', function() {
   var catGroup  = document.getElementById('lob-cat-group');
@@ -5803,8 +5921,8 @@ function sendChatMessage() {
 
 // Send on Enter (Shift+Enter = new line)
 document.addEventListener('DOMContentLoaded', function() {
-  // Show LOB selection modal immediately on page load
-  showLOBModal();
+  // Show Audit Type modal first on page load (then LOB after selection)
+  showAuditTypeModal();
 
   var inp = document.getElementById('chat-input');
   if (inp) {

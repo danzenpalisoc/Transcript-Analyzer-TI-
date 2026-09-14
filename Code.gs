@@ -1782,13 +1782,14 @@ function notifyAdmins(formData, auditRef) {
     var lob           = formData.lineOfBusiness || 'N/A';
     var locale        = formData.locale       || 'N/A';
     var vtid          = formData.vtid         || 'N/A';
+    var auditType     = formData.auditType    || 'N/A';
     var submittedAt   = new Date().toLocaleString();
 
     // Fix: truncate interactionId to prevent transcript blob leaking into email
     var cleanIntId = interactionId.replace(/[\r\n\t]/g, ' ').substring(0, 120);
 
     var evalUrl  = ScriptApp.getService().getUrl() + '?page=eval&ref=' + encodeURIComponent(auditRef);
-    var subject  = '[Admin] ' + agentName + ' | ' + auditRef + ' | ' + observer + ' | ' + lob + ' | ' + locale;
+    var subject  = '[Admin] ' + agentName + ' | ' + auditRef + ' | ' + observer + ' | ' + auditType + ' | ' + lob + ' | ' + locale;
 
     // ── Plain text body ───────────────────────────────────────────────────────
     var plainBody =
@@ -1798,6 +1799,7 @@ function notifyAdmins(formData, auditRef) {
       'Submitted At:     ' + submittedAt + '\n' +
       'Observer:         ' + observer + '\n' +
       'Analysis Type:    ' + analysisType + '\n' +
+      'Audit Type:       ' + auditType + '\n' +
       '\nAGENT DETAILS\n' +
       'Agent Name:       ' + agentName + '\n' +
       'SAP ID:           ' + sapId + '\n' +
@@ -1816,7 +1818,7 @@ function notifyAdmins(formData, auditRef) {
 
     // ── HTML email body ───────────────────────────────────────────────────────
     var htmlBody = buildAdminEmailHTML(
-      auditRef, submittedAt, observer, analysisType,
+      auditRef, submittedAt, observer, analysisType, auditType,
       agentName, sapId, vtid, teamLeader, opsManager, lob, locale,
       cleanIntId, direction, duration, evalUrl
     );
@@ -3804,7 +3806,11 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
     var firstName  = agentName.split(' ')[0];
     var evalTitle  = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
     var lobLabel   = formData.selectedLOB || formData.lineOfBusiness || '';
-    var subject    = 'Real Time Feedback — ' + agentName + ' (' + sapId + ')' + (lobLabel ? ' | ' + lobLabel : '') + ' | BAN: ' + (formData.customerBAN || 'N/A');
+    var auditType  = formData.auditType || '';
+    var subject    = 'Real Time Feedback — ' + agentName + ' (' + sapId + ')' +
+                     (auditType ? ' | ' + auditType : '') +
+                     (lobLabel  ? ' | ' + lobLabel  : '') +
+                     ' | BAN: ' + (formData.customerBAN || 'N/A');
 
     var body =
       'Hi ' + firstName + ',\n\n' +
@@ -3911,8 +3917,9 @@ function sendAuditEmail(formData, htmlResult) {
     var firstName     = agentName.split(' ')[0];
     var evalTitle     = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
     var lobDisplay    = formData.selectedLOB || formData.lineOfBusiness || 'N/A';
+    var auditType2    = formData.auditType || 'N/A';
     var subject       = (effectiveMode === 'test' ? '[TEST] ' : '') +
-                        agentName + ' | ' + auditRef + ' | ' + (formData.observerName || 'N/A') + ' | ' + lobDisplay + ' | ' + (formData.locale || 'N/A');
+                        agentName + ' | ' + auditRef + ' | ' + (formData.observerName || 'N/A') + ' | ' + auditType2 + ' | ' + lobDisplay + ' | ' + (formData.locale || 'N/A');
 
     // ── Plain-text body ───────────────────────────────────────────────────────
     var body =
@@ -3926,6 +3933,7 @@ function sendAuditEmail(formData, htmlResult) {
       'Customer BAN:     ' + (formData.customerBAN || 'N/A') + '\n' +
       'Interaction ID:   ' + interactionId + '\n' +
       'Listening Type:   ' + (formData.direction || 'N/A') + '\n' +
+      'Audit Type:       ' + auditType2 + '\n' +
       'Analysis Type:    ' + analysisLabel + '\n' +
       '─────────────────────────────────────\n\n' +
       'What\'s included in your evaluation:\n' +
@@ -4521,7 +4529,7 @@ function buildAgentEmailHTML(evalTitle, firstName, agentName, sapId,
 // Admin notification email — TELUS-branded, matches New Hire Evaluation style
 // ─────────────────────────────────────────────────────────────────────────────
 function buildAdminEmailHTML(
-  auditRef, submittedAt, observer, analysisType,
+  auditRef, submittedAt, observer, analysisType, auditType,
   agentName, sapId, vtid, teamLeader, opsManager, lob, locale,
   interactionId, direction, duration, evalUrl
 ) {
@@ -4582,6 +4590,7 @@ function buildAdminEmailHTML(
            'padding:11px 16px;margin-bottom:22px;font-size:13px;display:flex;gap:20px">' +
         '<span><strong style="color:#4B286D">Observer:</strong> ' + e(observer) + '</span>' +
         '<span><strong style="color:#4B286D">Type:</strong> ' + e(analysisType) + '</span>' +
+        '<span><strong style="color:#4B286D">Audit:</strong> ' + e(auditType) + '</span>' +
       '</div>' +
 
       // Agent Details
