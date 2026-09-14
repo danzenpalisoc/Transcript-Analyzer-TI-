@@ -162,6 +162,17 @@ body {
   line-height: 1.65;
 }
 .transcript-hint { font-size: 11px; color: var(--telus-subtext); margin-top: 5px; }
+.af-lookup-badge {
+  display: block; font-size: 11px; color: #4B286D;
+  margin-top: 5px; font-style: italic;
+}
+.af-spinner {
+  display: inline-block; width: 10px; height: 10px; vertical-align: middle;
+  border: 2px solid #D1B8E8; border-top-color: #4B286D;
+  border-radius: 50%; animation: af-spin 0.8s linear infinite; margin-right: 4px;
+}
+@keyframes af-spin { to { transform: rotate(360deg); } }
+@keyframes af-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 /* ── Overview Tab ── */
 .ov-section {
@@ -2167,6 +2178,33 @@ function _parseTranscriptLocally(txt) {
   return meta;
 }
 
+var _AF_SLOW_FIELDS = [
+  { id: 'sapId',          ph: 'Enter 4 to 7-digit SAP ID' },
+  { id: 'lineOfBusiness', ph: 'Auto-filled from SAP ID...' },
+  { id: 'teamLeader',     ph: 'Enter Team Leader...' },
+  { id: 'opsManager',     ph: 'Enter Operations Manager...' },
+  { id: 'locale',         ph: 'Auto-filled from SAP ID...' },
+  { id: 'vtid',           ph: 'Auto-filled from AT Data GCP...' }
+];
+function _setAutofillLoading(on) {
+  _AF_SLOW_FIELDS.forEach(function(f) {
+    var el = document.getElementById(f.id);
+    if (!el || el.value) return;
+    el.setAttribute('placeholder', on ? 'Looking up…' : f.ph);
+  });
+  var badge = document.getElementById('af-lookup-badge');
+  if (on && !badge) {
+    badge = document.createElement('span');
+    badge.id = 'af-lookup-badge';
+    badge.className = 'af-lookup-badge';
+    badge.innerHTML = '<span class="af-spinner"></span>Looking up agent details…';
+    var hint = document.querySelector('.transcript-hint');
+    if (hint) hint.insertAdjacentElement('afterend', badge);
+  } else if (!on && badge) {
+    badge.remove();
+  }
+}
+
 function scheduleAutofill() {
   clearTimeout(_autofillTimer);
   _autofillTimer = setTimeout(function () {
@@ -2192,12 +2230,32 @@ function scheduleAutofill() {
       document.getElementById('participant').value = local.participant;
     }
 
+    // ── Step 1.5: localStorage pre-check — skip GAS if this agent was looked up before ──
+    if (local.participant && !document.getElementById('sapId').value) {
+      var normName     = local.participant.toLowerCase().trim();
+      var nameSapCache = lsGet(LS_NAME_SAP_KEY, LS_SAP_AGE) || {};
+      var cachedSapId  = nameSapCache[normName];
+      if (cachedSapId) {
+        var sapRosterCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
+        var cachedRoster   = sapRosterCache[cachedSapId];
+        if (cachedRoster) {
+          document.getElementById('sapId').value = cachedSapId;
+          _applyRosterRow(cachedRoster);
+          return; // Cache hit — all done, no GAS needed
+        }
+      }
+    }
+
     // ── Step 2: GAS call — fills SAP ID, Team Leader, Ops Manager, LOB, Locale, VTID ──
-    // Single combined call: parses transcript + resolves SAP + returns full roster in one round-trip
-    // so Team Member, SAP ID, Team Leader, Ops Manager, LOB, and Locale all populate simultaneously.
+    // Single combined call: parses transcript + resolves SAP + returns full roster in one round-trip.
+    _setAutofillLoading(true);
     google.script.run
-      .withFailureHandler(function(err) { console.error('[AutoFill] getTranscriptMetadataAndRoster failed:', err.message); })
+      .withFailureHandler(function(err) {
+        _setAutofillLoading(false);
+        console.error('[AutoFill] getTranscriptMetadataAndRoster failed:', err.message);
+      })
       .withSuccessHandler(function (payload) {
+        _setAutofillLoading(false);
         if (!payload) return;
         var meta = payload.meta;
         if (!meta) return;
@@ -2230,7 +2288,7 @@ function scheduleAutofill() {
         if (!_sapResolvedParticipant && meta.participant &&
             !document.getElementById('sapId').value) {
           document.getElementById('participant').value = meta.participant;
-          _sapResolvedParticipant = true; // lock once participant is written — prevents repeated server calls when roster is null
+          _sapResolvedParticipant = true;
           if (payload.roster && payload.sapId) {
             document.getElementById('sapId').value = payload.sapId;
             _applyRosterRow(payload.roster);
@@ -2238,6 +2296,11 @@ function scheduleAutofill() {
               var sapCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
               sapCache[payload.sapId] = payload.roster;
               lsSet(LS_SAP_KEY, sapCache);
+              // Cache name → SAP ID so repeat lookups skip GAS entirely
+              var nsc = lsGet(LS_NAME_SAP_KEY, LS_SAP_AGE) || {};
+              nsc[meta.participant.toLowerCase().trim()] = payload.sapId;
+              if (local.participant) nsc[local.participant.toLowerCase().trim()] = payload.sapId;
+              lsSet(LS_NAME_SAP_KEY, nsc);
             } catch(e) {}
           }
         }
@@ -3488,6 +3551,7 @@ var LS_CACHE_KEY     = 'nh_dashboard_cache_v4';
 var LS_ROSTER_KEY    = 'nh_roster_cache_v2';
 var LS_AUDITLOG_KEY  = 'nh_auditlog_cache_v2';
 var LS_SAP_KEY       = 'nh_sap_cache_v1';    // SAP ID → roster row (per-agent)
+var LS_NAME_SAP_KEY  = 'nh_name_sap_cache_v1'; // participant name → SAP ID
 var LS_CACHE_MAX_AGE = 30 * 60 * 1000;   // 30 min — dashboard rows (extended)
 var LS_ROSTER_AGE    = 2  * 60 * 60 * 1000; // 2 h  — roster (extended)
 var LS_AUDITLOG_AGE  = 15 * 60 * 1000;   // 15 min — audit log (extended)
