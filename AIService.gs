@@ -394,10 +394,30 @@ function lookupVTID(sapId) {
   }
 }
 
-// ── SAP ID lookup: tries roster first, then AT Data GCP ──────────────────────
+// ── SAP ID lookup: checks trainee roster first, then regular rosters ─────────
 function lookupBySapId(sapId) {
   var targetStr = sapId.toString().trim();
   var targetNum = Number(targetStr);
+
+  // ── 0. Check trainee roster FIRST ────────────────────────────────────────
+  // Trainees are not in the regular agent roster. Checking trainee status first
+  // avoids unnecessary roster scans and returns the correct Facilitator → Trainer
+  // chain instead of an empty or wrong result.
+  var traineeInfo = getTraineeInfo(targetStr);
+  if (traineeInfo) {
+    var trainerInfo = getTrainerInfo(traineeInfo.facilitator);
+    Logger.log('lookupBySapId [trainee]: ' + targetStr + ' → ' + traineeInfo.agentName +
+               ' | facilitator=' + traineeInfo.facilitator);
+    return {
+      participant:    traineeInfo.agentName,
+      lineOfBusiness: '',
+      teamLeader:     trainerInfo ? trainerInfo.trainerName    : (traineeInfo.facilitator || ''),
+      opsManager:     trainerInfo ? trainerInfo.supervisorName : '',
+      locale:         '',
+      vtid:           lookupVTID(targetStr),
+      agentEmail:     traineeInfo.username ? traineeInfo.username + '@telus.com' : ''
+    };
+  }
 
   // ── 1. Try roster (uses cached data — no sheet read) ─────────────────────
   try {

@@ -1657,28 +1657,33 @@ function buildAuditRecipients(formData) {
   var agentName = (formData.participant || '').trim();
   var sapId     = (formData.sapId       || '').trim();
 
-  // ── 1. Team Member ────────────────────────────────────────────────────────
-  var teamMemberEmail = lookupAgentEmail(agentName)
-                      || resolveEmail(agentName)
-                      || (formData.agentEmail || '').trim();
-
-  // ── 2. Trainee or Tenured routing ────────────────────────────────────────
-  var recipientB = '', recipientC = '';
+  // ── 1. Check trainee status FIRST ────────────────────────────────────────
+  // Trainees are not in the regular agent roster — checking it for them wastes
+  // a lookup and returns nothing useful. Branch immediately on trainee status.
   var traineeInfo = getTraineeInfo(sapId);
+  var teamMemberEmail, recipientB, recipientC;
 
   if (traineeInfo) {
-    // Trainee — use username from trainee sheet for team member email
-    if (traineeInfo.username) teamMemberEmail = traineeInfo.username + '@telus.com';
+    // Trainee — all info comes from trainee roster + trainer lookup.
+    // No need to touch the regular agent roster at all.
+    teamMemberEmail = traineeInfo.username ? traineeInfo.username + '@telus.com'
+                    : (formData.agentEmail || '').trim();
     var trainerInfo = getTrainerInfo(traineeInfo.facilitator);
     recipientB = trainerInfo ? trainerInfo.trainerEmail    : '';
     recipientC = trainerInfo ? trainerInfo.supervisorEmail : '';
-    Logger.log('buildAuditRecipients [trainee]: facilitator=' + traineeInfo.facilitator +
-               ' trainerEmail=' + recipientB + ' supervisorEmail=' + recipientC);
+    Logger.log('buildAuditRecipients [trainee]: ' + agentName +
+               ' | facilitator=' + traineeInfo.facilitator +
+               ' | trainer='    + recipientB +
+               ' | supervisor=' + recipientC);
   } else {
-    // Tenured — Team Leader + OM from formData (names resolved via Global Roster)
+    // Tenured — look up email from regular agent roster, TL + OM from formData.
+    teamMemberEmail = lookupAgentEmail(agentName)
+                    || resolveEmail(agentName)
+                    || (formData.agentEmail || '').trim();
     recipientB = resolveEmail(formData.teamLeader || '');
     recipientC = resolveEmail(formData.opsManager || '');
-    Logger.log('buildAuditRecipients [tenured]: TL=' + recipientB + ' OM=' + recipientC);
+    Logger.log('buildAuditRecipients [tenured]: ' + agentName +
+               ' | TL=' + recipientB + ' | OM=' + recipientC);
   }
 
   // ── 3. QA / Observer ─────────────────────────────────────────────────────
