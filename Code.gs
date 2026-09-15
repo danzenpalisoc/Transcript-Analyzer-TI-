@@ -1769,6 +1769,19 @@ function notifyAdmins(formData, auditRef) {
       return;
     }
 
+    // Quota guard: reserve at least 50 units for the critical main audit emails.
+    // Admin notification is secondary — skip it rather than starve the main email.
+    try {
+      var quotaLeft = MailApp.getRemainingDailyQuota();
+      var needed    = recipients.length + 50; // admin list + safety buffer
+      if (quotaLeft < needed) {
+        Logger.log('notifyAdmins: quota too low (' + quotaLeft + ' remaining, need ' + needed + ') — skipping to protect main email quota');
+        return;
+      }
+    } catch(qe) {
+      Logger.log('notifyAdmins: quota check failed — ' + qe + ' — proceeding anyway');
+    }
+
     var agentName     = formData.participant  || 'Unknown Agent';
     var sapId         = formData.sapId        || 'N/A';
     var analysisType  = formData.analysisType === 'sales'
@@ -3857,7 +3870,9 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
 
     Logger.log('Submission email ' + (_subEmailErr ? 'PARTIALLY' : '') + ' sent to: ' + recipients.join(', '));
     updateDashboardPDFLink(interactionId, _subEmailErr ? 'Partial send' : 'Auto-sent', recipients, auditRef);
-    try { notifyAdmins(formData, auditRef); } catch(ne) { Logger.log('notifyAdmins failed: ' + ne); }
+    // Admin notification deliberately removed from sendSubmissionEmail.
+    // notifyAdmins() is called once in sendAuditEmail (when user clicks Submit Email).
+    // Calling it here as well was doubling quota consumption per audit.
 
   } catch(e) {
     Logger.log('sendSubmissionEmail error: ' + e.toString());
