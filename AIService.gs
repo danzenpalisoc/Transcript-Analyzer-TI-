@@ -97,11 +97,14 @@ function _getRosterSheetData() {
   } catch(e) { Logger.log('_getRosterSheetData: ' + e); return []; }
 }
 
-// ── Pre-warm Global Roster + AT Data GCP caches on page load ─────────────────
+// ── Pre-warm all lookup caches on page load ───────────────────────────────────
 // Called fire-and-forget from the client so autofill is fast when transcript is pasted.
+// Trainee + trainer caches are included so first-trainee lookups never cold-read two sheets.
 function warmLookupCaches() {
-  try { _getGlobalRosterData(); } catch(e) {}
-  try { _getATDataGCPSheetData(); } catch(e) {}
+  try { _getGlobalRosterData(); }    catch(e) {}
+  try { _getATDataGCPSheetData(); }  catch(e) {}
+  try { _getTraineeRosterData(); }   catch(e) {}
+  try { _getTrainerLookupData(); }   catch(e) {}
 }
 
 // ── Trainee Roster — maps SAP ID → Facilitator (trainer) name + username ─────
@@ -218,16 +221,28 @@ function getTrainerInfo(facilitatorName) {
   return null;
 }
 
-// ── Roster lookup by participant name (reverse — name → SAP ID, cached) ──────
+// ── Roster lookup by participant name (reverse — name → SAP ID) ──────────────
+// Checks regular roster first, then trainee roster.
+// Trainees are not in the regular roster — without this fallback, transcript
+// autofill and name-based lookups silently return '' for every trainee.
 function lookupSapId(participantName) {
   try {
-    var data      = _getRosterSheetData();
     var nameLower = participantName.trim().toLowerCase();
+    // 1. Regular (tenured) roster
+    var data = _getRosterSheetData();
     for (var i = 0; i < data.length; i++) {
       if (data[i][ROSTER_COL_AGENT_NAME] &&
           data[i][ROSTER_COL_AGENT_NAME].toString().trim().toLowerCase() === nameLower) {
         var sap = data[i][ROSTER_COL_SAP_ID];
-        return sap !== '' && sap !== undefined ? sap.toString().trim() : '';
+        if (sap !== '' && sap !== undefined) return sap.toString().trim();
+      }
+    }
+    // 2. Trainee roster — trainees are absent from the regular roster
+    var traineeRows = _getTraineeRosterData();
+    for (var j = 0; j < traineeRows.length; j++) {
+      if (traineeRows[j].agentName.toLowerCase() === nameLower && traineeRows[j].sapId) {
+        Logger.log('lookupSapId: ' + participantName + ' found in trainee roster → SAP ' + traineeRows[j].sapId);
+        return traineeRows[j].sapId;
       }
     }
     return '';

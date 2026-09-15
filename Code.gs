@@ -1660,7 +1660,11 @@ function buildAuditRecipients(formData) {
   // ── 1. Check trainee status FIRST ────────────────────────────────────────
   // Trainees are not in the regular agent roster — checking it for them wastes
   // a lookup and returns nothing useful. Branch immediately on trainee status.
-  var traineeInfo = getTraineeInfo(sapId);
+  //
+  // Guard: if sapId is blank the trainee check returns null immediately.
+  // Attempt a name→SAP reverse lookup so a transcript-parsed name still routes correctly.
+  var resolvedSapId = sapId || (agentName ? lookupSapId(agentName) : '');
+  var traineeInfo = getTraineeInfo(resolvedSapId);
   var teamMemberEmail, recipientB, recipientC;
 
   if (traineeInfo) {
@@ -1668,7 +1672,18 @@ function buildAuditRecipients(formData) {
     // No need to touch the regular agent roster at all.
     teamMemberEmail = traineeInfo.username ? traineeInfo.username + '@telus.com'
                     : (formData.agentEmail || '').trim();
+    if (!teamMemberEmail) {
+      Logger.log('buildAuditRecipients [trainee WARNING]: no email for ' + agentName +
+                 ' (SAP ' + resolvedSapId + ') — username field is blank in trainee roster.' +
+                 ' Trainee will NOT receive the audit email.');
+    }
+
     var trainerInfo = getTrainerInfo(traineeInfo.facilitator);
+    if (!trainerInfo) {
+      Logger.log('buildAuditRecipients [trainee WARNING]: facilitator "' + traineeInfo.facilitator +
+                 '" not found in Trainer Lookup. Trainer and Supervisor will NOT receive the audit email.' +
+                 ' Check spelling in trainee roster vs trainer lookup sheet.');
+    }
     recipientB = trainerInfo ? trainerInfo.trainerEmail    : '';
     recipientC = trainerInfo ? trainerInfo.supervisorEmail : '';
     Logger.log('buildAuditRecipients [trainee]: ' + agentName +
