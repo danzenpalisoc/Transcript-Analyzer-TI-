@@ -767,6 +767,20 @@ body {
 }
 .alert-success.visible { display: block; }
 
+.alert-warning {
+  background: #FFF8E1;
+  border: 1px solid #FFD54F;
+  border-left: 4px solid #F9A825;
+  border-radius: 4px;
+  padding: 11px 16px;
+  color: #7B5800;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 14px;
+  display: none;
+}
+.alert-warning.visible { display: block; }
+
 /* ── Submit / email button ── */
 .btn-submit {
   background: var(--telus-green);
@@ -1345,6 +1359,7 @@ body {
 
 <div class="page">
   <div class="alert-error"   id="alert-error"></div>
+  <div class="alert-warning" id="alert-warning"></div>
   <div class="alert-cache"   id="alert-cache">&#9889; <span id="cache-msg">Loaded from cache — no AI processing needed.</span></div>
   <div class="alert-success" id="alert-success"></div>
 
@@ -2657,8 +2672,15 @@ function showError(msg) {
 }
 function hideError() {
   document.getElementById('alert-error').classList.remove('visible');
+  document.getElementById('alert-warning').classList.remove('visible');
   document.getElementById('alert-cache').classList.remove('visible');
   document.getElementById('alert-success').classList.remove('visible');
+}
+function showWarning(msg) {
+  var el = document.getElementById('alert-warning');
+  el.textContent = msg;
+  el.classList.add('visible');
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 function showCache(msg) {
   var el = document.getElementById('alert-cache');
@@ -5130,7 +5152,11 @@ function handleSubmitEmail() {
         return;
       }
       var modeLabel = _emailMode === 'test' ? ' [TEST MODE]' : '';
-      showSuccess('&#10003; Audit emailed successfully to: ' + result.recipients.join(', ') + modeLabel);
+      if (result.emailWarning) {
+        showWarning('⚠️ ' + result.emailWarning);
+      } else {
+        showSuccess('&#10003; Audit emailed successfully to: ' + result.recipients.join(', ') + modeLabel);
+      }
       lockFormAfterSubmit(result.auditRef || _currentAuditRef);
     })
     .withFailureHandler(function (err) {

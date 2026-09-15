@@ -3957,20 +3957,26 @@ function sendAuditEmail(formData, htmlResult) {
     );
 
     // ── Send email (in batches — wrapped so partial failure doesn't skip sheets) ──
-    var _auditEmailErr = null;
+    var _auditEmailErr  = null;
+    var _auditEmailWarn = null; // set when email failed due to quota (audit still saved)
     try {
       sendEmailInBatches_(recipients, subject, body, htmlBody, 'NH Call Analyzer');
     } catch(emailEx) {
-      _auditEmailErr = emailEx.toString();
-      Logger.log('sendAuditEmail: partial email failure — ' + _auditEmailErr);
+      var _errStr = emailEx.toString();
+      Logger.log('sendAuditEmail: email failure — ' + _errStr);
+      if (_errStr.indexOf('QUOTA_EXCEEDED') !== -1) {
+        // Quota exhausted: audit is saved — treat as a warning, not a hard failure
+        _auditEmailWarn = 'Audit saved. Email could not be sent — Google\'s daily email quota was reached. Recipients will NOT receive the email today. Quota resets at midnight Pacific time.';
+      } else {
+        _auditEmailErr = _errStr;
+      }
     }
 
     // ── Update sheets — always runs even on partial email failure ─────────────
-    updateDashboardPDFLink(interactionId,
-      _auditEmailErr ? 'Partial send' : 'Sent via email',
-      recipients, auditRef);
+    var sheetStatus = _auditEmailErr ? 'Partial send' : (_auditEmailWarn ? 'Quota exceeded' : 'Sent via email');
+    updateDashboardPDFLink(interactionId, sheetStatus, recipients, auditRef);
 
-    Logger.log('Audit email ' + (_auditEmailErr ? 'PARTIALLY' : '') + ' sent to: ' + recipients.join(', '));
+    Logger.log('Audit email ' + (_auditEmailErr ? 'PARTIALLY FAILED' : _auditEmailWarn ? 'QUOTA EXCEEDED' : '') + ' sent to: ' + recipients.join(', '));
     // notifyAdmins only runs in live mode. In test mode the main email already went
     // exclusively to Admin/Dev, so calling notifyAdmins would cause a double-send.
     if (effectiveMode === 'live') {
@@ -3991,6 +3997,10 @@ function sendAuditEmail(formData, htmlResult) {
 
     if (_auditEmailErr) {
       return { success: false, error: _auditEmailErr, recipients: recipients, auditRef: auditRef };
+    }
+    // Quota warning: audit was saved and form should lock, but show a warning banner
+    if (_auditEmailWarn) {
+      return { success: true, emailWarning: _auditEmailWarn, recipients: recipients, auditRef: auditRef };
     }
     return { success: true, recipients: recipients, auditRef: auditRef };
 
@@ -4014,6 +4024,19 @@ function sendEmailInBatches_(recipients, subject, body, htmlBody, senderName) {
   for (var i = 0; i < recipients.length; i += BATCH_SIZE) {
     var batchNum = Math.floor(i / BATCH_SIZE) + 1;
     var chunk = recipients.slice(i, i + BATCH_SIZE);
+
+    // Check remaining quota before attempting each batch
+    try {
+      var remaining = MailApp.getRemainingDailyQuota();
+      if (remaining <= 0) {
+        Logger.log('sendEmailInBatches_: quota exhausted (' + remaining + ' remaining) — skipping batch ' + batchNum);
+        failedBatches.push({ batch: batchNum, count: chunk.length, error: 'QUOTA_EXCEEDED' });
+        continue;
+      }
+    } catch(qe) {
+      Logger.log('sendEmailInBatches_: could not check quota — ' + qe);
+    }
+
     try {
       MailApp.sendEmail({
         to:       chunk.join(','),
@@ -4024,14 +4047,19 @@ function sendEmailInBatches_(recipients, subject, body, htmlBody, senderName) {
       });
       Logger.log('sendEmailInBatches_: batch ' + batchNum + ' sent (' + chunk.length + ' recipients)');
     } catch(e) {
-      Logger.log('sendEmailInBatches_: batch ' + batchNum + ' FAILED (' + chunk.length + ' recipients skipped): ' + e);
-      failedBatches.push({ batch: batchNum, count: chunk.length, error: e.toString() });
+      var errStr = e.toString();
+      Logger.log('sendEmailInBatches_: batch ' + batchNum + ' FAILED (' + chunk.length + ' recipients skipped): ' + errStr);
+      // Normalize GAS quota errors to a consistent prefix so callers can detect them
+      var isQuota = errStr.indexOf('too many times') !== -1 || errStr.indexOf('premium email') !== -1;
+      failedBatches.push({ batch: batchNum, count: chunk.length, error: isQuota ? 'QUOTA_EXCEEDED' : errStr });
     }
   }
   // Throw summary only after ALL batches have been attempted so partial sends
   // don't block later batches. Caller decides how to surface this.
   if (failedBatches.length > 0) {
+    var allQuota = failedBatches.every(function(b) { return b.error === 'QUOTA_EXCEEDED'; });
     throw new Error(
+      (allQuota ? 'QUOTA_EXCEEDED: ' : '') +
       'sendEmailInBatches_: ' + failedBatches.length + ' of ' +
       Math.ceil(recipients.length / BATCH_SIZE) + ' batch(es) failed. ' +
       'First error: ' + failedBatches[0].error
