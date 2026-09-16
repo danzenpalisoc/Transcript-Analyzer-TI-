@@ -1699,7 +1699,7 @@ body {
 
   <!-- Top bar -->
   <div id="db-topbar">
-    <button class="db-back" onclick="closeDashboard()">&#8592; Back to Analyzer</button>
+    <button class="db-back" onclick="closeDashboard()">&#128203; Analyzer Form</button>
     <span>&#128200; NH Call Analyzer — Dashboard</span>
     <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
       <span id="db-cache-status" style="font-size:11px;color:rgba(255,255,255,.7)"></span>
@@ -5947,8 +5947,8 @@ function sendChatMessage() {
 
 // Send on Enter (Shift+Enter = new line)
 document.addEventListener('DOMContentLoaded', function() {
-  // Show Audit Type modal first on page load (then LOB after selection)
-  showAuditTypeModal();
+  // Open dashboard as the landing page — form is accessed via "Analyzer Form" button
+  openDashboard();
 
   var inp = document.getElementById('chat-input');
   if (inp) {
