@@ -3776,14 +3776,6 @@ function submitTranscript(formData) {
       try { CacheService.getScriptCache().remove('proc_' + _intIdForLock); } catch(pe) {}
     }
 
-    // ── Auto-send submission email (Agent + QA + QA TLs + Trainers + Admin/Dev) ──
-    // Wrapped in try-catch so an email failure never blocks the submission result.
-    // sendSubmissionEmail was previously dead code (zero call sites) — wiring it
-    // here fulfils its stated intent: "Auto-send email on every submission."
-    try { sendSubmissionEmail(formData, html, auditRef); } catch(se) {
-      Logger.log('sendSubmissionEmail (auto) error: ' + se);
-    }
-
     return {
       success:      true,
       html:         sharedCSS() + html,
