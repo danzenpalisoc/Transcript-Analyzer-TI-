@@ -228,6 +228,20 @@ function getTrainerInfo(facilitatorName) {
 function lookupSapId(participantName) {
   try {
     var nameLower = participantName.trim().toLowerCase();
+
+    // Fast path: find the single matching row inside Sheets rather than pulling
+    // the whole ~15MB roster into the script just to read one SAP ID. This is
+    // the lookup that runs when the transcript names an agent, so it sits
+    // directly in front of the user. Falls through to the full scan below if
+    // TextFinder finds nothing.
+    var hit = _findRosterRow_(ROSTER_COL_AGENT_NAME, participantName);
+    if (hit) {
+      var hitSap = hit.row[ROSTER_COL_SAP_ID];
+      if (hitSap !== '' && hitSap !== undefined && hitSap !== null) {
+        return hitSap.toString().trim();
+      }
+    }
+
     // 1. Regular (tenured) roster
     var data = _getRosterSheetData();
     for (var i = 0; i < data.length; i++) {
@@ -410,15 +424,17 @@ function lookupVTID(sapId) {
 }
 
 // ── SAP ID lookup: checks trainee roster first, then regular rosters ─────────
-// Locate one roster row by SAP ID using Sheets' own search, so a lookup
-// transfers a single row instead of the whole ~12,600-row sheet. The row also
-// carries the agent's email, which saves a second full-roster read.
+// Locate one roster row by an exact value in a given column, using Sheets' own
+// search, so a lookup transfers a single row instead of the whole ~15MB sheet.
+// The row also carries the agent's email, which saves a second full read.
+// TextFinder is case-insensitive by default, matching the lowercase comparisons
+// the callers previously did in script.
 // Returns { row, email } or null when there is no match.
 var _rosterEmailColIdx = null;   // resolved once per execution
 
-function _findRosterRowBySapId_(sapId) {
+function _findRosterRow_(colIndex, value) {
   try {
-    var target = (sapId || '').toString().trim();
+    var target = (value === null || value === undefined) ? '' : value.toString().trim();
     if (!target) return null;
 
     var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
@@ -429,7 +445,7 @@ function _findRosterRowBySapId_(sapId) {
     var lastCol = sheet.getLastColumn();
     if (lastRow < 2) return null;
 
-    var match = sheet.getRange(2, ROSTER_COL_SAP_ID + 1, lastRow - 1, 1)
+    var match = sheet.getRange(2, colIndex + 1, lastRow - 1, 1)
                      .createTextFinder(target)
                      .matchEntireCell(true)
                      .findNext();
@@ -454,7 +470,7 @@ function _findRosterRowBySapId_(sapId) {
       email: _rosterEmailColIdx >= 0 ? (row[_rosterEmailColIdx] || '').toString().trim() : ''
     };
   } catch (e) {
-    Logger.log('_findRosterRowBySapId_: ' + e);
+    Logger.log('_findRosterRow_: ' + e);
     return null;
   }
 }
@@ -491,7 +507,7 @@ function lookupBySapId(sapId) {
     // read that lookupAgentEmail/resolveEmail would otherwise perform.
     // Falls through to the full scan below if nothing is found, so behaviour is
     // unchanged when the SAP ID is stored in a form TextFinder cannot match.
-    var hit = _findRosterRowBySapId_(targetStr);
+    var hit = _findRosterRow_(ROSTER_COL_SAP_ID, targetStr);
     if (hit) {
       var hitName = (hit.row[ROSTER_COL_AGENT_NAME] || '').toString().trim();
       Logger.log('Roster match (indexed) for SAP ' + targetStr + ' -> ' + hitName);
