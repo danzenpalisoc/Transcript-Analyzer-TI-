@@ -3,8 +3,91 @@
  * Handles all Google Sheets read/write operations.
  */
 
+// ── Large-payload CacheService helpers ───────────────────────────────────────
+// CacheService caps a single value at 100KB. Call sites used to guard with
+// `if (json.length <= 99000) cache.put(...)`, which meant the biggest and most
+// expensive datasets — the 12,624-row roster, the agent email map, the audit
+// log — silently skipped caching entirely and were re-read from the sheet on
+// EVERY execution. These split the payload across numbered keys so those
+// datasets are actually cached.
+//
+// A partially-evicted payload must read as a miss, never as truncated JSON:
+// returning half a document would break every downstream parse.
+var _CACHE_CHUNK_CHARS = 90000;   // headroom under the 100KB per-key limit
+var _CACHE_MAX_CHUNKS  = 120;     // ~10MB ceiling; refuse anything larger
+
+function _cachePutLarge_(cache, key, str, ttlSeconds) {
+  try {
+    var n = Math.ceil(str.length / _CACHE_CHUNK_CHARS) || 1;
+    if (n > _CACHE_MAX_CHUNKS) {
+      Logger.log('_cachePutLarge_: ' + key + ' too large (' + str.length + ' chars) — not cached');
+      return false;
+    }
+    var payload = {};
+    for (var i = 0; i < n; i++) {
+      payload[key + '_c' + i] = str.substring(i * _CACHE_CHUNK_CHARS, (i + 1) * _CACHE_CHUNK_CHARS);
+    }
+    payload[key + '_n'] = String(n);
+    cache.putAll(payload, ttlSeconds);
+    return true;
+  } catch (e) {
+    Logger.log('_cachePutLarge_ (' + key + '): ' + e);
+    return false;
+  }
+}
+
+// Must be used to invalidate anything written with _cachePutLarge_ — a plain
+// cache.remove(key) would leave the numbered chunks in place and the entry
+// would keep reading as a hit.
+function _cacheRemoveLarge_(cache, key) {
+  try {
+    var n = parseInt(cache.get(key + '_n') || '0', 10);
+    var keys = [key, key + '_n'];
+    for (var i = 0; i < n; i++) keys.push(key + '_c' + i);
+    cache.removeAll(keys);
+  } catch (e) {
+    Logger.log('_cacheRemoveLarge_ (' + key + '): ' + e);
+  }
+}
+
+function _cacheGetLarge_(cache, key) {
+  try {
+    var n = parseInt(cache.get(key + '_n') || '0', 10);
+    if (!n || n < 1) return null;
+
+    var keys = [];
+    for (var i = 0; i < n; i++) keys.push(key + '_c' + i);
+    var got = cache.getAll(keys);
+
+    var out = '';
+    for (var j = 0; j < n; j++) {
+      var part = got[key + '_c' + j];
+      if (part === null || part === undefined) return null; // partial eviction -> miss
+      out += part;
+    }
+    return out;
+  } catch (e) {
+    Logger.log('_cacheGetLarge_ (' + key + '): ' + e);
+    return null;
+  }
+}
+
+
+// ── Spreadsheet handle memoisation ───────────────────────────────────────────
+// openById is a network round trip. Several Config constants point at the SAME
+// file (MAIN_SPREADSHEET_ID / AUDIT_TRACKING_SS_ID / FCR_DASHBOARD_SS_ID are
+// identical, as are TRAINEE_ROSTER_SS_ID / AT_DATA_GCP_SS_ID and
+// TRAINER_LOOKUP_SS_ID / USERS_SS_ID), and getOrCreateSpreadsheet() alone runs
+// five-plus times per submit. Memoised per execution.
+var _ssHandleCache = {};
+
+function openSpreadsheetCached(id) {
+  if (!_ssHandleCache[id]) _ssHandleCache[id] = SpreadsheetApp.openById(id);
+  return _ssHandleCache[id];
+}
+
 function getOrCreateSpreadsheet() {
-  return SpreadsheetApp.openById(MAIN_SPREADSHEET_ID);
+  return openSpreadsheetCached(MAIN_SPREADSHEET_ID);
 }
 
 function getOrCreateSheet(spreadsheet, sheetName) {
@@ -13,9 +96,17 @@ function getOrCreateSheet(spreadsheet, sheetName) {
   return sheet;
 }
 
+// Sheets already confirmed to have headers during this execution. ensureHeaders
+// runs 6+ times per submit and each call cost a getLastRow() round trip even on
+// its fast path; headers cannot vanish mid-execution, so one check is enough.
+var _headersChecked = {};
+
 function ensureHeaders(sheet, headers) {
+  var memoKey = sheet.getSheetId();
+  if (_headersChecked[memoKey]) return;
+
   // Fast path — if headers already exist, skip the lock entirely.
-  if (sheet.getLastRow() > 0) return;
+  if (sheet.getLastRow() > 0) { _headersChecked[memoKey] = true; return; }
 
   // Double-checked locking: two concurrent executions can both see getLastRow()===0
   // and both enter the slow path. Acquiring the lock then re-checking prevents both
@@ -32,6 +123,7 @@ function ensureHeaders(sheet, headers) {
         .setFontColor('#ffffff');
       sheet.setFrozenRows(1);
     }
+    _headersChecked[memoKey] = true;
   } catch(le) {
     Logger.log('ensureHeaders: lock failed — ' + le);
   } finally {
@@ -66,7 +158,7 @@ function findCachedResult(interactionId, analysisType) {
 
     // ── Layer 1: CacheService (O(1), no sheet read) ───────────────────────────
     var csKey    = _RESULT_CS_PREFIX + target + '_' + typeLower;
-    var csResult = CacheService.getScriptCache().get(csKey);
+    var csResult = _cacheGetLarge_(CacheService.getScriptCache(), csKey);
     if (csResult) {
       Logger.log('Cache HIT (CacheService) for: ' + target);
       return csResult;
@@ -81,49 +173,41 @@ function findCachedResult(interactionId, analysisType) {
     var finder  = sheet.getRange('A:A').createTextFinder(target).matchEntireCell(true);
     var matches = finder.findAll();
 
+    // Read each matched row exactly once, then assemble in memory. The previous
+    // version issued a getValues() per match and then, for every continuation
+    // chunk, re-scanned all matches with another getValues() each — O(matches^2)
+    // sheet round trips for a multi-chunk report.
+    var htmlByType = {};
     for (var i = 0; i < matches.length; i++) {
-      var row     = matches[i].getRow();
+      var row = matches[i].getRow();
       if (row < 2) continue;
       var rowData = sheet.getRange(row, 1, 1, 4).getValues()[0];
       var rowType = (rowData[1] || '').toString().trim().toLowerCase();
-      if (rowType === typeLower) {
-        var html = rowData[3] ? rowData[3].toString() : null;
-        if (!html) continue;
-
-        // Assemble any continuation chunks (sales_2, sales_3, repeats_2, etc.)
-        var chunkNum = 2;
-        while (true) {
-          var chunkType = typeLower + '_' + chunkNum;
-          var chunkFound = false;
-          for (var j = 0; j < matches.length; j++) {
-            var cRow  = matches[j].getRow();
-            if (cRow < 2) continue;
-            var cData = sheet.getRange(cRow, 1, 1, 4).getValues()[0];
-            if ((cData[1] || '').toString().trim().toLowerCase() === chunkType) {
-              html += (cData[3] || '').toString();
-              chunkFound = true;
-              break;
-            }
-          }
-          if (!chunkFound) break;
-          chunkNum++;
-        }
-
-        Logger.log('Cache HIT (sheet) for: ' + target + ' (assembled ' + html.length + ' chars)');
-        // Promote to CacheService for next lookup
-        // Only cache if payload fits within CacheService's 100KB limit.
-        // Truncating to 95000 bytes silently breaks large HTML (broken tables,
-        // missing closing tags). Skipping CacheService for oversized payloads
-        // is safer — the sheet-based multi-chunk path still serves them correctly.
-        if (html.length <= 99000) {
-          try { CacheService.getScriptCache().put(csKey, html, _RESULT_CS_TTL); } catch(ce) {}
-        }
-        return html;
-      }
+      var cell    = rowData[3] ? rowData[3].toString() : '';
+      // First non-empty row for a given type wins, matching the old behaviour
+      // of skipping blank rows and continuing the scan.
+      if (!htmlByType[rowType] && cell) htmlByType[rowType] = cell;
     }
 
-    Logger.log('Cache MISS for: ' + target);
-    return null;
+    var html = htmlByType[typeLower];
+    if (!html) {
+      Logger.log('Cache MISS for: ' + target);
+      return null;
+    }
+
+    // Append continuation chunks (sales_2, sales_3, repeats_2, ...)
+    for (var chunkNum = 2; ; chunkNum++) {
+      var part = htmlByType[typeLower + '_' + chunkNum];
+      if (!part) break;
+      html += part;
+    }
+
+    Logger.log('Cache HIT (sheet) for: ' + target + ' (assembled ' + html.length + ' chars)');
+    // Promote to CacheService for next lookup. Chunked, so oversized
+    // reports are cached too — previously anything over 100KB skipped this
+    // layer entirely and paid the TextFinder scan on every repeat lookup.
+    _cachePutLarge_(CacheService.getScriptCache(), csKey, html, _RESULT_CS_TTL);
+    return html;
   } catch(e) {
     Logger.log('findCachedResult error: ' + e);
     return null;
@@ -148,13 +232,11 @@ function saveCachedResult(interactionId, analysisType, htmlResult) {
     var id        = interactionId.trim();
     var typeLower = atype.toLowerCase();
 
-    // Write to CacheService (skip if payload exceeds 100KB — truncated HTML
-    // causes broken evaluations; the sheet-based path handles large payloads correctly)
+    // Write to CacheService, chunked so large reports are cached rather than
+    // skipped. Never truncate here: a half-written report renders as broken
+    // tables and missing tags.
     var csKey = _RESULT_CS_PREFIX + id + '_' + typeLower;
-    var _csHtml = html;
-    if (_csHtml.length <= 99000) {
-      try { CacheService.getScriptCache().put(csKey, _csHtml, _RESULT_CS_TTL); } catch(ce) {}
-    }
+    _cachePutLarge_(CacheService.getScriptCache(), csKey, html, _RESULT_CS_TTL);
 
     // Write to Cache sheet — delete any stale rows first (includes chunk rows
     // like sales_2, sales_3) so a concurrent re-submission does not leave orphaned
@@ -166,22 +248,38 @@ function saveCachedResult(interactionId, analysisType, htmlResult) {
     var lastRow = sheet.getLastRow();
     if (lastRow >= 2) {
       var colAB = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-      for (var d = colAB.length - 1; d >= 0; d--) {
+      var stale = [];
+      for (var d = 0; d < colAB.length; d++) {
         var rowId   = (colAB[d][0] || '').toString().trim();
         var rowType = (colAB[d][1] || '').toString().trim().toLowerCase();
         if (rowId === id &&
             (rowType === typeLower || rowType.indexOf(typeLower + '_') === 0)) {
-          sheet.deleteRow(d + 2); // +2: 1-based index + skip header row
+          stale.push(d + 2); // +2: 1-based index + skip header row
         }
+      }
+      // Delete as contiguous blocks, bottom-up so lower row numbers stay valid.
+      // A report's chunk rows are appended together and so are almost always
+      // adjacent, collapsing N deleteRow() calls into one deleteRows() per block.
+      for (var s = stale.length - 1; s >= 0; s--) {
+        var end = stale[s], start = end;
+        while (s > 0 && stale[s - 1] === start - 1) { s--; start = stale[s]; }
+        sheet.deleteRows(start, end - start + 1);
       }
     }
 
     var chunkCount = Math.ceil(html.length / _CACHE_CHUNK_SIZE) || 1;
+    var stamp = new Date();
+    var rows  = [];
     for (var c = 0; c < chunkCount; c++) {
-      var chunk   = html.substring(c * _CACHE_CHUNK_SIZE, (c + 1) * _CACHE_CHUNK_SIZE);
-      var rowType = c === 0 ? atype : atype + '_' + (c + 1);
-      sheet.appendRow([id, rowType, new Date(), chunk]);
+      rows.push([
+        id,
+        c === 0 ? atype : atype + '_' + (c + 1),
+        stamp,
+        html.substring(c * _CACHE_CHUNK_SIZE, (c + 1) * _CACHE_CHUNK_SIZE)
+      ]);
     }
+    // One write instead of an appendRow() per chunk.
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 4).setValues(rows);
     Logger.log('Cached result for: ' + id + ' (' + html.length + ' chars, ' + chunkCount + ' chunk(s))');
   } catch(e) {
     Logger.log('saveCachedResult error: ' + e);
