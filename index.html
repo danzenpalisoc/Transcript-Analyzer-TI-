@@ -3485,8 +3485,12 @@ function _updateEmailModeBtn() {
       })
       .getObserverInfo();
 
-    // Pre-warm all lookup caches in background so autofill is fast when transcript is pasted
-    google.script.run.withSuccessHandler(function() {}).withFailureHandler(function() {}).getRosterAll();
+    // Pre-warm the small lookup caches in background so autofill is fast when
+    // the transcript is pasted. getRosterAll() is deliberately NOT warmed here:
+    // it pulls the ~15MB primary roster, its result is discarded, and its cache
+    // write is skipped because the payload exceeds CacheService's 100KB limit —
+    // so it cost a full 15MB read on every page load and warmed nothing.
+    // lookupBySapId no longer needs it either; it finds the single row directly.
     google.script.run.withSuccessHandler(function() {}).withFailureHandler(function() {}).warmLookupCaches();
   }
 })();
