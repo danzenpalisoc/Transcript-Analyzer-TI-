@@ -1183,7 +1183,20 @@ function buildRepeatsPrompt(transcriptText, knowledgeText, agentName, selectedLO
     '6. AI Spotted Flags: 2-5 flags. Each title MUST have class="ai-flag-title".\n' +
     '7. Do NOT include any text outside the HTML. Do NOT use markdown.\n\n' +
     kb + lobBlock +
-    'TRANSCRIPT:\n\n' + transcriptText;
+    'TRANSCRIPT:\n\n' + transcriptText +
+    // Restated after the transcript. On a long call the structure spec above is
+    // thousands of tokens behind the point where generation actually starts,
+    // which is a common cause of format drift and runaway output length — and
+    // runaway length is what makes an evaluation take minutes.
+    '\n\nEND OF TRANSCRIPT.\n\n' +
+    'Now produce the report. Hard limits, restated:\n' +
+    '- Begin with <div class="report-wrap"> and end with its closing tag. Nothing before or after it.\n' +
+    '- Exactly 6 ai-chip entries.\n' +
+    '- Exactly 2 li in What\'s Working and exactly 2 in What Needs to Change.\n' +
+    '- Exactly 2 roleplay scenarios.\n' +
+    '- Between 2 and 5 ai-flag blocks. Never more than 5.\n' +
+    '- Summary about 100 words. Each flag detail 2-3 sentences.\n' +
+    '- Do not repeat the transcript, the guidelines, or these instructions back.\n';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1338,7 +1351,20 @@ function buildSalesPrompt(transcriptText, knowledgeText, agentName, selectedLOB)
     '6. AI Spotted Flags: 2-5 flags. Each title MUST have class="ai-flag-title".\n' +
     '7. Do NOT include any text outside the HTML. Do NOT use markdown.\n\n' +
     kb + lobBlock +
-    'TRANSCRIPT:\n\n' + transcriptText;
+    'TRANSCRIPT:\n\n' + transcriptText +
+    // Restated after the transcript. On a long call the structure spec above is
+    // thousands of tokens behind the point where generation actually starts,
+    // which is a common cause of format drift and runaway output length — and
+    // runaway length is what makes an evaluation take minutes.
+    '\n\nEND OF TRANSCRIPT.\n\n' +
+    'Now produce the report. Hard limits, restated:\n' +
+    '- Begin with <div class="report-wrap"> and end with its closing tag. Nothing before or after it.\n' +
+    '- Exactly 6 ai-chip entries.\n' +
+    '- Exactly 2 li in What\'s Working and exactly 2 in What Needs to Change.\n' +
+    '- Exactly 2 roleplay scenarios.\n' +
+    '- Between 2 and 5 ai-flag blocks. Never more than 5.\n' +
+    '- Summary about 100 words. Each flag detail 2-3 sentences.\n' +
+    '- Do not repeat the transcript, the guidelines, or these instructions back.\n';
 }
 
 // ── LOB-specific process evaluation knowledge ──────────────────────────────────
