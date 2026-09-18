@@ -11,10 +11,10 @@ function getQAUsersFromSheet() {
   try {
     var cache    = CacheService.getScriptCache();
     var cacheKey = 'qa_users_list_v4';
-    var cached = _cacheGetLarge_(cache, cacheKey);
+    var cached   = cache.get(cacheKey);
     if (cached) { try { return JSON.parse(cached); } catch(e) {} }
 
-    var ss     = openSpreadsheetCached(USERS_SS_ID);
+    var ss     = SpreadsheetApp.openById(USERS_SS_ID);
     // Find by GID first (most reliable), fall back to tab name
     var sheet  = null;
     var sheets = ss.getSheets();
@@ -49,7 +49,7 @@ function getQAUsersFromSheet() {
     }
 
     var _qu = JSON.stringify(users);
-    _cachePutLarge_(cache, cacheKey, _qu, 60 * 60);
+    if (_qu.length <= 99000) { try { cache.put(cacheKey, _qu, 60 * 60); } catch(e) {} }
     Logger.log('getQAUsersFromSheet: ' + users.length + ' users loaded');
     return users;
   } catch(e) {
@@ -58,60 +58,45 @@ function getQAUsersFromSheet() {
   }
 }
 
-// ── Users sheet as one shared email -> user map ───────────────────────────────
-// Each caller used to cache only its OWN row, in getUserCache(). With 100+
-// analysts that meant 100+ separate full-sheet reads of the same table per TTL
-// window. Read once into a shared ScriptCache map instead.
-var _usersByEmailInMemory = null;
-
-function _getUsersByEmail() {
-  if (_usersByEmailInMemory) return _usersByEmailInMemory;
-
-  var cache    = CacheService.getScriptCache();
-  var cacheKey = 'users_by_email_v1';
-  var cached   = _cacheGetLarge_(cache, cacheKey);
-  if (cached) {
-    try { _usersByEmailInMemory = JSON.parse(cached); return _usersByEmailInMemory; } catch(e) {}
-  }
-
-  var map = {};
-  try {
-    var ss    = openSpreadsheetCached(USERS_SS_ID);
-    var sheet = ss.getSheetByName(USERS_TAB);
-    if (sheet) {
-      var data = sheet.getDataRange().getValues();
-      if (data.length >= 2) {
-        var hdrs     = data[0].map(function(h){ return (h || '').toString().toLowerCase().trim(); });
-        var emailCol = hdrs.indexOf('email address');
-        var nameCol  = hdrs.indexOf('name');
-        var roleCol  = hdrs.indexOf('role');
-        if (emailCol >= 0 && nameCol >= 0) {
-          for (var i = 1; i < data.length; i++) {
-            var raw = (data[i][emailCol] || '').toString().trim();
-            if (!raw) continue;
-            map[raw.toLowerCase()] = {
-              name: (data[i][nameCol] || '').toString().trim(),
-              role: roleCol >= 0 ? (data[i][roleCol] || '').toString().trim() : ''
-            };
-          }
-          _cachePutLarge_(cache, cacheKey, JSON.stringify(map), 8 * 60 * 60);
-        }
-      }
-    }
-  } catch(e) {
-    Logger.log('_getUsersByEmail error: ' + e);
-  }
-
-  _usersByEmailInMemory = map;
-  return map;
-}
-
+// ── Look up a user in the Users sheet by email ────────────────────────────────
 function lookupUserFromUsersSheet(email) {
   if (!email) return null;
-  var rec = _getUsersByEmail()[email.toLowerCase().trim()];
-  if (!rec) return null;
-  // Echo back the caller's spelling of the email, as the previous version did.
-  return { name: rec.name, role: rec.role, email: email };
+  try {
+    var cache    = CacheService.getUserCache();
+    var cacheKey = 'userssheet_' + email.replace(/[^a-zA-Z0-9]/g, '_');
+    var cached   = cache.get(cacheKey);
+    if (cached) { try { return JSON.parse(cached); } catch(e) {} }
+
+    var ss    = SpreadsheetApp.openById(USERS_SS_ID);
+    var sheet = ss.getSheetByName(USERS_TAB);
+    if (!sheet) return null;
+
+    var data    = sheet.getDataRange().getValues();
+    if (data.length < 2) return null;
+
+    var hdrs     = data[0].map(function(h){ return (h || '').toString().toLowerCase().trim(); });
+    var emailCol = hdrs.indexOf('email address');
+    var nameCol  = hdrs.indexOf('name');
+    var roleCol  = hdrs.indexOf('role');
+    if (emailCol < 0 || nameCol < 0) return null;
+
+    var emailLower = email.toLowerCase().trim();
+    for (var i = 1; i < data.length; i++) {
+      if ((data[i][emailCol] || '').toString().toLowerCase().trim() !== emailLower) continue;
+      var result = {
+        name:  (data[i][nameCol] || '').toString().trim(),
+        role:  roleCol >= 0 ? (data[i][roleCol] || '').toString().trim() : '',
+        email: email
+      };
+      try { cache.put(cacheKey, JSON.stringify(result), 8 * 60 * 60); } catch(e) {}
+      Logger.log('lookupUserFromUsersSheet: ' + result.name + ' [' + result.role + ']');
+      return result;
+    }
+    return null;
+  } catch(e) {
+    Logger.log('lookupUserFromUsersSheet error: ' + e);
+    return null;
+  }
 }
 
 // ── Backfill blank Observer Name rows in Dashboard_Data + Audit_Log ───────────

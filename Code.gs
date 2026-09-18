@@ -252,7 +252,7 @@ function repairTruncatedSalesEvaluations() {
 
 // Run once from editor to confirm exact Locale column in roster
 function diagnoseRosterColumns() {
-  var ss    = openSpreadsheetCached(ROSTER_SHEET_ID);
+  var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
   var sheet = ss.getSheetByName('roster');
   if (!sheet) { Logger.log('roster sheet not found'); return; }
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
@@ -1090,7 +1090,7 @@ function backfillVTIDFromATData() {
   Logger.log('Looking up VTID for ' + sapIds.length + ' unique SAP IDs');
 
   // Fetch AT Data GCP sheet
-  var atSs    = openSpreadsheetCached(AT_DATA_GCP_SS_ID);
+  var atSs    = SpreadsheetApp.openById(AT_DATA_GCP_SS_ID);
   var atSheet = atSs.getSheetByName('Roster') || atSs.getSheetByName('roster') || atSs.getSheets()[0];
   var atData  = atSheet.getDataRange().getValues();
   var atHeaders = atData[0];
@@ -1316,8 +1316,7 @@ function showRecentErrors() {
     // Check cache state
     var cache = CacheService.getScriptCache();
     var hasDash = cache.get('dashboard_data_meta_v1') ? 'YES' : 'NO';
-    // Chunked entry — presence is signalled by the companion _n key.
-    var hasRoster = cache.get('roster_sheet_data_v2_n') ? 'YES' : 'NO';
+    var hasRoster = cache.get('roster_sheet_data_v2') ? 'YES' : 'NO';
     Logger.log('\n=== Cache state ===');
     Logger.log('Dashboard cache: ' + hasDash);
     Logger.log('Roster cache: ' + hasRoster);
@@ -1329,7 +1328,7 @@ function showRecentErrors() {
 
 function diagnoseFCRDashboard() {
   var SAP_ID = '2007888';
-  var ss     = openSpreadsheetCached(FCR_DASHBOARD_SS_ID);
+  var ss     = SpreadsheetApp.openById(FCR_DASHBOARD_SS_ID);
   var sheets = ss.getSheets();
 
   Logger.log('=== FCR Dashboard — all tabs ===');
@@ -1359,7 +1358,7 @@ function diagnoseFCRDashboard() {
 
 function diagnoseATDataRow() {
   var SAP_ID = '2007888';
-  var ss     = openSpreadsheetCached(AT_DATA_GCP_SS_ID);
+  var ss     = SpreadsheetApp.openById(AT_DATA_GCP_SS_ID);
   var sheet  = ss.getSheetByName('Roster') || ss.getSheetByName('roster') || ss.getSheets()[0];
   var data   = sheet.getDataRange().getValues();
   var headers = data[0];
@@ -1391,7 +1390,7 @@ function testLookupDirect() {
   Logger.log('=== DIRECT LOOKUP TEST ===');
 
   // 1. Search roster by AGENT NAME to find actual stored SAP ID
-  var ss    = openSpreadsheetCached(ROSTER_SHEET_ID);
+  var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
   var sheet = ss.getSheetByName('roster') || ss.getSheets()[0];
   var data  = sheet.getDataRange().getValues();
   var nameLower = AGENT_NAME.toLowerCase().trim();
@@ -1426,7 +1425,7 @@ function testLookupDirect() {
 
   if (!result) {
     Logger.log('RESULT IS NULL — checking raw sheet data...');
-    var ss    = openSpreadsheetCached(ROSTER_SHEET_ID);
+    var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
     var sheet = ss.getSheetByName('roster') || ss.getSheets()[0];
     Logger.log('Sheet name: ' + sheet.getName());
     var data = sheet.getDataRange().getValues();
@@ -1457,7 +1456,7 @@ function testLookupDirect() {
 function diagnoseSapIdRow() {
   var SAP_ID = '2007888';   // <-- change this to test any SAP ID
 
-  var ss    = openSpreadsheetCached(ROSTER_SHEET_ID);
+  var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
   var sheet = ss.getSheetByName('roster');
   var data  = sheet.getDataRange().getValues();
   var headers = data[0];
@@ -1488,7 +1487,7 @@ function diagnoseSapIdRow() {
 function diagnoseATDataForAgent() {
   var AGENT_NAME = 'James Collado';  // <-- change to test any agent
 
-  var ss    = openSpreadsheetCached(AT_DATA_GCP_SS_ID);
+  var ss    = SpreadsheetApp.openById(AT_DATA_GCP_SS_ID);
   var sheet = ss.getSheets()[0];
   var data  = sheet.getDataRange().getValues();
   var headers = data[0];
@@ -1581,12 +1580,12 @@ function getRecipientsFromRoster(roleFilter) {
     } else {
       var cache    = CacheService.getScriptCache();
       var cacheKey = 'audit_roster_rows_v2'; // bumped to bust stale cache after Trainer role added
-      var cached = _cacheGetLarge_(cache, cacheKey);
+      var cached   = cache.get(cacheKey);
       if (cached) {
         try { allRows = JSON.parse(cached); } catch(e) {}
       }
       if (!allRows) {
-        var ss    = openSpreadsheetCached(AUDIT_TRACKING_SS_ID);
+        var ss    = SpreadsheetApp.openById(AUDIT_TRACKING_SS_ID);
         var sheet = ss.getSheetByName('Roster') || ss.getSheetByName('roster');
         if (!sheet) { Logger.log('getRecipientsFromRoster: Roster sheet not found'); return []; }
         var data = sheet.getDataRange().getValues();
@@ -1611,7 +1610,7 @@ function getRecipientsFromRoster(roleFilter) {
           };
         });
         var _ar = JSON.stringify(allRows);
-        _cachePutLarge_(cache, cacheKey, _ar, 2 * 60 * 60);
+        if (_ar.length <= 99000) { try { cache.put(cacheKey, _ar, 2 * 60 * 60); } catch(e) {} }
         _rosterRecipientsInMemory = allRows;
       }
     }
@@ -1731,11 +1730,11 @@ function _getAgentEmailMap() {
   try {
     var cache    = CacheService.getScriptCache();
     var cacheKey = 'agent_email_map_v2';
-    var cached   = _cacheGetLarge_(cache, cacheKey);
+    var cached   = cache.get(cacheKey);
     if (cached) {
       try { _agentEmailMapInMemory = JSON.parse(cached); return _agentEmailMapInMemory; } catch(e) {}
     }
-    var ss    = openSpreadsheetCached(ROSTER_SHEET_ID);
+    var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
     var sheet = ss.getSheetByName('roster') || ss.getSheetByName('Roster');
     if (!sheet) { Logger.log('_getAgentEmailMap: roster sheet not found'); return {}; }
     var data    = sheet.getDataRange().getValues();
@@ -1758,10 +1757,8 @@ function _getAgentEmailMap() {
       var email = (row[emailCol] || '').toString().trim();
       if (name && email) map[name] = email;
     });
-    // Chunked: ~12,600 name->email pairs is several hundred KB, so the old
-    // `<= 99000` guard skipped caching entirely and forced a full roster read
-    // on every execution — including every email send.
-    _cachePutLarge_(cache, cacheKey, JSON.stringify(map), 2 * 60 * 60);
+    var _em = JSON.stringify(map);
+    if (_em.length <= 99000) { try { cache.put(cacheKey, _em, 2 * 60 * 60); } catch(e) {} }
     _agentEmailMapInMemory = map;
     Logger.log('_getAgentEmailMap: loaded ' + Object.keys(map).length + ' entries');
     return map;
@@ -1948,7 +1945,7 @@ function testAdminNotification() {
 function testEmailLookup() {
   // ── 1. Clear stale cache so we force a fresh sheet read ───────────────────
   CacheService.getScriptCache().remove('agent_email_map_v1');
-  _cacheRemoveLarge_(CacheService.getScriptCache(), 'agent_email_map_v2');
+  CacheService.getScriptCache().remove('agent_email_map_v2');
   _agentEmailMapInMemory = null;
   Logger.log('Cache cleared.');
 
@@ -3050,32 +3047,32 @@ function getObserverInfo() {
 }
 function getAuditLogData()            { return readAuditLog(); }
 
-// ── Generate unique Audit Reference Number: NHA-YYYYMMDD-TTTTRR ──────────────
-// TTTT = seconds since midnight in base36 (4 chars), RR = 2 random base36 chars.
-//
-// Lock-free by design. The previous version held a SCRIPT lock around a
-// CacheService counter, so every concurrent submit queued behind it — and when
-// that lock timed out under peak load it fell back to Math.random() over only
-// 4 digits, which can hand two evaluations the SAME audit ref. Deriving the
-// suffix from the clock plus randomness removes both the queue and the
-// collision: two submits now clash only within the same second AND the same
-// 1-in-1296 random pair.
+// ── Generate unique Audit Reference Number: NHA-YYYYMMDD-XXXX ────────────────
+// Uses CacheService to persist today's counter — avoids scanning the full sheet.
 function generateAuditRef() {
   var now     = new Date();
   var y       = now.getFullYear();
   var m       = String(now.getMonth() + 1).padStart(2, '0');
   var d       = String(now.getDate()).padStart(2, '0');
   var dateStr = '' + y + m + d;
+  var cacheKey = 'audit_ref_seq_' + dateStr;
 
-  var secsToday = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-  var timePart  = secsToday.toString(36).toUpperCase();
-  while (timePart.length < 4) timePart = '0' + timePart;
-
-  var alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  var randPart = alphabet.charAt(Math.floor(Math.random() * 36))
-               + alphabet.charAt(Math.floor(Math.random() * 36));
-
-  return 'NHA-' + dateStr + '-' + timePart + randPart;
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(5000);
+    var cache   = CacheService.getScriptCache();
+    var current = parseInt(cache.get(cacheKey) || '0', 10);
+    var seq     = current + 1;
+    // TTL: expire at midnight (seconds remaining in the day)
+    var msLeft  = new Date(y, now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
+    cache.put(cacheKey, String(seq), Math.floor(msLeft / 1000));
+    return 'NHA-' + dateStr + '-' + String(seq).padStart(4, '0');
+  } catch(e) {
+    Logger.log('generateAuditRef error: ' + e);
+    return 'NHA-' + dateStr + '-' + String(Math.floor(Math.random() * 9999)).padStart(4, '0');
+  } finally {
+    try { lock.releaseLock(); } catch(re) {}
+  }
 }
 
 // ── Resolve observer from logged-in user email ────────────────────────────────
@@ -3149,7 +3146,7 @@ function resolveObserver() {
 // additions to the sheet appear automatically without any code change.
 function getFlagDropdownOptions() {
   try {
-    var ss    = openSpreadsheetCached('1baZbWTLNw7_ij04oH3aO_xT4eOTffcUwRRL836cHzJo');
+    var ss    = SpreadsheetApp.openById('1baZbWTLNw7_ij04oH3aO_xT4eOTffcUwRRL836cHzJo');
     var sheet = ss.getSheetByName('Add a Flag');
     if (!sheet) return { success: false, options: [], error: 'Tab "Add a Flag" not found' };
     var data    = sheet.getDataRange().getValues();
@@ -3179,7 +3176,7 @@ var AUDIT_LOG_CACHE_TTL = 20 * 60; // 20 minutes — localStorage handles the fa
 function readAuditLog() {
   try {
     var cache  = CacheService.getScriptCache();
-    var cached = _cacheGetLarge_(cache, AUDIT_LOG_CACHE_KEY);
+    var cached = cache.get(AUDIT_LOG_CACHE_KEY);
     if (cached) {
       try { return JSON.parse(cached); } catch(e) {}
     }
@@ -3204,16 +3201,13 @@ function readAuditLog() {
     });
 
     var _al = JSON.stringify(result);
-    _cachePutLarge_(cache, AUDIT_LOG_CACHE_KEY, _al, AUDIT_LOG_CACHE_TTL);
+    if (_al.length <= 99000) { try { cache.put(AUDIT_LOG_CACHE_KEY, _al, AUDIT_LOG_CACHE_TTL); } catch(e) {} }
     return result;
   } catch(e) { Logger.log('readAuditLog: ' + e); return []; }
 }
 
 function invalidateAuditLogCache() {
-  // Chunked write, so it needs the chunked remove — a plain remove() would
-  // leave the numbered chunks behind and the stale log would keep reading as
-  // a cache hit for the full TTL.
-  try { _cacheRemoveLarge_(CacheService.getScriptCache(), AUDIT_LOG_CACHE_KEY); } catch(e) {}
+  try { CacheService.getScriptCache().remove(AUDIT_LOG_CACHE_KEY); } catch(e) {}
 }
 
 // Dashboard entry point — served at ?page=dashboard
@@ -3355,37 +3349,26 @@ function findAuditRefForInteraction(interactionId, analysisType) {
   } catch(e) { return ''; }
 }
 
-// Called after email sent — update Dashboard_Data and Audit_Log.
-//
-// emailStatus is written to the 'Email Status' column verbatim. Callers MUST
-// pass the literal 'Sent' on success: the client compares `=== 'Sent'`
-// (index.html:3923/3983/4092/4768, Dashboard.html:502/587). On failure they
-// pass a descriptive reason instead.
-//
-// This previously took the status in a `pdfLink` parameter and wrote it to the
-// 'PDF Email Link' column, while forcing 'Email Status' to the literal 'Sent'
-// unconditionally — so a failed or quota-blocked send still reported as Sent
-// and the real outcome landed in the wrong column. No PDF link is produced on
-// this path (generateAndServePDF is a separate flow), so the PDF column is now
-// left alone rather than filled with a status string.
-function updateDashboardPDFLink(interactionId, emailStatus, recipients, auditRef) {
+// Called after email sent — update Dashboard_Data and Audit_Log
+function updateDashboardPDFLink(interactionId, pdfLink, recipients, auditRef) {
   try {
     var ss = getOrCreateSpreadsheet();
-    var status = emailStatus || 'Sent';
 
-    // Update Dashboard_Data
+    // Update Dashboard_Data — col C = Interaction ID (index 3), col W=PDF, col X=Status
     var dSheet  = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
     var lastRow = dSheet.getLastRow();
     if (lastRow >= 2) {
       // Resolve column positions by header name — never hardcode
       var dHeaderRow = dSheet.getRange(1, 1, 1, dSheet.getLastColumn()).getValues()[0];
+      var pdfCol    = dHeaderRow.indexOf('PDF Email Link') + 1;
       var dStatusCol= dHeaderRow.indexOf('Email Status')   + 1;
       var dIdCol    = dHeaderRow.indexOf('Interaction ID') + 1;
       if (dIdCol < 1) dIdCol = 3; // safe fallback to col C
       var ids = dSheet.getRange(2, dIdCol, lastRow - 1, 1).getValues();
       for (var i = 0; i < ids.length; i++) {
         if (ids[i][0].toString().trim() === interactionId.trim()) {
-          if (dStatusCol > 0) dSheet.getRange(i + 2, dStatusCol).setValue(status);
+          if (pdfCol    > 0) dSheet.getRange(i + 2, pdfCol).setValue(pdfLink || '');
+          if (dStatusCol > 0) dSheet.getRange(i + 2, dStatusCol).setValue('Sent');
           break;
         }
       }
@@ -3403,7 +3386,7 @@ function updateDashboardPDFLink(interactionId, emailStatus, recipients, auditRef
       var logIds = logSheet.getRange(2, logIdCol, logLast - 1, 1).getValues();
       for (var j = 0; j < logIds.length; j++) {
         if (logIds[j][0].toString().trim() === interactionId.trim()) {
-          if (logStatusCol > 0) logSheet.getRange(j + 2, logStatusCol).setValue(status);
+          if (logStatusCol > 0) logSheet.getRange(j + 2, logStatusCol).setValue('Sent');
           if (logRecipCol  > 0) logSheet.getRange(j + 2, logRecipCol).setValue((recipients || []).join(', '));
           break;
         }
@@ -3898,7 +3881,7 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
     }
 
     Logger.log('Submission email ' + (_subEmailErr ? 'PARTIALLY' : '') + ' sent to: ' + recipients.join(', '));
-    updateDashboardPDFLink(interactionId, _subEmailErr ? 'Partial send' : 'Sent', recipients, auditRef);
+    updateDashboardPDFLink(interactionId, _subEmailErr ? 'Partial send' : 'Auto-sent', recipients, auditRef);
     // Admin notification deliberately removed from sendSubmissionEmail.
     // notifyAdmins() is called once in sendAuditEmail (when user clicks Submit Email).
     // Calling it here as well was doubling quota consumption per audit.
@@ -4017,8 +4000,7 @@ function sendAuditEmail(formData, htmlResult) {
     }
 
     // ── Update sheets — always runs even on partial email failure ─────────────
-    // Must be the literal 'Sent' on success — the client gates on `=== 'Sent'`.
-    var sheetStatus = _auditEmailErr ? 'Partial send' : (_auditEmailWarn ? 'Quota exceeded' : 'Sent');
+    var sheetStatus = _auditEmailErr ? 'Partial send' : (_auditEmailWarn ? 'Quota exceeded' : 'Sent via email');
     updateDashboardPDFLink(interactionId, sheetStatus, recipients, auditRef);
 
     Logger.log('Audit email ' + (_auditEmailErr ? 'PARTIALLY FAILED' : _auditEmailWarn ? 'QUOTA EXCEEDED' : '') + ' sent to: ' + recipients.join(', '));
@@ -4125,7 +4107,7 @@ function resolveEmail(name) {
     if (_emailMap && _emailMap[nameLower]) return _emailMap[nameLower];
 
     // 1. Primary Roster — match on Agent_Name column only (col C, index 2)
-    var ss    = openSpreadsheetCached(ROSTER_SHEET_ID);
+    var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
     var sheet = ss.getSheetByName('roster');
     if (sheet) {
       var data = sheet.getDataRange().getValues();
@@ -5206,7 +5188,7 @@ function doPost(e) {
 
 function appendRegistryRow(data) {
   var REGISTRY_SS_ID = '1a58nCQPv9B0C1E0m30x5fibDrgnaJL6A7Pyz265Fjac';
-  var ss = openSpreadsheetCached(REGISTRY_SS_ID);
+  var ss = SpreadsheetApp.openById(REGISTRY_SS_ID);
   var sh = ss.getSheetByName('Registry');
   if (!sh) throw new Error('Registry sheet not found');
 

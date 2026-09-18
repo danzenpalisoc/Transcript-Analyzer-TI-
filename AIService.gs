@@ -57,13 +57,8 @@ function getPDFKnowledgeFromFolder(folderId, cacheKey) {
         DriveApp.getFileById(docFile.id).setTrashed(true);
       } catch(e) { Logger.log('PDF read error: ' + e); }
     }
-    // Cap once and use the same value for both the cache and the return. This
-    // used to cache a 100k-char slice but return allText untruncated, so the
-    // first evaluation after each TTL expiry silently sent an unbounded prompt
-    // while every later one sent the capped version.
-    var capped = allText.substring(0, 100000);
-    if (capped) cache.put(cacheKey, capped, PDF_CACHE_SECONDS);
-    return capped;
+    if (allText) cache.put(cacheKey, allText.substring(0, 100000), PDF_CACHE_SECONDS);
+    return allText;
   } catch(e) { Logger.log('getPDFKnowledgeFromFolder: ' + e); return ''; }
 }
 
@@ -80,23 +75,23 @@ function _getRosterSheetData() {
   try {
     var cache    = CacheService.getScriptCache();
     var cacheKey = 'roster_sheet_data_v2';
-    var cached   = _cacheGetLarge_(cache, cacheKey);
+    var cached   = cache.get(cacheKey);
     if (cached) {
       try {
         _rosterDataInMemory = JSON.parse(cached);
         return _rosterDataInMemory;
       } catch(e) {}
     }
-    var ss    = openSpreadsheetCached(ROSTER_SHEET_ID);
+    var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
     var sheet = ss.getSheetByName('roster') || ss.getSheetByName('Roster');
     if (!sheet) return [];
     var data = sheet.getDataRange().getValues();
     // Store only rows 1+ (skip header)
     var serializable = data.slice(1);
-    // Chunked: this roster is ~12,600 rows, far past the 100KB single-key cap,
-    // so the old `<= 99000` guard meant it was never cached and the full sheet
-    // was re-read on every execution.
-    _cachePutLarge_(cache, cacheKey, JSON.stringify(serializable), 4 * 60 * 60);
+    // Skip if payload exceeds 100KB — truncated JSON silently breaks every
+    // subsequent parse, causing an unbounded sheet read on every invocation.
+    var _rs = JSON.stringify(serializable);
+    if (_rs.length <= 99000) { try { cache.put(cacheKey, _rs, 4 * 60 * 60); } catch(e) {} }
     _rosterDataInMemory = serializable;
     return serializable;
   } catch(e) { Logger.log('_getRosterSheetData: ' + e); return []; }
@@ -121,9 +116,9 @@ function _getTraineeRosterData() {
   try {
     var cache    = CacheService.getScriptCache();
     var cacheKey = 'trainee_roster_v1';
-    var cached = _cacheGetLarge_(cache, cacheKey);
+    var cached   = cache.get(cacheKey);
     if (cached) { try { _traineeRosterInMemory = JSON.parse(cached); return _traineeRosterInMemory; } catch(e) {} }
-    var ss    = openSpreadsheetCached(TRAINEE_ROSTER_SS_ID);
+    var ss    = SpreadsheetApp.openById(TRAINEE_ROSTER_SS_ID);
     var sheet = ss.getSheetByName('Roster') || ss.getSheetByName('roster');
     if (!sheet) { Logger.log('_getTraineeRosterData: Roster tab not found'); return []; }
     var data = sheet.getDataRange().getValues();
@@ -146,7 +141,7 @@ function _getTraineeRosterData() {
       };
     }).filter(function(r) { return r.sapId; });
     var json = JSON.stringify(result);
-    _cachePutLarge_(cache, cacheKey, json, 4 * 60 * 60);
+    if (json.length <= 99000) { try { cache.put(cacheKey, json, 4 * 60 * 60); } catch(e) {} }
     _traineeRosterInMemory = result;
     Logger.log('_getTraineeRosterData: loaded ' + result.length + ' trainees');
     return result;
@@ -162,9 +157,9 @@ function _getTrainerLookupData() {
   try {
     var cache    = CacheService.getScriptCache();
     var cacheKey = 'trainer_lookup_v1';
-    var cached = _cacheGetLarge_(cache, cacheKey);
+    var cached   = cache.get(cacheKey);
     if (cached) { try { _trainerLookupInMemory = JSON.parse(cached); return _trainerLookupInMemory; } catch(e) {} }
-    var ss    = openSpreadsheetCached(TRAINER_LOOKUP_SS_ID);
+    var ss    = SpreadsheetApp.openById(TRAINER_LOOKUP_SS_ID);
     var sheet = ss.getSheetByName('Roster') || ss.getSheetByName('roster');
     if (!sheet) { Logger.log('_getTrainerLookupData: Roster tab not found'); return []; }
     var data = sheet.getDataRange().getValues();
@@ -187,7 +182,7 @@ function _getTrainerLookupData() {
       };
     }).filter(function(r) { return r.trainerName; });
     var json = JSON.stringify(result);
-    _cachePutLarge_(cache, cacheKey, json, 4 * 60 * 60);
+    if (json.length <= 99000) { try { cache.put(cacheKey, json, 4 * 60 * 60); } catch(e) {} }
     _trainerLookupInMemory = result;
     Logger.log('_getTrainerLookupData: loaded ' + result.length + ' trainers');
     return result;
@@ -259,7 +254,7 @@ function getAllRosterData() {
   try {
     var cache    = CacheService.getScriptCache();
     var cacheKey = 'roster_all_data_v2';
-    var cached = _cacheGetLarge_(cache, cacheKey);
+    var cached   = cache.get(cacheKey);
     if (cached) {
       try { return JSON.parse(cached); } catch(e) {}
     }
@@ -280,7 +275,7 @@ function getAllRosterData() {
       });
     }
     var _rr = JSON.stringify(result);
-    _cachePutLarge_(cache, cacheKey, _rr, 4 * 60 * 60);
+    if (_rr.length <= 99000) { try { cache.put(cacheKey, _rr, 4 * 60 * 60); } catch(e) {} }
     return result;
   } catch(e) { Logger.log('getAllRosterData: ' + e); return []; }
 }
@@ -288,7 +283,7 @@ function getAllRosterData() {
 // ── Diagnostic: run once from editor to find VTID column in AT Data GCP ───────
 function diagnoseATDataColumns() {
   try {
-    var ss    = openSpreadsheetCached(AT_DATA_GCP_SS_ID);
+    var ss    = SpreadsheetApp.openById(AT_DATA_GCP_SS_ID);
     var sheet = ss.getSheets()[0];
     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     Logger.log('=== AT Data GCP columns ===');
@@ -313,7 +308,7 @@ function _getATDataGCPSheetData() {
   try {
     var cache    = CacheService.getScriptCache();
     var cacheKey = 'at_data_gcp_v2';
-    var cached = _cacheGetLarge_(cache, cacheKey);
+    var cached   = cache.get(cacheKey);
     if (cached) {
       try {
         _atDataInMemory = JSON.parse(cached);
@@ -322,12 +317,12 @@ function _getATDataGCPSheetData() {
       } catch(e) {}
     }
     Logger.log('AT Data GCP cache miss — reading sheet...');
-    var ss    = openSpreadsheetCached(AT_DATA_GCP_SS_ID);
+    var ss    = SpreadsheetApp.openById(AT_DATA_GCP_SS_ID);
     var sheet = ss.getSheetByName('Roster') || ss.getSheetByName('roster') || ss.getSheets()[0];
     var data  = sheet.getDataRange().getValues();
     // Store the full 2D array — callers use data[0] for header and data[i] for rows
     var _ad = JSON.stringify(data);
-    _cachePutLarge_(cache, cacheKey, _ad, 4 * 60 * 60);
+    if (_ad.length <= 99000) { try { cache.put(cacheKey, _ad, 4 * 60 * 60); } catch(e) {} }
     _atDataInMemory = data;
     Logger.log('AT Data GCP loaded from sheet: ' + (data.length - 1) + ' rows');
     return _atDataInMemory;
@@ -340,20 +335,20 @@ function _getGlobalRosterData() {
   try {
     var cache    = CacheService.getScriptCache();
     var cacheKey = 'global_roster_v1';
-    var cached = _cacheGetLarge_(cache, cacheKey);
+    var cached   = cache.get(cacheKey);
     if (cached) {
       try {
         _globalRosterDataInMemory = JSON.parse(cached);
         return _globalRosterDataInMemory;
       } catch(e) {}
     }
-    var ss    = openSpreadsheetCached(GLOBAL_ROSTER_SS_ID);
+    var ss    = SpreadsheetApp.openById(GLOBAL_ROSTER_SS_ID);
     var sheet = ss.getSheetByName('Global Roster');
     if (!sheet) return { header: [], rows: [] };
     var data    = sheet.getDataRange().getValues();
     var payload = { header: data[0] || [], rows: data.slice(1) };
     var _gp = JSON.stringify(payload);
-    _cachePutLarge_(cache, cacheKey, _gp, 4 * 60 * 60);
+    if (_gp.length <= 99000) { try { cache.put(cacheKey, _gp, 4 * 60 * 60); } catch(e) {} }
     _globalRosterDataInMemory = payload;
     return payload;
   } catch(e) { Logger.log('_getGlobalRosterData: ' + e); return { header: [], rows: [] }; }
@@ -588,7 +583,7 @@ function lookupFromFCRDashboard(targetStr, targetNum) {
       try { return JSON.parse(cached); } catch(e) {}
     }
 
-    var ss     = openSpreadsheetCached(FCR_DASHBOARD_SS_ID);
+    var ss     = SpreadsheetApp.openById(FCR_DASHBOARD_SS_ID);
     var sheets = ss.getSheets();
 
     for (var s = 0; s < sheets.length; s++) {
