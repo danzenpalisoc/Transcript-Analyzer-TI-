@@ -2461,6 +2461,14 @@ function debounceSapLookup() {
 
     var ticket = _identityTicket();
 
+    // The hidden agentEmail belongs to whoever was resolved LAST. Clear it the
+    // moment we start resolving someone else, so that if this lookup fails, or
+    // never replies, the form carries no email rather than the previous
+    // agent's. Sending nothing is recoverable; sending the wrong person's
+    // evaluation to the wrong inbox is not. _applyRosterRow refills it on a hit.
+    var _ae = document.getElementById('agentEmail');
+    if (_ae) _ae.value = '';
+
     // ── Check localStorage cache first (instant, no server call) ────────────
     var sapCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
     if (sapCache[sap]) {
@@ -2636,8 +2644,10 @@ function clearAllFields() {
   // Transcript + call details
   clearTranscript();
 
-  // Team member fields
-  ['sapId','participant','teamLeader','opsManager','lineOfBusiness','locale','vtid']
+  // Team member fields. agentEmail is included deliberately: it is a HIDDEN
+  // input, so a value left over from the previous audit is invisible to the
+  // analyst and would send this agent's evaluation to the previous agent.
+  ['sapId','participant','teamLeader','opsManager','lineOfBusiness','locale','vtid','agentEmail']
     .forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.value = '';

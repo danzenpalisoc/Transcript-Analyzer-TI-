@@ -189,6 +189,64 @@ function testNoNameSapCache() {
   if (bad === 0) console.log('  PASS  name -> SAP cache is neither read nor written');
 }
 
+// ── Test 5: agentEmail must never outlive the agent it belongs to ───────────
+// agentEmail is a HIDDEN input, so a stale value is invisible to the analyst.
+// If it survives into the next audit, agent B's evaluation is emailed to
+// agent A. No email at all is strictly safer than the wrong person's.
+async function testAgentEmailNeverStale() {
+  console.log('\nTest 5 — agentEmail must not carry over to the next agent');
+  reset();
+
+  // Audit 1: agent A resolves, email is filled.
+  document.getElementById('sapId').value = '2007888';
+  ctx.debounceSapLookup();
+  await sleep(700);
+  const reqA = take('getRosterBySapId', '2007888');
+  if (!reqA) { console.log('  FAIL  no lookup fired'); failures++; return; }
+  reqA.success(AGENT_FULL);
+  check('audit 1 email filled', document.getElementById('agentEmail').value, 'b@telus.com');
+
+  // Analyst clears the form and starts a new audit.
+  if (typeof ctx.clearAllFields === 'function') {
+    try { ctx.clearAllFields(); } catch (e) { /* stub DOM gaps are fine */ }
+  }
+  check('cleared by Clear All', document.getElementById('agentEmail').value, '');
+
+  // Audit 2: a different agent, whose roster row carries NO email.
+  reset();
+  document.getElementById('sapId').value = '2007888';
+  ctx.debounceSapLookup();
+  await sleep(700);
+  const seed = take('getRosterBySapId', '2007888');
+  if (seed) seed.success(AGENT_FULL);            // email now b@telus.com
+
+  document.getElementById('sapId').value = '3115222';
+  ctx.debounceSapLookup();
+  await sleep(700);
+  const reqB = take('getRosterBySapId', '3115222');
+  if (!reqB) { console.log('  FAIL  no lookup fired for the second agent'); failures++; return; }
+  reqB.success({ participant: 'No Email Person', teamLeader: 'TL-C' });   // no agentEmail
+
+  check('no stale email for agent 2', document.getElementById('agentEmail').value, '');
+
+  // Audit 3: the second lookup never replies at all — a silent failure. The
+  // previous agent's email must not simply remain in the hidden field.
+  reset();
+  document.getElementById('sapId').value = '2007888';
+  ctx.debounceSapLookup();
+  await sleep(700);
+  const seed2 = take('getRosterBySapId', '2007888');
+  if (seed2) seed2.success(AGENT_FULL);
+  check('seeded before silent failure', document.getElementById('agentEmail').value, 'b@telus.com');
+
+  document.getElementById('sapId').value = '4440000';
+  ctx.debounceSapLookup();
+  await sleep(700);
+  take('getRosterBySapId', '4440000');   // dispatched, but no reply ever arrives
+
+  check('no stale email after a silent failure', document.getElementById('agentEmail').value, '');
+}
+
 (async () => {
   console.log('NH Analyzer — SAP autofill race tests');
   console.log('file: ' + htmlPath);
@@ -196,6 +254,7 @@ function testNoNameSapCache() {
   await testNormalLookupStillWorks();
   await testFieldChangedUnderneath();
   testNoNameSapCache();
+  await testAgentEmailNeverStale();
   console.log(failures === 0 ? '\nALL TESTS PASSED' : `\n${failures} CHECK(S) FAILED`);
   process.exit(failures === 0 ? 0 : 1);
 })();
