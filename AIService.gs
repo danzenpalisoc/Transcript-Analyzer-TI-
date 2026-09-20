@@ -115,7 +115,7 @@ function _getTraineeRosterData() {
   if (_traineeRosterInMemory) return _traineeRosterInMemory;
   try {
     var cache    = CacheService.getScriptCache();
-    var cacheKey = 'trainee_roster_v1';
+    var cacheKey = 'trainee_roster_v2';  // v2: rows now carry gradTs
     var cached   = cache.get(cacheKey);
     if (cached) { try { _traineeRosterInMemory = JSON.parse(cached); return _traineeRosterInMemory; } catch(e) {} }
     var ss    = SpreadsheetApp.openById(TRAINEE_ROSTER_SS_ID);
@@ -125,19 +125,36 @@ function _getTraineeRosterData() {
     if (data.length < 2) return [];
     var hdrs = data[0];
     var sapCol = -1, agentCol = -1, facilitatorCol = -1, usernameCol = -1;
+    var gradCol = -1, maxCol = -1;
     hdrs.forEach(function(h, i) {
       var hl = h.toString().toLowerCase().trim();
       if (hl === 'production id') sapCol         = i;
       if (hl === 'agent')         agentCol       = i;
       if (hl === 'facilitator')   facilitatorCol = i;
       if (hl === 'username')      usernameCol    = i;
+      if (hl === 'grad date')     gradCol        = i;
+      if (hl === 'max date')      maxCol         = i;
     });
+
+    // Stored as an epoch number, not a Date: this array is JSON round-tripped
+    // through CacheService, which would turn a Date into a string.
+    function _gradTs(row) {
+      var raw = null;
+      if (gradCol >= 0 && row[gradCol] !== '' && row[gradCol] != null) raw = row[gradCol];
+      else if (maxCol >= 0 && row[maxCol] !== '' && row[maxCol] != null) raw = row[maxCol];
+      if (raw === null) return null;
+      var d = (raw instanceof Date) ? raw : new Date(raw);
+      var t = d.getTime();
+      return isNaN(t) ? null : t;
+    }
+
     var result = data.slice(1).map(function(row) {
       return {
         sapId:       (row[sapCol]         || '').toString().trim(),
         agentName:   (row[agentCol]       || '').toString().trim(),
         facilitator: (row[facilitatorCol] || '').toString().trim(),
-        username:    (row[usernameCol]    || '').toString().trim()
+        username:    (row[usernameCol]    || '').toString().trim(),
+        gradTs:      _gradTs(row)
       };
     }).filter(function(r) { return r.sapId; });
     var json = JSON.stringify(result);
@@ -190,19 +207,48 @@ function _getTrainerLookupData() {
 }
 
 // Returns trainee row if SAP ID is in trainee roster; null if agent is tenured.
+// Returns the trainee record only while the person is STILL IN TRAINING.
+//
+// The trainee sheet keeps people after they graduate — rows with a Grad Date
+// over a year in the past are still present. Because lookupBySapId checks
+// trainees first and returns early, anyone who was ever a new hire stayed a
+// "trainee" forever: their Team Leader showed as their old training
+// facilitator, and Line of Business and Locale were forced blank, without the
+// real roster ever being consulted.
+//
+// A graduated person now falls through to the roster, and if they are not there
+// yet, to the Global Roster and the AT Data tier below — which return a fuller
+// record than this branch ever did.
+//
+// Deliberately conservative: a row with a missing or unparseable date is still
+// treated as a trainee, so a blank Grad Date cannot silently change behaviour.
 function getTraineeInfo(sapId) {
   if (!sapId) return null;
   var rows = _getTraineeRosterData();
   var target = sapId.toString().trim();
   var targetNum = Number(target);
+  var now = Date.now();
+  var graduated = null;   // remembered only for the log line
+
+  // Scan every matching row, not just the first: someone who trained twice has
+  // an old graduated row AND a current one, and the old row must not decide it.
   for (var i = 0; i < rows.length; i++) {
     var s = rows[i].sapId;
-    if (s === target || (!isNaN(targetNum) && !isNaN(Number(s)) && Number(s) === targetNum)) {
-      Logger.log('getTraineeInfo: ' + target + ' is a trainee, facilitator=' + rows[i].facilitator);
-      return rows[i];
-    }
+    if (s !== target && !(!isNaN(targetNum) && !isNaN(Number(s)) && Number(s) === targetNum)) continue;
+
+    var gradTs = rows[i].gradTs;
+    if (gradTs && gradTs < now) { graduated = gradTs; continue; }   // past cohort
+
+    Logger.log('getTraineeInfo: ' + target + ' is a trainee, facilitator=' + rows[i].facilitator);
+    return rows[i];
   }
-  Logger.log('getTraineeInfo: ' + target + ' not found — treating as tenured');
+
+  if (graduated) {
+    Logger.log('getTraineeInfo: ' + target + ' graduated ' +
+               new Date(graduated).toISOString().substring(0, 10) + ' — treating as tenured');
+  } else {
+    Logger.log('getTraineeInfo: ' + target + ' not found — treating as tenured');
+  }
   return null;
 }
 
