@@ -642,12 +642,27 @@ function extractStructuredRCAFromHTML(html) {
     if (cdMatch) callDriver = stripTags(cdMatch[1]).substring(0, 100);
     if (!callDriver && flags[0]) callDriver = flags[0].substring(0, 100);
 
+    // These three used to require a SECOND AI call (enrichDashboardRCA), which
+    // asked for 13 fields, wrote only 3, and read nothing this HTML does not
+    // already contain. The evaluation prompt now emits them in a hidden
+    // div.ai-meta and they are read straight off it.
+    function metaAttr(name) {
+      var m = html.match(new RegExp('data-' + name + '="([^"]*)"', 'i'));
+      if (!m) return '';
+      var v = m[1].trim();
+      // A model that echoed the placeholder instead of answering leaves the
+      // square brackets behind; treat that as no answer rather than as data.
+      if (v.charAt(0) === '[' || v.toLowerCase() === 'n/a') return '';
+      return v;
+    }
+
     return {
       callDriver:        callDriver,
-      rcaCategory:       '',   // requires AI — populated later by enrichDashboardData
+      rcaCategory:       metaAttr('rca-category').substring(0, 50),
       rcaSubParameter:   flags.slice(0,2).join('; ').substring(0, 100),
       topOpportunity:    topOpp,
-      productOpportunity:'',   // requires AI
+      productOpportunity:metaAttr('product-opportunity').substring(0, 100),
+      salesAttempted:    metaAttr('sales-attempted').substring(0, 10),
       callSummaryShort:  callSummary,
       criticalFlags:     flags.slice(0, 5).join(', ').substring(0, 500),
       repeatPct:         repeatPct,
@@ -3709,15 +3724,25 @@ function submitTranscript(formData) {
       var issueResolved    = extractTextBlock(html, 'Issue Resolution')  || '';
       var transferOccurred = extractTextBlock(html, 'Transfer')          || '';
 
-      // Structured RCA fields — fast HTML parse for flags/SMART, then AI call for RCA category
+      // Structured RCA fields — all parsed from the evaluation HTML. RCA category,
+      // product opportunity and sales attempted now arrive in the hidden
+      // div.ai-meta the evaluation prompt emits, so the separate enrichment AI
+      // call this used to need is gone.
       var structured = null;
-      try { structured = extractStructuredRCAFromHTML(html); } catch(re) {}
+      try {
+        structured = extractStructuredRCAFromHTML(html);
+      } catch(re) {
+        // Do not swallow this silently: it blanks eleven Dashboard columns while
+        // the submit still reports success.
+        Logger.log('extractStructuredRCAFromHTML FAILED for ' + auditRef + ' — 11 Dashboard columns will be blank: ' + re);
+        warnings.push('Some dashboard fields could not be extracted for ref ' + auditRef);
+      }
       var callDriver        = structured ? structured.callDriver        : '';
       var rcaCategory       = structured ? structured.rcaCategory       : '';
       var rcaSubParameter   = structured ? structured.rcaSubParameter   : '';
       var topOpportunity    = structured ? structured.topOpportunity    : '';
       var productOpportunity= structured ? structured.productOpportunity: '';
-      var salesAttempted    = '';
+      var salesAttempted    = structured ? structured.salesAttempted    : '';
 
 
       var smartS            = structured ? structured.smartS            : '';

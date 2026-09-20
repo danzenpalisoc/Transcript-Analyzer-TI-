@@ -3018,16 +3018,17 @@ function _doSubmit(formData) {
       // P5: Show filter transparency metadata below the applied-output area
       _renderFilterStats(result.filterStats);
 
-      // Background enrichment: fills RCA Category / Product Opportunity / Sales Attempted
-      // after the result is already shown. Fire-and-forget (no user-visible impact),
-      // but a failure handler ensures silent failures appear in the browser console.
-      if (!result.fromCache && result.auditRef) {
-        google.script.run
-          .withFailureHandler(function(err) {
-            console.warn('[RCA Enrichment] background enrichment failed — dashboard RCA columns may be empty:', err && err.message);
-          })
-          .enrichDashboardRCA(result.auditRef, formData.analysisType, result.html);
-      }
+      // The background RCA enrichment call that used to fire here is gone.
+      // It was a SECOND AI call in its own server execution, holding a slot for
+      // 30s-2min per audit, to obtain three values — RCA Category, Product
+      // Opportunity and Sales Attempted. It asked the model for thirteen fields
+      // and discarded ten of them, and its only input was the evaluation HTML
+      // that had just been produced, so it learned nothing new.
+      //
+      // Those three values now arrive inside the main evaluation (a hidden
+      // div.ai-meta) and are written by submitTranscript with the rest of the
+      // row. Because the whole app runs as a single owner account, every
+      // execution removed here is capacity returned to all ~100 analysts.
     })
     .withFailureHandler(function (err) {
       _procStepTimers.forEach(clearTimeout);
