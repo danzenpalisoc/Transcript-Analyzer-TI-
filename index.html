@@ -2310,22 +2310,13 @@ function scheduleAutofill() {
       document.getElementById('participant').value = local.participant;
     }
 
-    // ── Step 1.5: localStorage pre-check — skip GAS if this agent was looked up before ──
-    if (local.participant && !document.getElementById('sapId').value) {
-      var normName     = local.participant.toLowerCase().trim();
-      var nameSapCache = lsGet(LS_NAME_SAP_KEY, LS_SAP_AGE) || {};
-      var cachedSapId  = nameSapCache[normName];
-      if (cachedSapId) {
-        var sapRosterCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
-        var cachedRoster   = sapRosterCache[cachedSapId];
-        if (cachedRoster) {
-          var cacheTicket = _identityTicket();
-          document.getElementById('sapId').value = cachedSapId;
-          _applyRosterRow(cachedRoster, cacheTicket);
-          return; // Cache hit — all done, no GAS needed
-        }
-      }
-    }
+    // The name -> SAP ID shortcut that used to live here has been removed. It
+    // keyed on `local.participant`, a client-side regex guess at the speaker's
+    // name, and bound it to a real SAP ID with no server validation — then
+    // served that binding for two hours, filling every roster field from it
+    // without a network call that could disprove it. One misparsed name meant
+    // hours of confidently wrong team members. The SAP ID -> roster row cache
+    // below is keyed on an exact SAP ID and is kept.
 
     // ── Step 2: GAS call — fills SAP ID, Team Leader, Ops Manager, LOB, Locale, VTID ──
     // Single combined call: parses transcript + resolves SAP + returns full roster in one round-trip.
@@ -2382,11 +2373,8 @@ function scheduleAutofill() {
               var sapCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
               sapCache[payload.sapId] = payload.roster;
               lsSet(LS_SAP_KEY, sapCache);
-              // Cache name → SAP ID so repeat lookups skip GAS entirely
-              var nsc = lsGet(LS_NAME_SAP_KEY, LS_SAP_AGE) || {};
-              nsc[meta.participant.toLowerCase().trim()] = payload.sapId;
-              if (local.participant) nsc[local.participant.toLowerCase().trim()] = payload.sapId;
-              lsSet(LS_NAME_SAP_KEY, nsc);
+              // No name -> SAP ID caching. It bound an unvalidated client-side
+              // guess at the name to a real SAP ID and replayed it for hours.
             } catch(e) {}
           }
         }
@@ -3737,7 +3725,10 @@ var LS_CACHE_KEY     = 'nh_dashboard_cache_v4';
 var LS_ROSTER_KEY    = 'nh_roster_cache_v2';
 var LS_AUDITLOG_KEY  = 'nh_auditlog_cache_v2';
 var LS_SAP_KEY       = 'nh_sap_cache_v1';    // SAP ID → roster row (per-agent)
-var LS_NAME_SAP_KEY  = 'nh_name_sap_cache_v1'; // participant name → SAP ID
+// LS_NAME_SAP_KEY ('nh_name_sap_cache_v1') removed — it cached an unvalidated
+// client-side guess at the participant name against a real SAP ID and served it
+// for two hours without a server call. Entries already in analysts' browsers are
+// now simply never read, and expire on their own.
 var LS_CACHE_MAX_AGE = 30 * 60 * 1000;   // 30 min — dashboard rows (extended)
 var LS_ROSTER_AGE    = 2  * 60 * 60 * 1000; // 2 h  — roster (extended)
 var LS_AUDITLOG_AGE  = 15 * 60 * 1000;   // 15 min — audit log (extended)
