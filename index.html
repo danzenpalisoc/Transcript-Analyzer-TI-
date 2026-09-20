@@ -2319,8 +2319,9 @@ function scheduleAutofill() {
         var sapRosterCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
         var cachedRoster   = sapRosterCache[cachedSapId];
         if (cachedRoster) {
+          var cacheTicket = _identityTicket();
           document.getElementById('sapId').value = cachedSapId;
-          _applyRosterRow(cachedRoster);
+          _applyRosterRow(cachedRoster, cacheTicket);
           return; // Cache hit — all done, no GAS needed
         }
       }
@@ -2329,6 +2330,7 @@ function scheduleAutofill() {
     // ── Step 2: GAS call — fills SAP ID, Team Leader, Ops Manager, LOB, Locale, VTID ──
     // Single combined call: parses transcript + resolves SAP + returns full roster in one round-trip.
     _setAutofillLoading(true);
+    var autofillTicket = _identityTicket();
     google.script.run
       .withFailureHandler(function(err) {
         _setAutofillLoading(false);
@@ -2364,14 +2366,18 @@ function scheduleAutofill() {
           }
         }
 
-        // Fill Team Member + SAP ID + all roster fields at the same time
+        // Fill Team Member + SAP ID + all roster fields at the same time.
+        // The call-detail backfill above is setIfEmpty and harmless whenever it
+        // lands, but identity must not be written by a superseded reply — if the
+        // analyst has typed a SAP ID since this request went out, theirs wins.
+        if (_identityStale(autofillTicket)) return;
         if (!_sapResolvedParticipant && meta.participant &&
             !document.getElementById('sapId').value) {
           document.getElementById('participant').value = meta.participant;
           _sapResolvedParticipant = true;
           if (payload.roster && payload.sapId) {
             document.getElementById('sapId').value = payload.sapId;
-            _applyRosterRow(payload.roster);
+            _applyRosterRow(payload.roster, autofillTicket);
             try {
               var sapCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
               sapCache[payload.sapId] = payload.roster;
@@ -2394,10 +2400,31 @@ function setIfEmpty(id, val) {
     document.getElementById(id).value = val;
 }
 
+// ── Identity-resolution race guard ───────────────────────────────────────────
+// The SAP lookup, the transcript autofill and the name lookup all answer the
+// same question — who is the agent — and all write the same fields.
+// google.script.run cannot be cancelled, so without this the LAST reply to
+// arrive wins, whichever one it was for.
+//
+// That is the "wrong team member name" bug: SAP lookup fires on every keystroke
+// after a 600ms pause, and a 4-digit prefix of a 7-digit SAP ID is itself a
+// valid SAP ID belonging to someone else. Typing 2007888 with a pause after
+// 2007 fires a real lookup for a different agent, whose reply can land after
+// the correct one and overwrite the name. It stayed hidden while lookups took
+// minutes; once they took a second, the two replies started interleaving.
+//
+// Every identity-resolving action takes a ticket. A reply is applied only while
+// its ticket is still the newest; stale replies are dropped.
+var _identitySeq = 0;
+function _identityTicket()         { return ++_identitySeq; }
+function _identityStale(ticket)    { return ticket !== undefined && ticket !== _identitySeq; }
+
 // Triggered when SAP ID is typed — looks up all roster fields.
 // Sets _sapResolvedParticipant so transcript autofill won't overwrite the name.
-function _applyRosterRow(row) {
+// Pass the ticket from _identityTicket() so a superseded reply is ignored.
+function _applyRosterRow(row, ticket) {
   if (!row) return;
+  if (_identityStale(ticket)) return;
   if (row.participant) {
     document.getElementById('participant').value = row.participant;
     _sapResolvedParticipant = true;
@@ -2412,18 +2439,21 @@ function _applyRosterRow(row) {
 
 function lookupSapFromName(participantName) {
   if (!participantName) return;
+  var ticket = _identityTicket();
   google.script.run
     .withFailureHandler(function(err) { console.error('[AutoFill] getSapIdForParticipant failed:', err.message); })
     .withSuccessHandler(function(sapId) {
       if (!sapId) { console.warn('[AutoFill] No SAP ID found for:', participantName); return; }
+      if (_identityStale(ticket)) return;
       document.getElementById('sapId').value = sapId;
       var sapCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
-      if (sapCache[sapId]) { _applyRosterRow(sapCache[sapId]); return; }
+      if (sapCache[sapId]) { _applyRosterRow(sapCache[sapId], ticket); return; }
       google.script.run
         .withFailureHandler(function(err) { console.error('[AutoFill] getRosterBySapId failed:', err.message); })
         .withSuccessHandler(function(row) {
           if (!row) return;
-          _applyRosterRow(row);
+          if (_identityStale(ticket)) return;
+          _applyRosterRow(row, ticket);
           sapCache[sapId] = row;
           lsSet(LS_SAP_KEY, sapCache);
         })
@@ -2441,10 +2471,12 @@ function debounceSapLookup() {
     var sap = document.getElementById('sapId').value.trim();
     if (sap.length < 4) return;
 
+    var ticket = _identityTicket();
+
     // ── Check localStorage cache first (instant, no server call) ────────────
     var sapCache = lsGet(LS_SAP_KEY, LS_SAP_AGE) || {};
     if (sapCache[sap]) {
-      _applyRosterRow(sapCache[sap]);
+      _applyRosterRow(sapCache[sap], ticket);
       return; // done — no round-trip needed
     }
 
@@ -2455,7 +2487,11 @@ function debounceSapLookup() {
       })
       .withSuccessHandler(function (row) {
         if (!row) return;
-        _applyRosterRow(row);
+        // Two guards: the ticket catches a superseded lookup, and re-reading the
+        // field catches the case where the analyst has typed on since.
+        if (_identityStale(ticket)) return;
+        if (document.getElementById('sapId').value.trim() !== sap) return;
+        _applyRosterRow(row, ticket);
         // Save to localStorage so next lookup for this SAP is instant
         sapCache[sap] = row;
         lsSet(LS_SAP_KEY, sapCache);
@@ -2470,11 +2506,17 @@ function debounceLookupSap() {
   _sapTimer = setTimeout(function () {
     var name = document.getElementById('participant').value.trim();
     if (name) {
+      var ticket = _identityTicket();
       google.script.run
         .withFailureHandler(function(err) {
           console.error('[Name→SAP Lookup] getSapIdForParticipant failed:', err && err.message);
         })
-        .withSuccessHandler(function (id) { if (id) document.getElementById('sapId').value = id; })
+        .withSuccessHandler(function (id) {
+          if (!id) return;
+          if (_identityStale(ticket)) return;
+          if (document.getElementById('participant').value.trim() !== name) return;
+          document.getElementById('sapId').value = id;
+        })
         .getSapIdForParticipant(name);
     }
   }, 600);
