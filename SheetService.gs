@@ -39,9 +39,23 @@ function ensureHeaders(sheet, headers) {
   }
 }
 
+// Durations like "51:50" (51 min 50 sec) are written as plain strings, and Sheets
+// silently reinterprets them as time values. "51:50" is not a valid time of day,
+// so it becomes the duration 51 HOURS 50 minutes and displays as "51:50:00";
+// "23:14" IS a valid time of day, so it silently becomes 11:14 PM. Either way the
+// cell no longer means what was written, and every average or total built on the
+// Duration column is meaningless. Leading the value with an apostrophe forces
+// Sheets to keep it as text.
+//
+// Deliberately narrow: only m:ss / mm:ss / h:mm:ss shapes. Timestamps are written
+// as real Date objects and are unaffected.
+var _DURATION_SHAPE = /^\d{1,3}:[0-5]\d(:[0-5]\d)?$/;
+
 function appendRow(sheet, rowData) {
   var safeRow = rowData.map(function(v) {
-    if (typeof v === 'string' && /^[=+\-@]/.test(v)) return "'" + v;
+    if (typeof v !== 'string') return v;
+    if (/^[=+\-@]/.test(v))        return "'" + v;   // formula injection
+    if (_DURATION_SHAPE.test(v))   return "'" + v;   // stop time coercion
     return v;
   });
   sheet.appendRow(safeRow);
