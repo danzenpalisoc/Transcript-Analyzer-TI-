@@ -3443,9 +3443,15 @@ function findAuditRefForInteraction(interactionId, analysisType) {
 }
 
 // Called after email sent — update Dashboard_Data and Audit_Log
-function updateDashboardPDFLink(interactionId, pdfLink, recipients, auditRef) {
+// issueResolved (optional): the analyst's own Yes/No from the report badge, which
+// they can now toggle. The sheet row is written during submitTranscript, BEFORE
+// the analyst ever sees the report, so an override made afterwards has to be
+// written back — and this is the one call that already reaches both sheets on
+// send, so it costs no extra execution. Omitted or blank leaves the value alone.
+function updateDashboardPDFLink(interactionId, pdfLink, recipients, auditRef, issueResolved) {
   try {
     var ss = getOrCreateSpreadsheet();
+    var resolvedOverride = (issueResolved || '').toString().trim();
 
     // Update Dashboard_Data — col C = Interaction ID (index 3), col W=PDF, col X=Status
     var dSheet  = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
@@ -3456,12 +3462,15 @@ function updateDashboardPDFLink(interactionId, pdfLink, recipients, auditRef) {
       var pdfCol    = dHeaderRow.indexOf('PDF Email Link') + 1;
       var dStatusCol= dHeaderRow.indexOf('Email Status')   + 1;
       var dIdCol    = dHeaderRow.indexOf('Interaction ID') + 1;
+      var dResCol   = dHeaderRow.indexOf('Issue Resolved') + 1;
       if (dIdCol < 1) dIdCol = 3; // safe fallback to col C
       var ids = dSheet.getRange(2, dIdCol, lastRow - 1, 1).getValues();
       for (var i = 0; i < ids.length; i++) {
         if (ids[i][0].toString().trim() === interactionId.trim()) {
           if (pdfCol    > 0) dSheet.getRange(i + 2, pdfCol).setValue(pdfLink || '');
           if (dStatusCol > 0) dSheet.getRange(i + 2, dStatusCol).setValue('Sent');
+          if (dResCol > 0 && resolvedOverride)
+            dSheet.getRange(i + 2, dResCol).setValue(resolvedOverride);
           break;
         }
       }
@@ -3475,12 +3484,15 @@ function updateDashboardPDFLink(interactionId, pdfLink, recipients, auditRef) {
       var logStatusCol  = logHeaderRow.indexOf('Email Status')   + 1;
       var logRecipCol   = logHeaderRow.indexOf('Recipients')     + 1;
       var logIdCol      = logHeaderRow.indexOf('Interaction ID') + 1;
+      var logResCol     = logHeaderRow.indexOf('Issue Resolved') + 1;
       if (logIdCol < 1) logIdCol = 3; // safe fallback
       var logIds = logSheet.getRange(2, logIdCol, logLast - 1, 1).getValues();
       for (var j = 0; j < logIds.length; j++) {
         if (logIds[j][0].toString().trim() === interactionId.trim()) {
           if (logStatusCol > 0) logSheet.getRange(j + 2, logStatusCol).setValue('Sent');
           if (logRecipCol  > 0) logSheet.getRange(j + 2, logRecipCol).setValue((recipients || []).join(', '));
+          if (logResCol > 0 && resolvedOverride)
+            logSheet.getRange(j + 2, logResCol).setValue(resolvedOverride);
           break;
         }
       }
@@ -4104,7 +4116,15 @@ function sendAuditEmail(formData, htmlResult) {
 
     // ── Update sheets — always runs even on partial email failure ─────────────
     var sheetStatus = _auditEmailErr ? 'Partial send' : (_auditEmailWarn ? 'Quota exceeded' : 'Sent via email');
-    updateDashboardPDFLink(interactionId, sheetStatus, recipients, auditRef);
+
+    // htmlResult is the analyst's EDITED report, so the Issue Resolution badge
+    // here reflects any override they made after reading the evaluation. The
+    // row was written during submitTranscript from the AI's original answer,
+    // so read it back off the badge and correct the sheet.
+    var resolvedByAnalyst = '';
+    try { resolvedByAnalyst = extractTextBlock(htmlResult || '', 'Issue Resolution') || ''; } catch(rx) {}
+
+    updateDashboardPDFLink(interactionId, sheetStatus, recipients, auditRef, resolvedByAnalyst);
 
     Logger.log('Audit email ' + (_auditEmailErr ? 'PARTIALLY FAILED' : _auditEmailWarn ? 'QUOTA EXCEEDED' : '') + ' sent to: ' + recipients.join(', '));
     // notifyAdmins only runs in live mode. In test mode the main email already went

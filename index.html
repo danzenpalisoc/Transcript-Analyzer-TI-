@@ -3217,10 +3217,46 @@ function _submitAddFlag() {
   _closeAddFlagPanel();
 }
 
+// Make the Issue Resolution badge clickable so the analyst can overrule the AI.
+// The model decides this from the transcript alone and gets it wrong in a way
+// that matters: a call where a technician visit was still pending has been
+// marked "Resolved: Yes", which inflates FCR. The analyst is the authority here.
+//
+// Same approach as _injectFlagDeleteBtns: inline styles only, because the live
+// page's CSS comes from sharedCSS() in AIService.gs and has no class for this.
+// The bound flag is a JS property, not an attribute, so it is never serialised
+// into the saved or emailed HTML.
+function _injectResolutionToggle(container) {
+  if (!container) return;
+  container.querySelectorAll('.ai-chip').forEach(function(chip) {
+    var label = chip.querySelector('.ai-chip-label');
+    if (!label || label.textContent.trim().toLowerCase().indexOf('issue resolution') === -1) return;
+
+    var badge = chip.querySelector('.report-badge-yes, .report-badge-no');
+    if (!badge || badge._resToggleBound) return;
+    badge._resToggleBound = true;
+
+    badge.style.cursor = 'pointer';
+    badge.setAttribute('title', 'Click to change — you decide whether the issue was resolved');
+
+    badge.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var nowYes = badge.classList.contains('report-badge-yes');
+      badge.classList.remove('report-badge-yes', 'report-badge-no');
+      badge.classList.add(nowYes ? 'report-badge-no' : 'report-badge-yes');
+      badge.textContent = nowYes ? 'No' : 'Yes';
+      // Keep the fallback copy in step with what is on screen.
+      var out = document.getElementById('applied-output');
+      if (out && out.contains(badge)) _lastHTML = out.innerHTML;
+    });
+  });
+}
+
 function initPlayButtons() {
   var container = document.getElementById('modal-ai-result');
   if (!container) return;
   _injectFlagDeleteBtns(container);
+  _injectResolutionToggle(container);
   // .ai-flag-stmt = AI-generated positioning statement (active path)
   // .r-pos-stmt / .r-tts-stmt-text = legacy classes kept for cached results
   container.querySelectorAll('.ai-flag-stmt, .r-pos-stmt, .r-tts-stmt-text').forEach(function(el) {
@@ -3299,6 +3335,7 @@ function applyAndClose() {
 
   // Inject fresh delete buttons with live event listeners in the applied view
   _injectFlagDeleteBtns(out);
+  _injectResolutionToggle(out);
 
   // Safety net: ensure editable on new layout elements + legacy elements
   var editableSelectors = [
@@ -3330,6 +3367,13 @@ function getEffectiveHTML() {
     var clone = applied.cloneNode(true);
     clone.querySelectorAll('.ai-flag-del').forEach(function(b) { b.remove(); });
     clone.querySelectorAll('.ai-flag').forEach(function(f) { f.style.position = ''; });
+    // The resolution toggle's affordance is screen-only — the badge itself is
+    // the data and is kept, but the pointer cursor and tooltip should not ride
+    // along into the email, the PDF or the cached evaluation.
+    clone.querySelectorAll('.report-badge-yes, .report-badge-no').forEach(function(b) {
+      b.style.cursor = '';
+      b.removeAttribute('title');
+    });
     // Remove the "Add a Flag" UI elements — they are modal-only controls
     clone.querySelectorAll('.btn-add-flag, #add-flag-panel').forEach(function(el) { el.remove(); });
     return clone.innerHTML;
