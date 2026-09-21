@@ -1224,7 +1224,10 @@ function buildRepeatsPrompt(transcriptText, knowledgeText, agentName, selectedLO
     // Hidden, so nothing an analyst sees changes.
     '<!-- DASHBOARD META: hidden, read by the server. Required. -->\n' +
     '<div class="ai-meta" style="display:none"' +
-    ' data-rca-category="[Exactly one of: Agent Controllable | Process/Policy | Customer Driven | Transfer Issue]"' +
+    ' data-rca-category="[Exactly one of: Agent Controllable | Agent Uncontrollable]"' +
+    ' data-call-reason="[Short label for why the customer called, 5-8 words. Examples:' +
+    ' Service Move Request, Billing Inquiry, Internet Troubleshooting, Loyalty Retention.' +
+    ' This is the reason for the call, NOT a fault found during it.]"' +
     ' data-product-opportunity="N/A"' +
     ' data-sales-attempted="N/A"></div>\n\n' +
 
@@ -1238,8 +1241,14 @@ function buildRepeatsPrompt(transcriptText, knowledgeText, agentName, selectedLO
     '5. Exactly 2 li items in What\'s Working and What Needs to Change.\n' +
     '6. AI Spotted Flags: 2-5 flags. Each title MUST have class="ai-flag-title".\n' +
     '7. Do NOT include any text outside the HTML. Do NOT use markdown.\n' +
-    '8. The hidden div.ai-meta is REQUIRED. Fill data-rca-category with exactly one of the\n' +
-    '   four listed values. Leave data-product-opportunity and data-sales-attempted as "N/A".\n\n' +
+    '8. The hidden div.ai-meta is REQUIRED.\n' +
+    '   data-rca-category: exactly "Agent Controllable" or "Agent Uncontrollable" — judge it\n' +
+    '   from what actually happened on THIS call, not from habit. Many repeat calls are\n' +
+    '   driven by process, policy, outages or the customer, and those are Agent\n' +
+    '   Uncontrollable. Only choose Agent Controllable when the agent could have prevented\n' +
+    '   the repeat by acting differently.\n' +
+    '   data-call-reason: why the customer called, 5-8 words. Not a fault you found.\n' +
+    '   Leave data-product-opportunity and data-sales-attempted as "N/A".\n\n' +
     kb + lobBlock +
     'TRANSCRIPT:\n\n' + transcriptText +
     // Restated after the transcript. On a long call the structure spec above is
@@ -1405,7 +1414,10 @@ function buildSalesPrompt(transcriptText, knowledgeText, agentName, selectedLOB)
     // Hidden, so nothing an analyst sees changes.
     '<!-- DASHBOARD META: hidden, read by the server. Required. -->\n' +
     '<div class="ai-meta" style="display:none"' +
-    ' data-rca-category="[Exactly one of: Agent Controllable | Process/Policy | Customer Driven | Transfer Issue]"' +
+    ' data-rca-category="[Exactly one of: Agent Controllable | Agent Uncontrollable]"' +
+    ' data-call-reason="[Short label for why the customer called, 5-8 words. Examples:' +
+    ' Service Move Request, Billing Inquiry, Internet Troubleshooting, Loyalty Retention.' +
+    ' This is the reason for the call, NOT a fault found during it.]"' +
     ' data-product-opportunity="[The specific product or service the agent could have offered but did not.' +
     ' If a sale was made, what was sold. Max 100 characters.]"' +
     ' data-sales-attempted="[Yes or No - did the agent make any sales offer, upsell attempt or product recommendation]"></div>\n\n' +
@@ -1420,9 +1432,14 @@ function buildSalesPrompt(transcriptText, knowledgeText, agentName, selectedLOB)
     '5. Exactly 2 li items in What\'s Working and What Needs to Change.\n' +
     '6. AI Spotted Flags: 2-5 flags. Each title MUST have class="ai-flag-title".\n' +
     '7. Do NOT include any text outside the HTML. Do NOT use markdown.\n' +
-    '8. The hidden div.ai-meta is REQUIRED. Fill all three data- attributes with real values:\n' +
-    '   data-rca-category must be exactly one of the four listed values, and\n' +
-    '   data-sales-attempted must be exactly "Yes" or "No".\n\n' +
+    '8. The hidden div.ai-meta is REQUIRED. Fill every data- attribute with a real value:\n' +
+    '   data-rca-category: exactly "Agent Controllable" or "Agent Uncontrollable" — judge it\n' +
+    '   from what actually happened on THIS call, not from habit. A missed sale caused by\n' +
+    '   pricing, policy, stock or a customer who was never going to buy is Agent\n' +
+    '   Uncontrollable. Only choose Agent Controllable when the agent could have changed\n' +
+    '   the outcome.\n' +
+    '   data-call-reason: why the customer called, 5-8 words. Not a fault you found.\n' +
+    '   data-sales-attempted: exactly "Yes" or "No".\n\n' +
     kb + lobBlock +
     'TRANSCRIPT:\n\n' + transcriptText +
     // Restated after the transcript. On a long call the structure spec above is

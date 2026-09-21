@@ -80,6 +80,7 @@ const REPORT = `<div class="report-wrap">
     </ul>
   </div>
 </div>
+<div class="ai-meta" style="display:none" data-rca-category="Agent Uncontrollable" data-call-reason="Failed Doorbell Camera Installation" data-product-opportunity="N/A" data-sales-attempted="N/A"></div>
 <div class="report-flags">
   <div class="report-flags-head">&#128681; AI Spotted Flags</div>
   <div class="report-flags-body">
@@ -154,6 +155,25 @@ check('Critical Flags includes both flags', flags,
       v => v.indexOf('No post-appointment expectation set') !== -1, 'must contain flag 2');
 check('Critical Flags excludes the flag details', flags,
       v => v.indexOf('$15/month ETF') === -1, 'titles only, not the detail prose');
+
+// Call Reason and Call Driver are the same question and must agree. The old
+// behaviour put a fault FOUND on the call into a column meaning why the customer
+// CALLED — "Agent Used a False Name During Introduction" as a call reason.
+console.log('\nCall Reason and Call Driver answer the same question');
+const reason = extractTextBlock(REPORT, 'Call Reason');
+const driver = extractTextBlock(REPORT, 'Call Driver');
+check('Call Reason is the reason for the call', reason, v => v === 'Failed Doorbell Camera Installation',
+      'expected "Failed Doorbell Camera Installation"');
+check('Call Driver matches it exactly', driver, v => v === reason, 'the two columns must agree');
+check('Call Reason is not a flag', reason, v => v.indexOf('ETF disclosed') === -1,
+      'must not be a fault found during the call');
+check('Call Reason carries no chip text', reason,
+      v => !/Audit Reference|Repeat Risk|Issue Resolution/.test(v), 'must not include the info chips');
+
+// A model that leaves the placeholder unfilled must produce nothing, not junk.
+console.log('\nAn unanswered call reason must stay empty, never guessed');
+const unfilled = REPORT.replace(/data-call-reason="[^"]*"/, 'data-call-reason="[Short label for why the customer called]"');
+check('placeholder yields empty', extractTextBlock(unfilled, 'Call Reason'), v => v === '', 'expected ""');
 
 // Whatever any branch returns, it must never be markup.
 console.log('\nNo column may ever receive markup');

@@ -636,11 +636,21 @@ function extractStructuredRCAFromHTML(html) {
     // ── Top opportunity = first SMART S, or first flag ────────────────────────
     var topOpp = (smartS || (flags[0] || '')).substring(0, 150);
 
-    // ── Call driver from Issue Resolution or first flag ───────────────────────
+    // ── Call driver ───────────────────────────────────────────────────────────
+    // The evaluation now states this outright in div.ai-meta. The regex below is
+    // kept only for reports produced before that existed; its old last resort was
+    // flags[0], which put a fault FOUND on the call into a column meaning why the
+    // customer CALLED — e.g. "Agent Used a False Name During Introduction".
     var callDriver = '';
-    var cdMatch = html.match(/Call (?:Reason|Driver)[^:]*[:\s]+([\s\S]{5,80}?)(?:<\/td>|<br|<\/p)/i);
-    if (cdMatch) callDriver = stripTags(cdMatch[1]).substring(0, 100);
-    if (!callDriver && flags[0]) callDriver = flags[0].substring(0, 100);
+    var mCallReason = html.match(/data-call-reason="([^"]*)"/i);
+    if (mCallReason) {
+      var cr = mCallReason[1].trim();
+      if (cr && cr.charAt(0) !== '[' && cr.toLowerCase() !== 'n/a') callDriver = cr.substring(0, 100);
+    }
+    if (!callDriver) {
+      var cdMatch = html.match(/Call (?:Reason|Driver)[^:]*[:\s]+([\s\S]{5,80}?)(?:<\/td>|<br|<\/p)/i);
+      if (cdMatch) callDriver = stripTags(cdMatch[1]).substring(0, 100);
+    }
 
     // These three used to require a SECOND AI call (enrichDashboardRCA), which
     // asked for 13 fields, wrote only 3, and read nothing this HTML does not
@@ -2353,6 +2363,21 @@ function extractTextBlock(html, keyword) {
     if (kw.indexOf('call summary') !== -1) {
       var mSum = html.match(/<div[^>]*ai-summary[^>]*>([\s\S]*?)<\/div>/i);
       if (mSum) return decode(mSum[1]).substring(0, 500);
+    }
+
+    // 'Call Reason' and 'Call Driver' are the same question — why the customer
+    // called — and the evaluation now answers it once in div.ai-meta. Both
+    // columns read it from there so they can never disagree.
+    if (kw.indexOf('call reason') !== -1 || kw.indexOf('call driver') !== -1) {
+      var mReason = html.match(/data-call-reason="([^"]*)"/i);
+      if (mReason) {
+        var reason = mReason[1].trim();
+        // A placeholder the model failed to fill is not an answer.
+        if (reason && reason.charAt(0) !== '[' && reason.toLowerCase() !== 'n/a') {
+          return reason.substring(0, 200);
+        }
+      }
+      return '';   // never guess this one — a wrong call reason reads as fact
     }
 
     if (kw.indexOf('opportunit') !== -1) {
