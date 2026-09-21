@@ -3443,14 +3443,26 @@ function findAuditRefForInteraction(interactionId, analysisType) {
 }
 
 // Called after email sent — update Dashboard_Data and Audit_Log
+// emailStatus goes into the 'Email Status' column verbatim. Callers MUST pass the
+// literal 'Sent' on success — nine places in index.html and Dashboard.html gate on
+// `=== 'Sent'` — and a descriptive reason on failure.
+//
+// This used to take the outcome in a `pdfLink` argument and write it to the
+// 'PDF Email Link' column, while forcing 'Email Status' to the literal 'Sent'
+// unconditionally. So a send that failed or hit quota still reported as Sent, and
+// the real outcome sat in the wrong column. No PDF link is produced on this path
+// (generateAndServePDF is a separate, on-demand flow that writes nothing here), so
+// the PDF column is left alone rather than filled with a status string.
+//
 // issueResolved (optional): the analyst's own Yes/No from the report badge, which
 // they can now toggle. The sheet row is written during submitTranscript, BEFORE
 // the analyst ever sees the report, so an override made afterwards has to be
 // written back — and this is the one call that already reaches both sheets on
 // send, so it costs no extra execution. Omitted or blank leaves the value alone.
-function updateDashboardPDFLink(interactionId, pdfLink, recipients, auditRef, issueResolved) {
+function updateDashboardPDFLink(interactionId, emailStatus, recipients, auditRef, issueResolved) {
   try {
     var ss = getOrCreateSpreadsheet();
+    var status           = (emailStatus || 'Sent').toString().trim();
     var resolvedOverride = (issueResolved || '').toString().trim();
 
     // Update Dashboard_Data — col C = Interaction ID (index 3), col W=PDF, col X=Status
@@ -3459,7 +3471,6 @@ function updateDashboardPDFLink(interactionId, pdfLink, recipients, auditRef, is
     if (lastRow >= 2) {
       // Resolve column positions by header name — never hardcode
       var dHeaderRow = dSheet.getRange(1, 1, 1, dSheet.getLastColumn()).getValues()[0];
-      var pdfCol    = dHeaderRow.indexOf('PDF Email Link') + 1;
       var dStatusCol= dHeaderRow.indexOf('Email Status')   + 1;
       var dIdCol    = dHeaderRow.indexOf('Interaction ID') + 1;
       var dResCol   = dHeaderRow.indexOf('Issue Resolved') + 1;
@@ -3467,8 +3478,7 @@ function updateDashboardPDFLink(interactionId, pdfLink, recipients, auditRef, is
       var ids = dSheet.getRange(2, dIdCol, lastRow - 1, 1).getValues();
       for (var i = 0; i < ids.length; i++) {
         if (ids[i][0].toString().trim() === interactionId.trim()) {
-          if (pdfCol    > 0) dSheet.getRange(i + 2, pdfCol).setValue(pdfLink || '');
-          if (dStatusCol > 0) dSheet.getRange(i + 2, dStatusCol).setValue('Sent');
+          if (dStatusCol > 0) dSheet.getRange(i + 2, dStatusCol).setValue(status);
           if (dResCol > 0 && resolvedOverride)
             dSheet.getRange(i + 2, dResCol).setValue(resolvedOverride);
           break;
@@ -3489,7 +3499,7 @@ function updateDashboardPDFLink(interactionId, pdfLink, recipients, auditRef, is
       var logIds = logSheet.getRange(2, logIdCol, logLast - 1, 1).getValues();
       for (var j = 0; j < logIds.length; j++) {
         if (logIds[j][0].toString().trim() === interactionId.trim()) {
-          if (logStatusCol > 0) logSheet.getRange(j + 2, logStatusCol).setValue('Sent');
+          if (logStatusCol > 0) logSheet.getRange(j + 2, logStatusCol).setValue(status);
           if (logRecipCol  > 0) logSheet.getRange(j + 2, logRecipCol).setValue((recipients || []).join(', '));
           if (logResCol > 0 && resolvedOverride)
             logSheet.getRange(j + 2, logResCol).setValue(resolvedOverride);
@@ -3996,7 +4006,8 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
     }
 
     Logger.log('Submission email ' + (_subEmailErr ? 'PARTIALLY' : '') + ' sent to: ' + recipients.join(', '));
-    updateDashboardPDFLink(interactionId, _subEmailErr ? 'Partial send' : 'Auto-sent', recipients, auditRef);
+    // Must be the literal 'Sent' on success — the dashboards gate on `=== 'Sent'`.
+    updateDashboardPDFLink(interactionId, _subEmailErr ? 'Partial send' : 'Sent', recipients, auditRef);
     // Admin notification deliberately removed from sendSubmissionEmail.
     // notifyAdmins() is called once in sendAuditEmail (when user clicks Submit Email).
     // Calling it here as well was doubling quota consumption per audit.
@@ -4115,7 +4126,9 @@ function sendAuditEmail(formData, htmlResult) {
     }
 
     // ── Update sheets — always runs even on partial email failure ─────────────
-    var sheetStatus = _auditEmailErr ? 'Partial send' : (_auditEmailWarn ? 'Quota exceeded' : 'Sent via email');
+    // 'Sent' exactly on success — nine call sites in index.html and Dashboard.html
+    // count a row as delivered only when this reads `=== 'Sent'`.
+    var sheetStatus = _auditEmailErr ? 'Partial send' : (_auditEmailWarn ? 'Quota exceeded' : 'Sent');
 
     // htmlResult is the analyst's EDITED report, so the Issue Resolution badge
     // here reflects any override they made after reading the evaluation. The
