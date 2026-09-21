@@ -411,7 +411,16 @@ function _getGlobalRosterData() {
     if (_gp.length <= 99000) { try { cache.put(cacheKey, _gp, 4 * 60 * 60); } catch(e) {} }
     _globalRosterDataInMemory = payload;
     return payload;
-  } catch(e) { Logger.log('_getGlobalRosterData: ' + e); return { header: [], rows: [] }; }
+  } catch(e) {
+    // Remember the failure for the rest of this execution. The TI deployment
+    // runs as a @telusinternational.com account and this sheet is shared with
+    // the telus.com domain only, so the open throws every single time — and
+    // several callers ask for it during one audit, each paying about a second
+    // and logging another exception. One attempt per execution is enough.
+    Logger.log('_getGlobalRosterData unavailable (will not retry this execution): ' + e);
+    _globalRosterDataInMemory = { header: [], rows: [] };
+    return _globalRosterDataInMemory;
+  }
 }
 
 // AT Data GCP file → "Roster" tab

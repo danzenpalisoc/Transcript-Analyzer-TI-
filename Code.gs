@@ -3124,7 +3124,21 @@ function chatAssistant(userMessage, recentHistory) {
   }
 }
 function getTranscriptMetadata(txt)   { return parseTranscriptMetadata(txt); }
-function getRosterBySapId(sapId)      { return lookupBySapId(sapId); }
+// A lookup that cannot complete must not reach the analyst as a red banner.
+// One of the roster sheets is shared with the telus.com domain only, while the
+// TI deployment runs as a @telusinternational.com account, so opening it throws
+// "You do not have permission to access the requested document." That surfaced
+// to users mid-typing — and often for a partial SAP ID they had not finished
+// entering. Returning null leaves the fields blank, which is what already
+// happens for an agent who genuinely is not on the roster.
+function getRosterBySapId(sapId) {
+  try {
+    return lookupBySapId(sapId);
+  } catch(e) {
+    Logger.log('getRosterBySapId failed for "' + sapId + '": ' + e);
+    return null;
+  }
+}
 
 // ── Combined single-call autofill: parses transcript + resolves SAP ID + returns full roster ──
 // Eliminates 3 sequential client→server round-trips by doing all lookups in one call.
@@ -3947,13 +3961,30 @@ function submitTranscript(formData) {
     };
 
   } catch (e) {
-    Logger.log('submitTranscript error: ' + e.toString());
+    // Log the stack, not just the message. A bare "You do not have permission to
+    // access the requested document" names neither the file nor the line, which
+    // is why the TI report took so long to trace. The stack names both.
+    Logger.log('submitTranscript error: ' + e.toString() + '\n' + (e.stack || '(no stack)'));
     // Release the processing flag on error so the analyst can retry
     try {
       var _intIdForLockErr = (formData && formData.interactionId || '').trim();
       if (_intIdForLockErr) CacheService.getScriptCache().remove('proc_' + _intIdForLockErr);
     } catch(pe) {}
-    return { success: false, error: e.toString() };
+    // Google's raw permission error was going straight to the analyst's screen.
+    // It tells them nothing they can act on and never says which file is shut.
+    // The sheet-write path above has its own message; this covers every other
+    // source — a roster, the AT Data file, a PDF folder.
+    var _msg = e.toString();
+    if (_msg.indexOf('permission') !== -1 || _msg.indexOf('do not have access') !== -1) {
+      return {
+        success: false,
+        error: 'A lookup source could not be opened, so this audit was not saved. ' +
+               'This is not a problem with your own access — the file is shared with ' +
+               'a different account than the one the Analyzer runs as. Please report ' +
+               'this to the Analyzer admin, who can identify the file from the logs.'
+      };
+    }
+    return { success: false, error: _msg };
   }
 }
 
