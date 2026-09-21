@@ -51,12 +51,45 @@ const REPORT = `<div class="report-wrap">
   <div class="ai-summary" contenteditable="true">${SUMMARY}</div>
   <div class="report-summary-meta">Duration: 51 min 50 sec &nbsp;|&nbsp; Direction: Inbound &nbsp;|&nbsp; Transfer: Yes</div>
 </div>
+<div class="report-3col">
+  <div class="report-col report-col-working">
+    <div class="report-col-head">&#9989; What's Working</div>
+    <ul class="report-col-list">
+      <li contenteditable="true">Proactive credit assurance and clear ownership.</li>
+      <li contenteditable="true">Effective identification of an upsell opportunity.</li>
+    </ul>
+  </div>
+  <div class="report-col report-col-change">
+    <div class="report-col-head">&#128205; What Needs to Change</div>
+    <ul class="report-col-list">
+      <li contenteditable="true">Missing post-appointment expectation setting for the WiFi extender visit.</li>
+      <li contenteditable="true">Internet renewal processed without confirming full understanding.</li>
+    </ul>
+  </div>
+  <div class="report-col report-col-howto">
+    <div class="report-col-head">&#127908; How to Change It</div>
+    <ul class="report-col-list report-col-roleplays">
+      <li>
+        <div class="ai-flag-rl-label">Roleplay Scenario 1</div>
+        <div class="ai-flag-stmt" contenteditable="true">"Karen, I've got our tech booked for tomorrow between 9 and 11 AM."</div>
+      </li>
+      <li>
+        <div class="ai-flag-rl-label">Roleplay Scenario 2</div>
+        <div class="ai-flag-stmt" contenteditable="true">"Before I lock in this rate, I want to make sure you're fully on board."</div>
+      </li>
+    </ul>
+  </div>
+</div>
 <div class="report-flags">
   <div class="report-flags-head">&#128681; AI Spotted Flags</div>
   <div class="report-flags-body">
     <div class="ai-flag">
       <div class="ai-flag-title">&#9888; ETF disclosed only in the closing recap</div>
       <div class="ai-flag-detail" contenteditable="true">Roan disclosed the $15/month ETF only in the end-of-call summary.</div>
+    </div>
+    <div class="ai-flag">
+      <div class="ai-flag-title">&#9888; No post-appointment expectation set</div>
+      <div class="ai-flag-detail" contenteditable="true">The technician visit was booked without explaining what would happen.</div>
     </div>
   </div>
 </div>
@@ -91,10 +124,42 @@ check('Issue Resolution is "Yes"', extractTextBlock(REPORT, 'Issue Resolution'),
 console.log('\nOther meta fields resolve from the same line');
 check('Direction is "Inbound"', extractTextBlock(REPORT, 'Direction'), v => v === 'Inbound', 'expected "Inbound"');
 
-// The last-resort branch must never emit markup, whatever it matches.
-console.log('\nLast-resort branch must never emit markup');
-['Call Reason', 'Opportunities', 'Recommendation', 'Critical Flag'].forEach(function (kw) {
-  check(kw + ' is clean or empty', extractTextBlock(REPORT, kw), noMarkup,
+// Each Dashboard column must read from where the data actually lives, not from
+// whatever text happens to sit near the keyword.
+console.log('\nColumns must read from their real source in the report');
+
+const summary = extractTextBlock(REPORT, 'Call Summary');
+check('Call Summary starts at the summary itself', summary,
+      v => v.indexOf('Karen (daughter') === 0, 'must begin with the summary text');
+check('Call Summary carries no chip text', summary,
+      v => !/Audit Reference|Repeat Risk|Issue Resolution/.test(v),
+      'must not include the info chips');
+
+const opps = extractTextBlock(REPORT, 'Opportunities');
+check('Opportunities reads What Needs to Change', opps,
+      v => v.indexOf('Missing post-appointment') === 0, 'must start with the first change item');
+check('Opportunities includes both items', opps,
+      v => v.indexOf('Internet renewal processed') !== -1, 'must include the second item');
+
+const rec = extractTextBlock(REPORT, 'Recommendation');
+check('Recommendation reads the roleplays', rec,
+      v => v.indexOf('Karen, I\'ve got our tech booked') !== -1, 'must contain roleplay 1');
+check('Recommendation includes both roleplays', rec,
+      v => v.indexOf('Before I lock in this rate') !== -1, 'must contain roleplay 2');
+
+const flags = extractTextBlock(REPORT, 'Critical Flag');
+check('Critical Flags reads the flag titles', flags,
+      v => v.indexOf('ETF disclosed only in the closing recap') !== -1, 'must contain flag 1');
+check('Critical Flags includes both flags', flags,
+      v => v.indexOf('No post-appointment expectation set') !== -1, 'must contain flag 2');
+check('Critical Flags excludes the flag details', flags,
+      v => v.indexOf('$15/month ETF') === -1, 'titles only, not the detail prose');
+
+// Whatever any branch returns, it must never be markup.
+console.log('\nNo column may ever receive markup');
+['Call Reason', 'Call Summary', 'Opportunities', 'Recommendation', 'Critical Flag',
+ 'Transfer', 'Repeat Risk', 'Issue Resolution'].forEach(function (kw) {
+  check(kw + ' is clean', extractTextBlock(REPORT, kw), noMarkup,
         'must be plain text or empty, never a tag fragment');
 });
 

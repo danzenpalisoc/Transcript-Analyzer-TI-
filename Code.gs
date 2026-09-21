@@ -2331,6 +2331,53 @@ function extractTextBlock(html, keyword) {
               .replace(/&#\d+;/g,' ').replace(/\s+/g,' ').trim();
     };
 
+    // 0. Known fields read from where they ACTUALLY live in the report.
+    //
+    // Four Dashboard columns had no strategy pointing at them, so they fell
+    // through to the last-resort guess below and were filled with whatever text
+    // happened to sit near the keyword — typically the info chips run together
+    // ("DateWednesday, September 9, 2026 Issue ResolutionNo Repeat Risk92%...").
+    // Every one of them has a real home in the report; nothing needed guessing.
+    var kw = keyword.toLowerCase();
+
+    function joinMatches(scope, inner, sep) {
+      var hits = scope.match(inner) || [];
+      var out  = [];
+      for (var i = 0; i < hits.length; i++) {
+        var t = decode(hits[i]);
+        if (t) out.push(t);
+      }
+      return out.join(sep);
+    }
+
+    if (kw.indexOf('call summary') !== -1) {
+      var mSum = html.match(/<div[^>]*ai-summary[^>]*>([\s\S]*?)<\/div>/i);
+      if (mSum) return decode(mSum[1]).substring(0, 500);
+    }
+
+    if (kw.indexOf('opportunit') !== -1) {
+      // "What Needs to Change" — the report's own name for the opportunities.
+      var mChange = html.match(/<div[^>]*report-col-change[^>]*>([\s\S]*?)<\/ul>/i);
+      if (mChange) {
+        var lis = joinMatches(mChange[1], /<li[^>]*>[\s\S]*?<\/li>/gi, '; ');
+        if (lis) return lis.substring(0, 500);
+      }
+    }
+
+    if (kw.indexOf('recommendation') !== -1) {
+      // The roleplay statements are the actionable recommendation.
+      var mRp = html.match(/<ul[^>]*report-col-roleplays[^>]*>([\s\S]*?)<\/ul>/i);
+      if (mRp) {
+        var stmts = joinMatches(mRp[1], /<div[^>]*ai-flag-stmt[^>]*>[\s\S]*?<\/div>/gi, ' | ');
+        if (stmts) return stmts.substring(0, 500);
+      }
+    }
+
+    if (kw.indexOf('flag') !== -1) {
+      var flagTitles = joinMatches(html, /<div[^>]*ai-flag-title[^>]*>[\s\S]*?<\/div>/gi, ', ');
+      if (flagTitles) return flagTitles.substring(0, 500);
+    }
+
     // 1. ai-label-col table cell (repeats analysis table: Parameter | Finding | Recommendation)
     var re1 = new RegExp('<td[^>]*ai-label-col[^>]*>[^<]*' + keyword + '[^<]*<\\/td>\\s*<td[^>]*>(.*?)<\\/td>', 'is');
     var m1   = html.match(re1);
