@@ -2323,6 +2323,9 @@ function extractTextBlock(html, keyword) {
   try {
     var decode = function(s) {
       return s.replace(/<[^>]+>/g,'')
+              .replace(/&nbsp;/gi,' ')          // the report's meta line separates fields
+                                                // with &nbsp; — without this the entity
+                                                // survives into values ("Inbound &nbsp;")
               .replace(/&amp;/g,'&').replace(/&lt;/g,'<')
               .replace(/&gt;/g,'>').replace(/&quot;/g,'"')
               .replace(/&#\d+;/g,' ').replace(/\s+/g,' ').trim();
@@ -2355,10 +2358,38 @@ function extractTextBlock(html, keyword) {
     var m5   = html.match(re5);
     if (m5) return decode(m5[1]).substring(0, 200);
 
-    // 6. Broad keyword anywhere in text — last resort, grab surrounding sentence
-    var reB = new RegExp('[^.]{0,100}' + keyword + '[^.]{0,200}\\.', 'i');
-    var mB  = html.match(reB);
-    if (mB) return decode(mB[0]).substring(0, 300);
+    // 5b. report-summary-meta line: "Duration: X | Direction: Y | Transfer: Z".
+    // This is where Transfer, Duration and Direction actually live in the current
+    // report — they are not chips, so strategy 5 never matched them and they fell
+    // through to strategy 6 below.
+    var mMeta = html.match(/<div[^>]*report-summary-meta[^>]*>([\s\S]*?)<\/div>/i);
+    if (mMeta) {
+      var segs = decode(mMeta[1]).split('|');
+      for (var s = 0; s < segs.length; s++) {
+        var seg = segs[s].trim();
+        var ci  = seg.indexOf(':');
+        if (ci > 0 &&
+            seg.substring(0, ci).toLowerCase().indexOf(keyword.toLowerCase()) !== -1) {
+          return seg.substring(ci + 1).trim().substring(0, 200);
+        }
+      }
+    }
+
+    // 6. Broad keyword search — genuine last resort.
+    //
+    // Two defects fixed here. It used to run against RAW HTML, so the match
+    // window could open or close inside a tag and write fragments like
+    // '/div> Karen (daugh' or 'port-header-title">' straight into the sheet.
+    // It now runs on decoded text, which cannot contain markup at all.
+    //
+    // And the report header is dropped first: the first "Transfer" in the
+    // document is the title "Repeats & Transfer Audit Report", so every
+    // Transfer lookup was matching the heading rather than the data.
+    var body  = html.replace(/<div[^>]*class="report-header-[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+    var plain = decode(body);
+    var reB   = new RegExp('[^.]{0,100}' + keyword + '[^.]{0,200}\\.', 'i');
+    var mB    = plain.match(reB);
+    if (mB) return mB[0].trim().substring(0, 300);
 
     return '';
   } catch(e) { Logger.log('extractTextBlock error: ' + e); return ''; }
