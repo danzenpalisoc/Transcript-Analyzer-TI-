@@ -4,7 +4,31 @@
  */
 
 function getOrCreateSpreadsheet() {
-  return SpreadsheetApp.openById(MAIN_SPREADSHEET_ID);
+  return openSheetWithRetry(MAIN_SPREADSHEET_ID, 'Main Analyzer Spreadsheet');
+}
+
+// ── Open a Spreadsheet with retry on transient permission-like errors ─────────
+// SpreadsheetApp.openById() can throw "You do not have permission to access
+// the requested document" under heavy concurrent access even for a file's own
+// owner — this deployment runs as "Execute as: Me", so a genuine per-user
+// sharing gap is not the likely cause of these reports (see Error_Log /
+// Action Registry #148). Retrying briefly clears the transient case; a truly
+// broken share still surfaces the same error after these attempts, just
+// slightly delayed, so this changes nothing for a real permissions problem.
+function openSheetWithRetry(id, label) {
+  var lastErr;
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return SpreadsheetApp.openById(id);
+    } catch (e) {
+      lastErr = e;
+      var msg = e.toString();
+      var isPermissionLike = msg.indexOf('permission') !== -1 || msg.indexOf('do not have access') !== -1;
+      if (!isPermissionLike || attempt === 3) break;
+      Utilities.sleep(attempt * 750); // 750ms, then 1500ms
+    }
+  }
+  throw new Error('Could not open "' + label + '" (' + id + '): ' + lastErr);
 }
 
 function getOrCreateSheet(spreadsheet, sheetName) {

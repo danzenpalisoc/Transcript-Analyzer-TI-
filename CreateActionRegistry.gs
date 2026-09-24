@@ -1680,6 +1680,17 @@ function createActionRegistry() {
       'Code.gs, Config.gs, SheetService.gs',
       'Danzen',
       'Done'
+    ],
+    [
+      '149',
+      '2026-09-25',
+      'Bug Fix',
+      'NH + TI',
+      'Follow-up to #148: the "lookup source could not be opened" error was still unresolved and recurring, so a real fix (not just better logging) was needed. SpreadsheetApp.openById() is a documented source of a false "You do not have permission to access the requested document" error under heavy concurrent access, even for a file\'s own owner — a good fit for this deployment (runs as "Execute as: Me"; every analyst\'s requests share the owner\'s access) and for the observed pattern (many unrelated lookup functions failing together in short bursts, then recovering on their own).',
+      'Added openSheetWithRetry() (SheetService.gs): opens a Spreadsheet by ID, retrying up to 3x with backoff only when the error looks permission-shaped, then throws naming the specific file if every attempt fails. Wired into every external lookup source the analyzer depends on: Main Spreadsheet, Roster, AT Data GCP / Trainee Roster, Global Roster, Users / Trainer Lookup (getOrCreateSpreadsheet, Code.gs, AIService.gs, ObserverHelper.gs). Covered by tests/sheet-retry-test.js.',
+      'SheetService.gs, Code.gs, AIService.gs, ObserverHelper.gs, tests/sheet-retry-test.js',
+      'Danzen',
+      'Done'
     ]
   ];
 

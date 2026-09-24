@@ -14,7 +14,7 @@ function getQAUsersFromSheet() {
     var cached   = cache.get(cacheKey);
     if (cached) { try { return JSON.parse(cached); } catch(e) {} }
 
-    var ss     = SpreadsheetApp.openById(USERS_SS_ID);
+    var ss     = openSheetWithRetry(USERS_SS_ID, 'Users / Trainer Lookup Sheet');
     // Find by GID first (most reliable), fall back to tab name
     var sheet  = null;
     var sheets = ss.getSheets();
@@ -67,7 +67,7 @@ function lookupUserFromUsersSheet(email) {
     var cached   = cache.get(cacheKey);
     if (cached) { try { return JSON.parse(cached); } catch(e) {} }
 
-    var ss    = SpreadsheetApp.openById(USERS_SS_ID);
+    var ss    = openSheetWithRetry(USERS_SS_ID, 'Users / Trainer Lookup Sheet');
     var sheet = ss.getSheetByName(USERS_TAB);
     if (!sheet) return null;
 

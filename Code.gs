@@ -252,7 +252,7 @@ function repairTruncatedSalesEvaluations() {
 
 // Run once from editor to confirm exact Locale column in roster
 function diagnoseRosterColumns() {
-  var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
+  var ss    = openSheetWithRetry(ROSTER_SHEET_ID, 'Roster Sheet');
   var sheet = ss.getSheetByName('roster');
   if (!sheet) { Logger.log('roster sheet not found'); return; }
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
@@ -1115,7 +1115,7 @@ function backfillVTIDFromATData() {
   Logger.log('Looking up VTID for ' + sapIds.length + ' unique SAP IDs');
 
   // Fetch AT Data GCP sheet
-  var atSs    = SpreadsheetApp.openById(AT_DATA_GCP_SS_ID);
+  var atSs    = openSheetWithRetry(AT_DATA_GCP_SS_ID, 'AT Data GCP / Trainee Roster Sheet');
   var atSheet = atSs.getSheetByName('Roster') || atSs.getSheetByName('roster') || atSs.getSheets()[0];
   var atData  = atSheet.getDataRange().getValues();
   var atHeaders = atData[0];
@@ -1353,7 +1353,7 @@ function showRecentErrors() {
 
 function diagnoseFCRDashboard() {
   var SAP_ID = '2007888';
-  var ss     = SpreadsheetApp.openById(FCR_DASHBOARD_SS_ID);
+  var ss     = openSheetWithRetry(FCR_DASHBOARD_SS_ID, 'Main Analyzer Spreadsheet');
   var sheets = ss.getSheets();
 
   Logger.log('=== FCR Dashboard — all tabs ===');
@@ -1383,7 +1383,7 @@ function diagnoseFCRDashboard() {
 
 function diagnoseATDataRow() {
   var SAP_ID = '2007888';
-  var ss     = SpreadsheetApp.openById(AT_DATA_GCP_SS_ID);
+  var ss     = openSheetWithRetry(AT_DATA_GCP_SS_ID, 'AT Data GCP / Trainee Roster Sheet');
   var sheet  = ss.getSheetByName('Roster') || ss.getSheetByName('roster') || ss.getSheets()[0];
   var data   = sheet.getDataRange().getValues();
   var headers = data[0];
@@ -1415,7 +1415,7 @@ function testLookupDirect() {
   Logger.log('=== DIRECT LOOKUP TEST ===');
 
   // 1. Search roster by AGENT NAME to find actual stored SAP ID
-  var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
+  var ss    = openSheetWithRetry(ROSTER_SHEET_ID, 'Roster Sheet');
   var sheet = ss.getSheetByName('roster') || ss.getSheets()[0];
   var data  = sheet.getDataRange().getValues();
   var nameLower = AGENT_NAME.toLowerCase().trim();
@@ -1450,7 +1450,7 @@ function testLookupDirect() {
 
   if (!result) {
     Logger.log('RESULT IS NULL — checking raw sheet data...');
-    var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
+    var ss    = openSheetWithRetry(ROSTER_SHEET_ID, 'Roster Sheet');
     var sheet = ss.getSheetByName('roster') || ss.getSheets()[0];
     Logger.log('Sheet name: ' + sheet.getName());
     var data = sheet.getDataRange().getValues();
@@ -1481,7 +1481,7 @@ function testLookupDirect() {
 function diagnoseSapIdRow() {
   var SAP_ID = '2007888';   // <-- change this to test any SAP ID
 
-  var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
+  var ss    = openSheetWithRetry(ROSTER_SHEET_ID, 'Roster Sheet');
   var sheet = ss.getSheetByName('roster');
   var data  = sheet.getDataRange().getValues();
   var headers = data[0];
@@ -1512,7 +1512,7 @@ function diagnoseSapIdRow() {
 function diagnoseATDataForAgent() {
   var AGENT_NAME = 'James Collado';  // <-- change to test any agent
 
-  var ss    = SpreadsheetApp.openById(AT_DATA_GCP_SS_ID);
+  var ss    = openSheetWithRetry(AT_DATA_GCP_SS_ID, 'AT Data GCP / Trainee Roster Sheet');
   var sheet = ss.getSheets()[0];
   var data  = sheet.getDataRange().getValues();
   var headers = data[0];
@@ -1610,7 +1610,7 @@ function getRecipientsFromRoster(roleFilter) {
         try { allRows = JSON.parse(cached); } catch(e) {}
       }
       if (!allRows) {
-        var ss    = SpreadsheetApp.openById(AUDIT_TRACKING_SS_ID);
+        var ss    = openSheetWithRetry(AUDIT_TRACKING_SS_ID, 'Main Analyzer Spreadsheet');
         var sheet = ss.getSheetByName('Roster') || ss.getSheetByName('roster');
         if (!sheet) { Logger.log('getRecipientsFromRoster: Roster sheet not found'); return []; }
         var data = sheet.getDataRange().getValues();
@@ -1759,7 +1759,7 @@ function _getAgentEmailMap() {
     if (cached) {
       try { _agentEmailMapInMemory = JSON.parse(cached); return _agentEmailMapInMemory; } catch(e) {}
     }
-    var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
+    var ss    = openSheetWithRetry(ROSTER_SHEET_ID, 'Roster Sheet');
     var sheet = ss.getSheetByName('roster') || ss.getSheetByName('Roster');
     if (!sheet) { Logger.log('_getAgentEmailMap: roster sheet not found'); return {}; }
     var data    = sheet.getDataRange().getValues();
@@ -4328,7 +4328,7 @@ function resolveEmail(name) {
     if (_emailMap && _emailMap[nameLower]) return _emailMap[nameLower];
 
     // 1. Primary Roster — match on Agent_Name column only (col C, index 2)
-    var ss    = SpreadsheetApp.openById(ROSTER_SHEET_ID);
+    var ss    = openSheetWithRetry(ROSTER_SHEET_ID, 'Roster Sheet');
     var sheet = ss.getSheetByName('roster');
     if (sheet) {
       var data = sheet.getDataRange().getValues();
