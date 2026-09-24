@@ -3988,23 +3988,29 @@ function submitTranscript(formData) {
     // access the requested document" names neither the file nor the line, which
     // is why the TI report took so long to trace. The stack names both.
     Logger.log('submitTranscript error: ' + e.toString() + '\n' + (e.stack || '(no stack)'));
+    // Also write it straight into the spreadsheet — reading Stackdriver/GCP
+    // logs needs a non-default GCP project linked to this script, which this
+    // project does not have, so Logger.log alone is not actually reachable.
+    logSubmissionError('submitTranscript', formData, e);
     // Release the processing flag on error so the analyst can retry
     try {
       var _intIdForLockErr = (formData && formData.interactionId || '').trim();
       if (_intIdForLockErr) CacheService.getScriptCache().remove('proc_' + _intIdForLockErr);
     } catch(pe) {}
-    // Google's raw permission error was going straight to the analyst's screen.
-    // It tells them nothing they can act on and never says which file is shut.
-    // The sheet-write path above has its own message; this covers every other
-    // source — a roster, the AT Data file, a PDF folder.
+    // Google's raw error was going straight to the analyst's screen. It tells
+    // them nothing they can act on. This deployment runs as the script owner
+    // (Execute as: Me), not as the accessing user, so a per-user file-sharing
+    // gap is not the likely cause here — this is more often a shared quota/
+    // concurrency limit (every user's requests count against the same owner
+    // account) or a transient Google-side hiccup. Either way the analyst
+    // can't fix it, so point them at the admin instead of guessing why.
     var _msg = e.toString();
     if (_msg.indexOf('permission') !== -1 || _msg.indexOf('do not have access') !== -1) {
       return {
         success: false,
-        error: 'A lookup source could not be opened, so this audit was not saved. ' +
-               'This is not a problem with your own access — the file is shared with ' +
-               'a different account than the one the Analyzer runs as. Please report ' +
-               'this to the Analyzer admin, who can identify the file from the logs.'
+        error: 'A backend lookup failed, so this audit was not saved. This is not ' +
+               'a problem with your own access. Please report this to the Analyzer ' +
+               'admin — the full error has been recorded in the Error_Log tab.'
       };
     }
     return { success: false, error: _msg };

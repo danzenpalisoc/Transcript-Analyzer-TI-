@@ -43,6 +43,15 @@ var CACHE_SHEET          = 'Cache';
 var DASHBOARD_DATA_SHEET = 'Dashboard_Data';
 var AUDIT_LOG_SHEET      = 'Audit_Log';
 var AI_ANALYTICS_SHEET   = 'AI_Analytics';
+var ERROR_LOG_SHEET      = 'Error_Log';
+
+// Error_Log headers — every submitTranscript() failure, written directly into
+// the main spreadsheet so the admin can see raw error text without needing
+// Stackdriver/GCP log access (which requires a non-default GCP project).
+var ERROR_LOG_HEADERS = [
+  'Timestamp', 'Function', 'Observer', 'SAP ID', 'Interaction ID',
+  'Error Message', 'Stack (truncated)'
+];
 
 // External audit tracking spreadsheet (shared by user)
 var AUDIT_TRACKING_SS_ID = '1wy65jF6bz15tIQs5uozxksA2z7yDwxWOszaOrVCGuaM';

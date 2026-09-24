@@ -65,6 +65,31 @@ function getSpreadsheetUrl() {
   return getOrCreateSpreadsheet().getUrl();
 }
 
+// ── Write a submission failure to the Error_Log tab ────────────────────────────
+// Apps Script execution logs require Stackdriver/GCP Cloud Logging access,
+// which needs a non-default GCP project — not always available to whoever is
+// troubleshooting. Writing straight to the spreadsheet the admin already has
+// open gives instant visibility with no extra setup. Never throws — a logging
+// failure must never mask or replace the original error being reported.
+function logSubmissionError(functionName, formData, e) {
+  try {
+    var ss    = getOrCreateSpreadsheet();
+    var sheet = getOrCreateSheet(ss, ERROR_LOG_SHEET);
+    ensureHeaders(sheet, ERROR_LOG_HEADERS);
+    appendRow(sheet, [
+      new Date(),
+      functionName,
+      (formData && formData.observerName)   || '',
+      (formData && formData.sapId)          || '',
+      (formData && formData.interactionId)  || '',
+      e ? e.toString() : '',
+      e && e.stack ? e.stack.toString().substring(0, 2000) : ''
+    ]);
+  } catch (logErr) {
+    Logger.log('logSubmissionError failed: ' + logErr);
+  }
+}
+
 // ── Cache: look up a previously processed Interaction ID ──────────────────────
 // Uses TextFinder to avoid a full linear scan on large Cache sheets.
 // Returns the cached HTML string, or null if not found.

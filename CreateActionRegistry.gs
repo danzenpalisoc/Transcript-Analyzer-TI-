@@ -1669,6 +1669,17 @@ function createActionRegistry() {
       'Code.gs, tests/audit-ref-test.js',
       'Danzen',
       'Done'
+    ],
+    [
+      '148',
+      '2026-09-25',
+      'Bug Fix',
+      'NH + TI',
+      'Analysts intermittently got "A lookup source could not be opened... the file is shared with a different account than the one the Analyzer runs as" and the audit was not saved (reported for Mohamed Rafiki, SAP 2008800, recurring). Investigation via Executions tab showed many unrelated functions (getRosterBySapId, getTranscriptMetadataAndRoster, detectTranscriptSpeakers, warmLookupCaches, sendAuditEmail, submitTranscript) failing together in short bursts then recovering — and the deployment actually runs as "Execute as: Me" (owner has full backend access), so the existing message\'s per-user file-sharing explanation was wrong for this deployment. Root cause could not be confirmed from Stackdriver logs: this script uses the GCP "Default" project, which has no accessible project ID for `clasp logs`, and the Executions UI detail view was not expandable in this session.',
+      'Corrected the analyst-facing message to stop asserting an unconfirmed cause. Added logSubmissionError() (SheetService.gs), which writes every submitTranscript() failure — timestamp, observer, SAP ID, interaction ID, full error + stack — straight into a new Error_Log tab in the main spreadsheet, so future occurrences are diagnosable without needing GCP Cloud Logging access at all.',
+      'Code.gs, Config.gs, SheetService.gs',
+      'Danzen',
+      'Done'
     ]
   ];
 
