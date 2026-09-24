@@ -3202,10 +3202,32 @@ function generateAuditRef() {
     return 'NHA-' + dateStr + '-' + String(seq).padStart(4, '0');
   } catch(e) {
     Logger.log('generateAuditRef error: ' + e);
-    return 'NHA-' + dateStr + '-' + String(Math.floor(Math.random() * 9999)).padStart(4, '0');
+    return _uniqueFallbackAuditRef(dateStr);
   } finally {
     try { lock.releaseLock(); } catch(re) {}
   }
+}
+
+// Last-resort ref for when the primary counter path above throws (e.g. a
+// LockService timeout under heavy concurrent submissions). A bare random
+// guess with no collision check is exactly what caused the original
+// same-day audit-ref collision bug, so this checks Audit_Log before handing
+// one out, and only falls back to a millisecond-based suffix (which cannot
+// collide with the padded 4-digit sequence/random refs) if every guess
+// collides or the sheet check itself fails.
+function _uniqueFallbackAuditRef(dateStr) {
+  try {
+    var ss       = getOrCreateSpreadsheet();
+    var logSheet = getOrCreateSheet(ss, AUDIT_LOG_SHEET);
+    for (var attempt = 0; attempt < 10; attempt++) {
+      var candidate = 'NHA-' + dateStr + '-' + String(Math.floor(Math.random() * 9999)).padStart(4, '0');
+      var finder    = logSheet.getRange('A:A').createTextFinder(candidate).matchEntireCell(true);
+      if (!finder.findNext()) return candidate;
+    }
+  } catch(e2) {
+    Logger.log('_uniqueFallbackAuditRef error: ' + e2);
+  }
+  return 'NHA-' + dateStr + '-T' + (Date.now() % 100000);
 }
 
 // ── Resolve observer from logged-in user email ────────────────────────────────
