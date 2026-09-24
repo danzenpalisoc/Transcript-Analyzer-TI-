@@ -3180,24 +3180,25 @@ function getObserverInfo() {
 function getAuditLogData()            { return readAuditLog(); }
 
 // ── Generate unique Audit Reference Number: NHA-YYYYMMDD-XXXX ────────────────
-// Uses CacheService to persist today's counter — avoids scanning the full sheet.
+// Uses PropertiesService to persist today's counter — avoids scanning the full
+// sheet. PropertiesService has no expiry, unlike CacheService (hard 6-hour cap
+// on put()'s TTL) — a per-day counter needs to survive up to 24 hours, so
+// CacheService can't hold it without throwing and silently corrupting refs.
 function generateAuditRef() {
-  var now     = new Date();
-  var y       = now.getFullYear();
-  var m       = String(now.getMonth() + 1).padStart(2, '0');
-  var d       = String(now.getDate()).padStart(2, '0');
-  var dateStr = '' + y + m + d;
-  var cacheKey = 'audit_ref_seq_' + dateStr;
+  var now      = new Date();
+  var y        = now.getFullYear();
+  var m        = String(now.getMonth() + 1).padStart(2, '0');
+  var d        = String(now.getDate()).padStart(2, '0');
+  var dateStr  = '' + y + m + d;
+  var propKey  = 'audit_ref_seq_' + dateStr;
 
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(5000);
-    var cache   = CacheService.getScriptCache();
-    var current = parseInt(cache.get(cacheKey) || '0', 10);
+    var props   = PropertiesService.getScriptProperties();
+    var current = parseInt(props.getProperty(propKey) || '0', 10);
     var seq     = current + 1;
-    // TTL: expire at midnight (seconds remaining in the day)
-    var msLeft  = new Date(y, now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
-    cache.put(cacheKey, String(seq), Math.floor(msLeft / 1000));
+    props.setProperty(propKey, String(seq));
     return 'NHA-' + dateStr + '-' + String(seq).padStart(4, '0');
   } catch(e) {
     Logger.log('generateAuditRef error: ' + e);

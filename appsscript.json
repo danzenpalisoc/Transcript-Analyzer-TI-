@@ -1,4 +1,4 @@
-﻿{
+{
   "timeZone": "America/New_York",
   "oauthScopes": [
     "https://www.googleapis.com/auth/userinfo.email",
