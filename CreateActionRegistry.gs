@@ -1647,6 +1647,28 @@ function createActionRegistry() {
       'index.html',
       'Danzen',
       'Done'
+    ],
+    [
+      '146',
+      '2026-09-25',
+      'Bug Fix',
+      'NH + TI',
+      'Observers viewing their own submitted evaluation saw a DIFFERENT team member and observer than the one they audited (reported: Danzen\'s Kenji Cagusangco audit, ref NHA-20260921-0003, resolved to Keiry Marisol Lazo Zometa / Francisco Rivera Campos). Root cause: generateAuditRef() sized its CacheService TTL as seconds-until-midnight, exceeding CacheService\'s 21600s (6-hour) hard cap on nearly every daytime submission, silently falling into a catch block that returned an uncollision-checked random 4-digit suffix — unrelated same-day submissions could land on the same NHA-YYYYMMDD-#### ref, and getEvalViewData()/getEvaluationByAuditRef() return the first matching row, permanently shadowing the later one.',
+      'Replaced the CacheService-backed daily counter with PropertiesService, which has no expiry, so the sequence survives the full day without needing a TTL. Also stripped a pre-existing UTF-8 BOM from appsscript.json that was silently rejected by the Apps Script manifest validator and blocked clasp push, and added .claspignore so the Node-only tests/ harness is never pushed to the live script.',
+      'Code.gs, appsscript.json, .claspignore',
+      'Danzen',
+      'Done'
+    ],
+    [
+      '147',
+      '2026-09-25',
+      'Bug Fix',
+      'NH + TI',
+      'Code review of #146 found the same unguarded random-ref fallback still reachable via a LockService timeout under concurrent submissions (e.g. several observers submitting near end of shift), reproducing the identical collision risk through a different trigger than the one just fixed.',
+      'Fallback now checks Audit_Log for the candidate ref before returning it (retries up to 10x via new _uniqueFallbackAuditRef()), and only drops to a millisecond-timestamp suffix if every guess collides. Added tests/audit-ref-test.js covering both the TTL-cap trigger and the lock-timeout trigger.',
+      'Code.gs, tests/audit-ref-test.js',
+      'Danzen',
+      'Done'
     ]
   ];
 
