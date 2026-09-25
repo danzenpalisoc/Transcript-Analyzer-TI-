@@ -3,6 +3,18 @@
  * FuelIX API + prompt builders that return HTML directly (no JSON parsing).
  */
 
+// submitTranscript() calls this completely unguarded (Code.gs) — any error
+// here used to bubble straight to submitTranscript's generic catch, where a
+// substring check ("permission" / "do not have access") misclassified a
+// FuelIX auth/outage error as "a lookup source could not be opened," sending
+// analysts and admins hunting through Roster/Drive sharing for a problem that
+// was actually here. Every error thrown by this function is now tagged
+// 'AI_SERVICE_ERROR' so the caller can classify it correctly.
+//
+// Retries only 429 (rate limit), 5xx (server-side), and network-level
+// failures (timeout/DNS) — a bad or expired API key (401/403) or a malformed
+// request (400) fails identically every attempt, so retrying those would
+// just make the analyst wait longer for the same result.
 function callFuelIX(prompt) {
   var endpoint = FUELIX_CONFIG.baseUrl + '/v1/chat/completions';
   var payload  = {
@@ -22,18 +34,40 @@ function callFuelIX(prompt) {
     muteHttpExceptions: true,
     deadline:           270   // 270s — leaves headroom before the GAS 360s execution limit
   };
-  var response = UrlFetchApp.fetch(endpoint, options);
-  var code     = response.getResponseCode();
-  var text     = response.getContentText();
-  if (code !== 200) throw new Error('AI service error ' + code + ': ' + text);
-  var data = JSON.parse(text);
-  if (!data.choices || !data.choices[0] || !data.choices[0].message)
-    throw new Error('Unexpected AI response structure');
-  var finishReason = (data.choices[0].finish_reason || '').toString();
-  if (finishReason === 'length' || finishReason === 'max_tokens') {
-    Logger.log('WARNING: AI response truncated by token limit (finish_reason=' + finishReason + '). Consider increasing max_tokens further.');
+
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    // Re-declaring "var" with no initializer does NOT reset a variable's
+    // value on the next loop pass — explicit assignment is required, or a
+    // stale networkErr from a failed attempt silently blocks the success
+    // path on a later attempt that actually returned 200.
+    var code = undefined, text = undefined, networkErr = undefined;
+    try {
+      var response = UrlFetchApp.fetch(endpoint, options);
+      code = response.getResponseCode();
+      text = response.getContentText();
+    } catch (e) {
+      networkErr = e; // UrlFetchApp threw outright — timeout, DNS, etc.
+    }
+
+    if (!networkErr && code === 200) {
+      var data = JSON.parse(text);
+      if (!data.choices || !data.choices[0] || !data.choices[0].message)
+        throw new Error('AI_SERVICE_ERROR[200]: Unexpected AI response structure: ' + text);
+      var finishReason = (data.choices[0].finish_reason || '').toString();
+      if (finishReason === 'length' || finishReason === 'max_tokens') {
+        Logger.log('WARNING: AI response truncated by token limit (finish_reason=' + finishReason + '). Consider increasing max_tokens further.');
+      }
+      return data.choices[0].message.content.trim();
+    }
+
+    var isRetryable = !!networkErr || code === 429 || (code >= 500 && code <= 599);
+    var errMsg = networkErr
+      ? 'AI_SERVICE_ERROR[network]: ' + networkErr
+      : 'AI_SERVICE_ERROR[' + code + ']: ' + text;
+
+    if (!isRetryable || attempt === 3) throw new Error(errMsg);
+    Utilities.sleep(attempt * 1000); // 1s, then 2s
   }
-  return data.choices[0].message.content.trim();
 }
 
 // ── PDF knowledge ─────────────────────────────────────────────────────────────

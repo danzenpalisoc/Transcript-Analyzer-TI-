@@ -3778,6 +3778,7 @@ function submitTranscript(formData) {
     var auditRef     = generateAuditRef();
     var observerName = (formData.observerName || '').trim();
     var analysisLabel = analysisType === 'sales' ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
+    var warnings      = [];
 
     // Resolve locale — fall back to roster lookup if the form field was blank
     var resolvedLocale = (formData.locale || '').trim();
@@ -3786,6 +3787,27 @@ function submitTranscript(formData) {
         var rosterRow = lookupBySapId(formData.sapId.trim());
         if (rosterRow && rosterRow.locale) resolvedLocale = rosterRow.locale;
       } catch(le) { Logger.log('Locale fallback lookup failed (non-fatal): ' + le); }
+    }
+
+    // Backfill any still-blank team-member fields from this SAP ID's most
+    // recent PRIOR audit in Audit_Log, so a failed/blank client-side roster
+    // lookup (e.g. the external Roster/AT-Data lookup failing) doesn't block
+    // the submission entirely. Data may be stale if the team member was
+    // reassigned since their last audit — flagged as a warning, not applied
+    // silently.
+    if (formData.sapId && (!formData.teamLeader || !formData.opsManager || !formData.lineOfBusiness || !resolvedLocale || !formData.vtid)) {
+      var teamHistory = getTeamDetailsFromAuditHistory(formData.sapId.trim());
+      if (teamHistory) {
+        var usedHistoryFallback = false;
+        if (!formData.teamLeader     && teamHistory.teamLeader)     { formData.teamLeader     = teamHistory.teamLeader;     usedHistoryFallback = true; }
+        if (!formData.opsManager     && teamHistory.opsManager)     { formData.opsManager     = teamHistory.opsManager;     usedHistoryFallback = true; }
+        if (!formData.lineOfBusiness && teamHistory.lineOfBusiness) { formData.lineOfBusiness = teamHistory.lineOfBusiness; usedHistoryFallback = true; }
+        if (!resolvedLocale          && teamHistory.locale)         { resolvedLocale          = teamHistory.locale;         usedHistoryFallback = true; }
+        if (!formData.vtid           && teamHistory.vtid)           { formData.vtid           = teamHistory.vtid;           usedHistoryFallback = true; }
+        if (usedHistoryFallback) {
+          warnings.push('Some team member details (Team Leader / Ops Manager / LOB / Locale / VTID) could not be freshly looked up and were filled in from a previous audit for this SAP ID — please verify they are still current.');
+        }
+      }
     }
 
     // ── 3. Save transcript row ────────────────────────────────────────────────
@@ -3870,8 +3892,6 @@ function submitTranscript(formData) {
       formData.sapId || '', formData.participant || '',
       observerName, analysisLabel, htmlToPlainText(html)
     ]);
-
-    var warnings = [];
 
     // ── 7. Write to Dashboard_Data ────────────────────────────────────────────
     try {
@@ -3998,13 +4018,28 @@ function submitTranscript(formData) {
       if (_intIdForLockErr) CacheService.getScriptCache().remove('proc_' + _intIdForLockErr);
     } catch(pe) {}
     // Google's raw error was going straight to the analyst's screen. It tells
-    // them nothing they can act on. This deployment runs as the script owner
-    // (Execute as: Me), not as the accessing user, so a per-user file-sharing
-    // gap is not the likely cause here — this is more often a shared quota/
-    // concurrency limit (every user's requests count against the same owner
-    // account) or a transient Google-side hiccup. Either way the analyst
-    // can't fix it, so point them at the admin instead of guessing why.
+    // them nothing they can act on. Check the AI-service tag FIRST: callFuelIX()
+    // (AIService.gs) is called completely unguarded above, and a FuelIX auth/
+    // outage error's response body often contains wording like "permission" or
+    // "access" — the generic substring check below used to catch that and
+    // misreport it as a Sheets/Drive lookup problem, sending everyone hunting
+    // through Roster sharing for a bug that was actually the AI call.
     var _msg = e.toString();
+    if (_msg.indexOf('AI_SERVICE_ERROR') !== -1) {
+      return {
+        success: false,
+        error: 'The AI analysis service did not respond correctly, so this audit ' +
+               'was not saved. This is usually temporary — please wait a moment ' +
+               'and try submitting again. If it keeps happening, report it to the ' +
+               'Analyzer admin; the full error has been recorded in the Error_Log tab.'
+      };
+    }
+    // This deployment runs as the script owner (Execute as: Me), not as the
+    // accessing user, so a per-user file-sharing gap is not the likely cause
+    // of a genuine Sheets/Drive permission error here — this is more often a
+    // shared quota/concurrency limit (every user's requests count against the
+    // same owner account) or a transient Google-side hiccup. Either way the
+    // analyst can't fix it, so point them at the admin instead of guessing why.
     if (_msg.indexOf('permission') !== -1 || _msg.indexOf('do not have access') !== -1) {
       return {
         success: false,

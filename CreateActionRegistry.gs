@@ -1691,6 +1691,28 @@ function createActionRegistry() {
       'SheetService.gs, Code.gs, AIService.gs, ObserverHelper.gs, tests/sheet-retry-test.js',
       'Danzen',
       'Done'
+    ],
+    [
+      '150',
+      '2026-09-25',
+      'Bug Fix',
+      'NH + TI',
+      'Deeper investigation into #148/#149 found the ACTUAL root cause: submitTranscript() (Code.gs) calls analyzeTranscript() -> callFuelIX() completely unguarded. A FuelIX auth/outage error\'s response body often contains wording like "permission" or "access" (the exposed FuelIX key was a live suspect), so submitTranscript()\'s generic substring check misclassified it as "a lookup source could not be opened" — a Sheets/Drive diagnosis that was wrong the whole time and sent every prior investigation (this session\'s and the original "TI report") looking at Roster/Drive sharing instead of the AI call. Fit the evidence better than #148/#149\'s theories: explains the 60+ second failing submitTranscript durations (AI call timeout, not a Sheets permission check) and is unrelated to whether Roster/Global-Roster/AT-Data sharing is fine (confirmed fine by the admin).',
+      'callFuelIX() (AIService.gs) now tags every error it throws with AI_SERVICE_ERROR, and submitTranscript()\'s catch checks that tag BEFORE the generic permission substring check, returning an accurate "AI analysis service did not respond correctly" message instead of blaming a lookup source. Also retries up to 3x (1s/2s backoff) for transient-looking failures only — 429, 5xx, or a network-level exception — never for a bad/expired key (401/403) or malformed request (400), which fail identically every attempt. Found and fixed a bug in the first draft of the retry loop during test-writing: re-declaring `var` with no initializer does not reset it between loop iterations, so a stale network-error flag from one failed attempt was blocking the success path on a later attempt that actually returned 200. Covered by tests/fuelix-retry-test.js (18 checks).',
+      'AIService.gs, Code.gs, tests/fuelix-retry-test.js',
+      'Danzen',
+      'Done'
+    ],
+    [
+      '151',
+      '2026-09-25',
+      'Enhancement',
+      'NH + TI',
+      'Admin-proposed resilience improvement raised during the #148-150 investigation: if a team member has been audited before, reuse their known Team Leader / Ops Manager / LOB / Locale / VTID from that history as a fallback whenever the live roster autofill leaves those fields blank (e.g. an external lookup failure), instead of saving the evaluation incomplete or blocking the submission.',
+      'Added getTeamDetailsFromAuditHistory(sapId) (SheetService.gs): reads Audit_Log — the analyzer\'s own spreadsheet, not an external file — for this SAP ID\'s most recent PRIOR entry, scanning newest-first. Wired into submitTranscript() (Code.gs): only backfills fields still blank after the normal autofill/locale-fallback steps, never overrides a value the live lookup already resolved, and pushes a warning ("please verify they are still current") whenever a fallback value is actually used, since the team member may have been reassigned since their last audit. Covered by tests/team-history-fallback-test.js (12 checks, including newest-entry-wins-over-oldest and graceful null on any read failure).',
+      'SheetService.gs, Code.gs, tests/team-history-fallback-test.js',
+      'Danzen',
+      'Done'
     ]
   ];
 

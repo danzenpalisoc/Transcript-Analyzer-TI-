@@ -89,6 +89,53 @@ function getSpreadsheetUrl() {
   return getOrCreateSpreadsheet().getUrl();
 }
 
+// ── Backfill team-member details from prior audit history ─────────────────────
+// If the client-side roster autofill didn't populate Team Leader / Ops
+// Manager / LOB / Locale / VTID (e.g. the external Roster/AT-Data lookup
+// failed or timed out), this SAP ID's most recent PRIOR entry in Audit_Log —
+// which lives in the analyzer's own spreadsheet, not an external file — is a
+// reasonable substitute for the fields still missing. Returns null if the
+// SAP ID has no prior audit. Data may be stale if the team member was
+// reassigned since their last audit; callers should warn when it's used
+// rather than applying it silently.
+function getTeamDetailsFromAuditHistory(sapId) {
+  try {
+    if (!sapId) return null;
+    var ss       = getOrCreateSpreadsheet();
+    var sheet    = getOrCreateSheet(ss, AUDIT_LOG_SHEET);
+    var lastRow  = sheet.getLastRow();
+    if (lastRow < 2) return null;
+
+    var headers  = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var sapCol   = headers.indexOf('SAP ID');
+    if (sapCol === -1) return null;
+    var tlCol    = headers.indexOf('Team Leader');
+    var omCol    = headers.indexOf('Operations Manager');
+    var lobCol   = headers.indexOf('Line of Business');
+    var locCol   = headers.indexOf('Locale');
+    var vtidCol  = headers.indexOf('VTID');
+
+    var data   = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+    var target = sapId.toString().trim();
+    for (var i = data.length - 1; i >= 0; i--) { // scan newest-first
+      var row = data[i];
+      if ((row[sapCol] || '').toString().trim() === target) {
+        return {
+          teamLeader:     tlCol   !== -1 ? (row[tlCol]   || '').toString() : '',
+          opsManager:     omCol   !== -1 ? (row[omCol]   || '').toString() : '',
+          lineOfBusiness: lobCol  !== -1 ? (row[lobCol]  || '').toString() : '',
+          locale:         locCol  !== -1 ? (row[locCol]  || '').toString() : '',
+          vtid:           vtidCol !== -1 ? (row[vtidCol] || '').toString() : ''
+        };
+      }
+    }
+    return null;
+  } catch (e) {
+    Logger.log('getTeamDetailsFromAuditHistory error: ' + e);
+    return null;
+  }
+}
+
 // ── Write a submission failure to the Error_Log tab ────────────────────────────
 // Apps Script execution logs require Stackdriver/GCP Cloud Logging access,
 // which needs a non-default GCP project — not always available to whoever is
