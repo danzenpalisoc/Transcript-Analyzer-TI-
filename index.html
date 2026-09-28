@@ -5254,7 +5254,15 @@ function handleSubmitEmail() {
     .withFailureHandler(function (err) {
       document.getElementById('email-overlay').classList.remove('visible');
       document.getElementById('btn-submit').disabled = false;
-      showError('Email failed: ' + (err.message || err));
+      // Reaching this handler means the server call itself never returned —
+      // sendAuditEmail() catches every error internally, so this is a
+      // platform-level fault (e.g. a transient Google-side hiccup), not a
+      // permissions problem. Log the raw detail for debugging, show a
+      // friendly message to the analyst.
+      console.error('sendAuditEmail did not return a result:', err);
+      showError('A temporary system error prevented the email from sending. This is not ' +
+                 'a problem with your own access — please try Submit Email again. If it ' +
+                 'keeps happening, report it to the Analyzer admin.');
     })
     .sendAuditEmail(formData, getEffectiveHTML());
 }

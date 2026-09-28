@@ -4257,7 +4257,17 @@ function sendAuditEmail(formData, htmlResult) {
     var resolvedByAnalyst = '';
     try { resolvedByAnalyst = extractTextBlock(htmlResult || '', 'Issue Resolution') || ''; } catch(rx) {}
 
-    updateDashboardPDFLink(interactionId, sheetStatus, recipients, auditRef, resolvedByAnalyst);
+    // The email above may have already been sent successfully by this point —
+    // a failure here is a separate, non-critical step (recording delivery
+    // status on the sheet) and must not make the whole request report as
+    // failed when the email itself went out fine. Same reasoning as the
+    // notifyAdmins/updateCachedResult guards just below.
+    try {
+      updateDashboardPDFLink(interactionId, sheetStatus, recipients, auditRef, resolvedByAnalyst);
+    } catch(de) {
+      Logger.log('updateDashboardPDFLink in sendAuditEmail failed: ' + de);
+      logSubmissionError('sendAuditEmail:updateDashboardPDFLink', formData, de);
+    }
 
     Logger.log('Audit email ' + (_auditEmailErr ? 'PARTIALLY FAILED' : _auditEmailWarn ? 'QUOTA EXCEEDED' : '') + ' sent to: ' + recipients.join(', '));
     // notifyAdmins only runs in live mode. In test mode the main email already went
@@ -4288,8 +4298,23 @@ function sendAuditEmail(formData, htmlResult) {
     return { success: true, recipients: recipients, auditRef: auditRef };
 
   } catch(e) {
-    Logger.log('sendAuditEmail error: ' + e.toString());
-    return { success: false, error: e.toString() };
+    Logger.log('sendAuditEmail error: ' + e.toString() + '\n' + (e.stack || '(no stack)'));
+    logSubmissionError('sendAuditEmail', formData, e);
+    // Same reasoning as submitTranscript's catch: this deployment runs as the
+    // script owner (Execute as: Me), so a per-user permission gap is not the
+    // likely cause here — showing the raw Google/Sheets message just sends
+    // analysts hunting for an access problem that isn't theirs to fix.
+    var _msg = e.toString();
+    if (_msg.indexOf('permission') !== -1 || _msg.indexOf('do not have access') !== -1) {
+      return {
+        success: false,
+        error: 'A temporary system error prevented this email from sending. This is not ' +
+               'a problem with your own access — please try Submit Email again. If it keeps ' +
+               'happening, report it to the Analyzer admin; the full error has been recorded ' +
+               'in the Error_Log tab.'
+      };
+    }
+    return { success: false, error: _msg };
   }
 }
 
