@@ -1,16 +1,16 @@
 /**
- * Regression test for callFuelIX() (AIService.gs) error tagging + retry.
+ * Regression test for callFuelIX_() (AIService.gs) error tagging + retry.
  *
  * Reported symptom: "A lookup source could not be opened... the file is
  * shared with a different account" shown to analysts, audit not saved.
- * Root cause: submitTranscript() (Code.gs) calls analyzeTranscript() ->
- * callFuelIX() completely unguarded. A FuelIX auth/outage error's response
+ * Root cause: submitTranscript() (Code.gs) calls analyzeTranscript_() ->
+ * callFuelIX_() completely unguarded. A FuelIX auth/outage error's response
  * body often contains wording like "permission" or "access", which
  * submitTranscript's generic substring check misclassified as a Sheets/Drive
  * lookup failure — sending everyone hunting through Roster sharing for a bug
  * that was actually the AI call.
  *
- * Fix: every error callFuelIX() throws is tagged 'AI_SERVICE_ERROR' so the
+ * Fix: every error callFuelIX_() throws is tagged 'AI_SERVICE_ERROR' so the
  * caller can classify it correctly, and transient-looking failures (429,
  * 5xx, network-level) are retried — a bad/expired key (401/403) or malformed
  * request (400) is not, since retrying those just delays an identical result.
@@ -39,7 +39,7 @@ function extractFunction(source, name) {
   return source.slice(i, end);
 }
 
-const fnSource = extractFunction(src, 'callFuelIX');
+const fnSource = extractFunction(src, 'callFuelIX_');
 
 function makeResponse(code, bodyObj) {
   const text = typeof bodyObj === 'string' ? bodyObj : JSON.stringify(bodyObj);
@@ -59,7 +59,7 @@ function run(fetchImpl) {
   sandbox.globalThis = sandbox;
   const ctx = vm.createContext(sandbox);
   vm.runInContext(fnSource, ctx);
-  return { callFuelIX: ctx.callFuelIX, sleeps, logs };
+  return { callFuelIX_: ctx.callFuelIX_, sleeps, logs };
 }
 
 let failures = 0;
@@ -68,15 +68,15 @@ function check(name, cond) {
   if (!cond) failures++;
 }
 
-console.log('NH Analyzer — callFuelIX retry/tagging regression test');
+console.log('NH Analyzer — callFuelIX_ retry/tagging regression test');
 console.log('file: ' + gsPath);
 
 console.log('\nTest 1 — succeeds immediately on 200, no retry');
 {
   let calls = 0;
   const fetch = () => { calls++; return makeResponse(200, { choices: [{ message: { content: '  hello  ' }, finish_reason: 'stop' }] }); };
-  const { callFuelIX, sleeps } = run(fetch);
-  const result = callFuelIX('prompt');
+  const { callFuelIX_, sleeps } = run(fetch);
+  const result = callFuelIX_('prompt');
   check('trims and returns content', result === 'hello');
   check('called fetch exactly once', calls === 1);
   check('never slept', sleeps.length === 0);
@@ -90,8 +90,8 @@ console.log('\nTest 2 — retries a 429 and succeeds once it clears');
     if (calls < 3) return makeResponse(429, { error: 'rate limited' });
     return makeResponse(200, { choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] });
   };
-  const { callFuelIX, sleeps } = run(fetch);
-  const result = callFuelIX('prompt');
+  const { callFuelIX_, sleeps } = run(fetch);
+  const result = callFuelIX_('prompt');
   check('returned content on the 3rd attempt', result === 'ok');
   check('called fetch exactly 3 times', calls === 3);
   check('slept between retries (2 sleeps)', sleeps.length === 2);
@@ -101,9 +101,9 @@ console.log('\nTest 3 — retries a 500 and gives up after 3 attempts, tagged er
 {
   let calls = 0;
   const fetch = () => { calls++; return makeResponse(500, 'Internal Server Error'); };
-  const { callFuelIX, sleeps } = run(fetch);
+  const { callFuelIX_, sleeps } = run(fetch);
   let threw = null;
-  try { callFuelIX('prompt'); } catch (e) { threw = e; }
+  try { callFuelIX_('prompt'); } catch (e) { threw = e; }
   check('threw after exhausting retries', !!threw);
   check('error is tagged AI_SERVICE_ERROR', threw && threw.message.indexOf('AI_SERVICE_ERROR') === 0);
   check('called fetch exactly 3 times', calls === 3);
@@ -114,9 +114,9 @@ console.log('\nTest 4 — does NOT retry a 401 (bad/expired key) — fails fast'
 {
   let calls = 0;
   const fetch = () => { calls++; return makeResponse(401, '{"error":"You do not have permission to access this resource"}'); };
-  const { callFuelIX, sleeps } = run(fetch);
+  const { callFuelIX_, sleeps } = run(fetch);
   let threw = null;
-  try { callFuelIX('prompt'); } catch (e) { threw = e; }
+  try { callFuelIX_('prompt'); } catch (e) { threw = e; }
   check('threw', !!threw);
   check('error is tagged AI_SERVICE_ERROR (not a lookup-source error)', threw && threw.message.indexOf('AI_SERVICE_ERROR') === 0);
   check('called fetch exactly once (no wasted retries on a bad key)', calls === 1);
@@ -131,8 +131,8 @@ console.log('\nTest 5 — a network-level exception (timeout/DNS) is retried lik
     if (calls < 2) throw new Error('Exception: Timeout');
     return makeResponse(200, { choices: [{ message: { content: 'recovered' }, finish_reason: 'stop' }] });
   };
-  const { callFuelIX, sleeps } = run(fetch);
-  const result = callFuelIX('prompt');
+  const { callFuelIX_, sleeps } = run(fetch);
+  const result = callFuelIX_('prompt');
   check('recovered after a network error', result === 'recovered');
   check('called fetch exactly twice', calls === 2);
   check('slept once', sleeps.length === 1);
@@ -141,9 +141,9 @@ console.log('\nTest 5 — a network-level exception (timeout/DNS) is retried lik
 console.log('\nTest 6 — a malformed 200 response is tagged and not silently swallowed');
 {
   const fetch = () => makeResponse(200, { choices: [] });
-  const { callFuelIX } = run(fetch);
+  const { callFuelIX_ } = run(fetch);
   let threw = null;
-  try { callFuelIX('prompt'); } catch (e) { threw = e; }
+  try { callFuelIX_('prompt'); } catch (e) { threw = e; }
   check('threw', !!threw);
   check('error is tagged AI_SERVICE_ERROR', threw && threw.message.indexOf('AI_SERVICE_ERROR') === 0);
 }

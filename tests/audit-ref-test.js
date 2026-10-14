@@ -5,7 +5,7 @@
  * email with the correct audit ref (e.g. NHA-20260921-0003), but clicking
  * "view evaluation" shows a DIFFERENT team member and a different observer.
  *
- * Root cause: generateAuditRef() (Code.gs) sizes the CacheService TTL as
+ * Root cause: generateAuditRef_() (Code.gs) sizes the CacheService TTL as
  * "seconds until midnight". CacheService.put() hard-caps expirationInSeconds
  * at 21600 (6 hours) and throws above that — so any call made more than 6
  * hours before midnight (i.e. almost every daytime submission) throws,
@@ -15,7 +15,7 @@
  * FIRST row matching that ref, so the later (colliding) submission is
  * permanently shadowed by the earlier one whenever anyone views it.
  *
- * This harness extracts generateAuditRef() out of Code.gs by source text
+ * This harness extracts generateAuditRef_() out of Code.gs by source text
  * (same technique tests/race-test.js uses for index.html) and runs it
  * against stub GAS services that faithfully reproduce the real 21600s cap,
  * so it exercises the actual production logic, not a re-implementation.
@@ -44,7 +44,16 @@ function extractFunction(source, name) {
   return source.slice(i, end);
 }
 
-const fnSource = extractFunction(src, 'generateAuditRef') + '\n' +
+// The ref prefix now comes from Config.gs (chosen by script ID). This harness has
+// no ScriptApp, so it gets the default NHA- prefix these assertions expect.
+const cfgSrc = fs.readFileSync(path.join(path.dirname(gsPath), 'Config.gs'), 'utf8');
+const prefixStart = cfgSrc.indexOf('var AUDIT_REF_PREFIX_DEFAULT');
+if (prefixStart === -1) throw new Error('AUDIT_REF_PREFIX_DEFAULT not found in Config.gs');
+const prefixFn = extractFunction(cfgSrc, 'getAuditRefPrefix_');
+const prefixSource = cfgSrc.slice(prefixStart, cfgSrc.indexOf(prefixFn) + prefixFn.length);
+
+const fnSource = prefixSource + '\n' +
+                 extractFunction(src, 'generateAuditRef_') + '\n' +
                  extractFunction(src, '_uniqueFallbackAuditRef');
 
 // ── Stub GAS services ──────────────────────────────────────────────────────
@@ -124,7 +133,7 @@ function runAt(fixedNow, extraGlobals) {
   sandbox.globalThis = sandbox;
   const ctx = vm.createContext(sandbox);
   vm.runInContext(fnSource, ctx);
-  return { generateAuditRef: ctx.generateAuditRef, logs };
+  return { generateAuditRef_: ctx.generateAuditRef_, logs };
 }
 
 let failures = 0;
@@ -143,13 +152,13 @@ console.log('file: ' + gsPath);
 
 console.log('\nTest 1 — a daytime call must not silently fall back to an unchecked random suffix');
 {
-  const { generateAuditRef, logs } = runAt(DAYTIME, {
+  const { generateAuditRef_, logs } = runAt(DAYTIME, {
     CacheService: makeCacheService(),
     PropertiesService: makePropertiesService(),
     LockService: makeLockService(),
   });
-  const ref = generateAuditRef();
-  const hitFallback = logs.some(l => l.indexOf('generateAuditRef error') !== -1);
+  const ref = generateAuditRef_();
+  const hitFallback = logs.some(l => l.indexOf('generateAuditRef_ error') !== -1);
   check('ref generated (' + ref + ')', !!ref);
   check('did NOT hit the TTL-exception fallback path', !hitFallback);
 }
@@ -157,21 +166,21 @@ console.log('\nTest 1 — a daytime call must not silently fall back to an unche
 console.log('\nTest 2 — two unrelated same-day submissions must not get the same ref');
 {
   // Math.random pinned: proves the fallback path has NO collision protection —
-  // if generateAuditRef() ever falls back to Math.random(), two calls with the
+  // if generateAuditRef_() ever falls back to Math.random(), two calls with the
   // same random draw MUST collide. A correct implementation never depends on
   // Math.random() for uniqueness in the first place.
   const pinnedMath = Object.create(Math);
   pinnedMath.random = () => 0.42;
 
-  const { generateAuditRef } = runAt(DAYTIME, {
+  const { generateAuditRef_ } = runAt(DAYTIME, {
     CacheService: makeCacheService(),
     PropertiesService: makePropertiesService(),
     LockService: makeLockService(),
     Math: pinnedMath,
   });
 
-  const ref1 = generateAuditRef(); // e.g. Francisco auditing Keiry Marisol
-  const ref2 = generateAuditRef(); // e.g. Danzen auditing Kenji
+  const ref1 = generateAuditRef_(); // e.g. Francisco auditing Keiry Marisol
+  const ref2 = generateAuditRef_(); // e.g. Danzen auditing Kenji
 
   check('refs are non-empty', !!ref1 && !!ref2);
   check('refs are different for different submissions (ref1=' + ref1 + ', ref2=' + ref2 + ')', ref1 !== ref2);
@@ -179,12 +188,12 @@ console.log('\nTest 2 — two unrelated same-day submissions must not get the sa
 
 console.log('\nTest 3 — sequence must increment even though it is called well before 6pm (TTL cap zone)');
 {
-  const { generateAuditRef } = runAt(DAYTIME, {
+  const { generateAuditRef_ } = runAt(DAYTIME, {
     CacheService: makeCacheService(),
     PropertiesService: makePropertiesService(),
     LockService: makeLockService(),
   });
-  const refs = [generateAuditRef(), generateAuditRef(), generateAuditRef()];
+  const refs = [generateAuditRef_(), generateAuditRef_(), generateAuditRef_()];
   const suffixes = refs.map(r => r.split('-').pop());
   check('three daytime calls produce three distinct sequential suffixes (got ' + suffixes.join(', ') + ')',
     new Set(suffixes).size === 3);
@@ -198,7 +207,7 @@ console.log('\nTest 4 — a lock timeout must not hand out a ref already used th
   const queuedMath = Object.create(Math);
   queuedMath.random = () => (draws.length > 1 ? draws.shift() : draws[0]);
 
-  const { generateAuditRef } = runAt(DAYTIME, {
+  const { generateAuditRef_ } = runAt(DAYTIME, {
     CacheService: makeCacheService(),
     PropertiesService: makePropertiesService(),
     LockService: makeThrowingLockService(),
@@ -206,7 +215,7 @@ console.log('\nTest 4 — a lock timeout must not hand out a ref already used th
     ...makeAuditLogStub(['NHA-20260921-0000']), // suffix Math.floor(0*9999) would collide
   });
 
-  const ref = generateAuditRef();
+  const ref = generateAuditRef_();
   check('did not return the already-used ref (got ' + ref + ')', ref !== 'NHA-20260921-0000');
   check('returned the next free candidate instead', ref === 'NHA-20260921-0999');
 }
@@ -216,7 +225,7 @@ console.log('\nTest 5 — if every guess collides, fall back to a suffix that ca
   const pinnedMath = Object.create(Math);
   pinnedMath.random = () => 0.42; // always drafts the same 4-digit suffix
 
-  const { generateAuditRef } = runAt(DAYTIME, {
+  const { generateAuditRef_ } = runAt(DAYTIME, {
     CacheService: makeCacheService(),
     PropertiesService: makePropertiesService(),
     LockService: makeThrowingLockService(),
@@ -224,7 +233,7 @@ console.log('\nTest 5 — if every guess collides, fall back to a suffix that ca
     ...makeAuditLogStub(['NHA-20260921-4199']), // the only suffix pinnedMath can ever draw
   });
 
-  const ref = generateAuditRef();
+  const ref = generateAuditRef_();
   check('did not return the known-colliding ref (got ' + ref + ')', ref !== 'NHA-20260921-4199');
   check('used the timestamp escape hatch', /^NHA-20260921-T\d+$/.test(ref));
 }

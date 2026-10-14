@@ -59,7 +59,7 @@ function getQAUsersFromSheet() {
 }
 
 // ── Look up a user in the Users sheet by email ────────────────────────────────
-function lookupUserFromUsersSheet(email) {
+function lookupUserFromUsersSheet_(email) {
   if (!email) return null;
   try {
     var cache    = CacheService.getUserCache();
@@ -89,12 +89,12 @@ function lookupUserFromUsersSheet(email) {
         email: email
       };
       try { cache.put(cacheKey, JSON.stringify(result), 8 * 60 * 60); } catch(e) {}
-      Logger.log('lookupUserFromUsersSheet: ' + result.name + ' [' + result.role + ']');
+      Logger.log('lookupUserFromUsersSheet_: ' + result.name + ' [' + result.role + ']');
       return result;
     }
     return null;
   } catch(e) {
-    Logger.log('lookupUserFromUsersSheet error: ' + e);
+    Logger.log('lookupUserFromUsersSheet_ error: ' + e);
     return null;
   }
 }
@@ -102,12 +102,13 @@ function lookupUserFromUsersSheet(email) {
 // ── Backfill blank Observer Name rows in Dashboard_Data + Audit_Log ───────────
 // Run ONCE from Apps Script editor when Observer Name is blank for existing records.
 function backfillObserverName() {
+  requireAdmin_();
   var email = '';
   try { email = Session.getActiveUser().getEmail() || ''; } catch(e) {}
   try { if (!email) email = Session.getEffectiveUser().getEmail() || ''; } catch(e) {}
   if (!email) { Logger.log('backfillObserverName: no email found'); return; }
 
-  var user = lookupUserFromUsersSheet(email);
+  var user = lookupUserFromUsersSheet_(email);
   var name = (user && user.name) ? user.name : email.split('@')[0];
   Logger.log('backfillObserverName: setting Observer Name = "' + name + '" for blank rows');
 
@@ -135,7 +136,7 @@ function backfillObserverName() {
     total += patched;
   });
 
-  invalidateDashboardCache();
-  invalidateAuditLogCache();
+  invalidateDashboardCache_();
+  invalidateAuditLogCache_();
   Logger.log('=== backfillObserverName done: ' + total + ' rows updated ===');
 }

@@ -439,13 +439,12 @@ function applyFilters(pfx) {
 
   var filtered = _allData.filter(function(r) {
     if ((r['Analysis Type'] || '').indexOf(typeKey) === -1) return false;
-    if (dateFrom) {
-      var ts = new Date(r['Timestamp']); if (isNaN(ts)) return true;
-      if (ts < new Date(dateFrom)) return false;
-    }
-    if (dateTo) {
-      var ts2 = new Date(r['Timestamp']); if (isNaN(ts2)) return true;
-      if (ts2 > new Date(dateTo + 'T23:59:59')) return false;
+    // The same rule as index.html: the day starts and ends at LOCAL midnight (new Date('2026-10-13') is midnight UTC, which cut off the first
+    // hours of the day for anyone east of UTC), and a row with no usable date is left out while a date filter is on, not let through.
+    if (dateFrom || dateTo) {
+      var ts = new Date(r['Timestamp']); if (isNaN(ts.getTime())) return false;
+      if (dateFrom && ts < new Date(dateFrom + 'T00:00:00')) return false;
+      if (dateTo   && ts > new Date(dateTo   + 'T23:59:59')) return false;
     }
     if (members.length && members.indexOf(r['Team Member']) === -1) return false;
     if (leaders.length && leaders.indexOf(r['Team Leader']) === -1) return false;
@@ -495,23 +494,129 @@ function getMultiSelect(id) {
   return vals;
 }
 
+// ── Dashboard helpers: this block is IDENTICAL in index.html and Dashboard.html (a test enforces it) ──
+// A number from a sheet cell: "40%", 40 and " 40 " are 40; blank is null (NOT 0). Older audits stored a whole
+// sentence ("95% repeat risk. No issue was identified...", "High - approximately 80%."), so a sentence gives the
+// first "NN%" in it (a range "40-50%" gives its middle). Text with no percentage is null.
+function _dbNum(v) {
+  if (v === null || v === undefined) return null;
+  var s = String(v).trim();
+  if (s === '') return null;
+  var plain = s.replace('%', '').trim();
+  // A percent cell holds 0.78 for 78%: the sheet turned "78%" into a number. A bare number between 0 and 1 is that.
+  if (plain !== '' && isFinite(Number(plain))) {
+    var num = Number(plain);
+    return (s.indexOf('%') === -1 && num > 0 && num <= 1) ? Math.round(num * 1000) / 10 : num;
+  }
+  var rng = /(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*%/.exec(s);
+  if (rng) return (Number(rng[1]) + Number(rng[2])) / 2;
+  var m = /(\d+(?:\.\d+)?)\s*%/.exec(s);
+  if (m && Number(m[1]) <= 100) return Number(m[1]);
+  return null;
+}
+// Average repeat risk over the audits that HAVE a number. A real 0% counts; a blank or text does not.
+function _dbRepeatAvg(rows) {
+  var sum = 0, n = 0;
+  rows.forEach(function(r) {
+    var v = _dbNum(r['Repeat Projection %']);
+    if (v !== null) { sum += v; n++; }
+  });
+  return n ? Math.round(sum / n) : 0;
+}
+// Issue Resolved is a verdict first ("Yes", "Partially resolved - ...", "Not resolved ..."), so read the START.
+// Returns 'yes' | 'partial' | 'no' | 'unknown'. Text that does not start with a verdict is 'unknown', never guessed.
+function _dbResolution(v) {
+  var s = String(v === null || v === undefined ? '' : v).trim().toLowerCase().replace(/^[^a-z]+/, '');
+  if (!s) return 'unknown';
+  if (/^(partial|partially|in part|mostly)\b/.test(s)) return 'partial';
+  if (/^(no|not|unresolved|completely unresolved|fully unresolved|never)\b/.test(s)) return 'no';
+  if (/^(yes|resolved|completely resolved|fully resolved)\b/.test(s)) return 'yes';
+  // "Issue was NOT resolved." / "The issue was resolved": a verdict after a short lead-in about the issue.
+  // A verdict written as a short sentence: "Issue not resolved. ...", "Issue resolved — ...", "Neither issue was resolved". A yes is not taken
+  // from a sentence that goes on to qualify it (but / however / remains), so that one is left for a person to read.
+  if (/^(?:the |this )?(?:primary |main |original )?(?:issue|problem|request)s?\s+(?:was |is |were |are |has been |have been )?(?:ultimately |eventually |still )?(?:not|never)\s+(?:been )?(?:fully |completely )?(?:resolved|fixed)\b/.test(s)) return 'no';
+  if (/^neither (?:issue|problem|request) was (?:resolved|fixed)\b/.test(s)) return 'no';
+  if (/^(?:the |this )?(?:primary |main |original )?(?:issue|problem|request)\s+(?:was |is |has been )?(?:ultimately |eventually |finally |successfully |fully |completely )*(?:resolved|fixed)\b/.test(s) && !/\b(but|however|although|except|remains?|remained|secondary|second issue|other issue)\b/.test(s.slice(0, 160))) return 'yes';
+  var m = /^(?:the |this )?(?:customer'?s )?(?:issue|problem|concern|request)\b[^.]{0,25}?\b(was|is|has been|wasn'?t|isn'?t)\s+(not |never |partially |only partially )?(?:fully |completely )?(?:resolved|fixed)/.exec(s);
+  if (m) return /partial/.test(m[2] || '') ? 'partial' : (/n'?t$/.test(m[1]) || /^(not|never)/.test(m[2] || '')) ? 'no' : 'yes';
+  return 'unknown';
+}
+function _dbResolutionCounts(rows) {
+  var c = { yes: 0, partial: 0, no: 0, unknown: 0 };
+  rows.forEach(function(r) { c[_dbResolution(r['Issue Resolved'])]++; });
+  return c;
+}
+// Same text, different capitals or spacing = the same bucket.
+function _dbKey(s) { return String(s === null || s === undefined ? '' : s).replace(/\s+/g, ' ').trim().toLowerCase(); }
+// An agent name with stray spaces is the same agent.
+function _dbName(s) { return String(s === null || s === undefined ? '' : s).replace(/\s+/g, ' ').trim(); }
+// Critical Flags are stored in ONE cell. New rows use " | " between flags. Older rows used ", " and a flag title can
+// contain a comma, so a piece that starts with a lower-case letter is the rest of the flag before it.
+function _dbSplitFlags(s) {
+  var raw = String(s === null || s === undefined ? '' : s).trim();
+  if (!raw || /^none$/i.test(raw)) return [];
+  var piped = raw.indexOf(' | ') !== -1;
+  var parts = piped ? raw.split(' | ') : raw.split(',');
+  var out = [];
+  parts.forEach(function(p) {
+    p = p.trim();
+    if (!p || /^none$/i.test(p)) return;
+    if (!piped && out.length && /^[a-z]/.test(p)) out[out.length - 1] += ', ' + p;
+    else out.push(p);
+  });
+  // One flag written twice in one audit is one flag (the same capitals and spacing are the same flag), so every count agrees.
+  var seen = {};
+  return out.filter(function(f) { var k = f.replace(/\s+/g, ' ').trim().toLowerCase(); if (seen[k]) return false; seen[k] = true; return true; });
+}
+// flag title -> number of audits that carry it (one audit counts a flag once).
+function _dbFlagCounts(rows) {
+  var counts = {}, labels = {};
+  rows.forEach(function(r) {
+    var seen = {};
+    _dbSplitFlags(r['Critical Flags']).forEach(function(f) {
+      var k = _dbKey(f);
+      if (seen[k]) return;
+      seen[k] = true;
+      if (!labels[k]) labels[k] = f;
+      counts[labels[k]] = (counts[labels[k]] || 0) + 1;
+    });
+  });
+  return counts;
+}
+// Top-N most common values of a field. Buckets ignore capitals and spacing; the label is the first spelling seen.
+// splitter (optional) turns one cell into several values.
+function _dbTopN(rows, field, n, splitter) {
+  var counts = {}, labels = {};
+  rows.forEach(function(r) {
+    var cell = String(r[field] === null || r[field] === undefined ? '' : r[field]);
+    (splitter ? splitter(cell) : [cell]).forEach(function(v) {
+      v = String(v).replace(/\s+/g, ' ').trim().substring(0, 60);
+      if (!v) return;
+      var k = _dbKey(v);
+      if (!labels[k]) labels[k] = v;
+      counts[labels[k]] = (counts[labels[k]] || 0) + 1;
+    });
+  });
+  return Object.keys(counts)
+    .sort(function(a, b) { return counts[b] - counts[a]; })
+    .slice(0, n)
+    .map(function(k) { return [k, counts[k]]; });
+}
+// ── end of dashboard helpers ──
+
 // ── Stats row ─────────────────────────────────────────────────────────────────
 function renderStats(pfx, rows) {
   var total    = rows.length;
-  var resolved = rows.filter(function(r) { return (r['Issue Resolved'] || '').toLowerCase().indexOf('yes') !== -1; }).length;
+  var rc = _dbResolutionCounts(rows);
   var withEmail = rows.filter(function(r) { return r['Email Status'] === 'Sent'; }).length;
-  var avgRepeat = 0;
-  var repRows = rows.filter(function(r) { return r['Repeat Projection %']; });
-  if (repRows.length) {
-    avgRepeat = Math.round(repRows.reduce(function(s, r) {
-      return s + (parseFloat(r['Repeat Projection %']) || 0);
-    }, 0) / repRows.length);
-  }
+  var avgRepeat = _dbRepeatAvg(rows);
 
   var el = document.getElementById(pfx + '-stats');
   el.innerHTML = stat(total, 'Total Interactions') +
-    stat(resolved, 'Issues Resolved') +
-    stat(total - resolved, 'Unresolved') +
+    stat(rc.yes, 'Issues Resolved') +
+    stat(rc.partial, 'Partially Resolved') +
+    stat(rc.no, 'Unresolved') +
+    (rc.unknown ? stat(rc.unknown, 'Not Recorded') : '') +
     stat(avgRepeat + '%', 'Avg Repeat Risk') +
     stat(withEmail, 'Audits Emailed');
 }
@@ -533,16 +638,7 @@ function renderCharts(pfx, rows) {
 }
 
 function countField(rows, field, top) {
-  var counts = {};
-  rows.forEach(function(r) {
-    var val = (r[field] || '').trim().substring(0, 60);
-    if (!val) return;
-    counts[val] = (counts[val] || 0) + 1;
-  });
-  return Object.keys(counts)
-    .sort(function(a, b) { return counts[b] - counts[a]; })
-    .slice(0, top)
-    .map(function(k) { return [k, counts[k]]; });
+  return _dbTopN(rows, field, top);
 }
 
 function drawBarChart(containerId, labelName, data) {
@@ -599,7 +695,7 @@ function renderTable(pfx, rows) {
       '<td class="td-trunc" title="' + esc(r['Overall Opportunities']) + '">' + esc(r['Overall Opportunities']) + '</td>' +
       '<td class="td-trunc" title="' + esc(r['SMART Recommendation']||r['Recommendations']||'') + '">' + esc(r['SMART Recommendation']||r['Recommendations']||'') + '</td>' +
       '<td class="td-trunc" title="' + esc(r['Critical Flags']) + '">' + esc(r['Critical Flags']) + '</td>' +
-      '<td style="text-align:center">' + esc(r['Repeat Projection %']) + '</td>' +
+      '<td style="text-align:center">' + esc(_dbNum(r['Repeat Projection %']) === null ? r['Repeat Projection %'] : Math.round(_dbNum(r['Repeat Projection %'])) + '%') + '</td>' +
       '<td>' + esc(r['Issue Resolved']) + '</td>' +
       '<td>' + esc(r['Transfer Occurred']) + '</td>' +
       '<td>' + pdf + '</td>' +
@@ -610,7 +706,7 @@ function renderTable(pfx, rows) {
 // ── Flag Records ──────────────────────────────────────────────────────────────
 function flagRecords(pfx) {
   var rows = pfx === 'r' ? _rFiltered : _sFiltered;
-  var flagged = rows.filter(function(r) { return r['Critical Flags'] && r['Critical Flags'].trim(); });
+  var flagged = rows.filter(function(r) { return _dbSplitFlags(r['Critical Flags']).length > 0; });   // the tiles' rule: "None" is no flag
   alert('Flagged records: ' + flagged.length + ' of ' + rows.length + ' have critical flags.');
 }
 
@@ -640,7 +736,10 @@ function downloadCSV(rows, filename) {
 }
 
 function csvCell(val) {
-  var s = String(val).replace(/"/g, '""');
+  var s = String(val);
+  // A cell that starts with = + - @ (or a tab or return) is run as a formula by Excel and Sheets; an apostrophe makes it text.
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  s = s.replace(/"/g, '""');
   return /[,"\n]/.test(s) ? '"' + s + '"' : s;
 }
 

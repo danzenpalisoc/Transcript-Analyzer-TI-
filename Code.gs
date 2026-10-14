@@ -6,12 +6,13 @@
 // ── Run from GAS editor: find + repair truncated Sales evaluation HTML ────────
 // Step 1 — diagnose: shows which Sales cache entries look truncated
 function diagnoseSalesEvaluations() {
+  requireAdmin_();
   var ss         = getOrCreateSpreadsheet();
   var cacheSheet = getOrCreateSheet(ss, CACHE_SHEET);
   var lastRow    = cacheSheet.getLastRow();
   if (lastRow < 2) { Logger.log('Cache sheet is empty.'); return; }
 
-  var data      = cacheSheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  var data      = cacheSheet.getRange(2, 1, lastRow - 1, 5).getValues();
   var truncated = [];
   var complete  = [];
 
@@ -51,6 +52,7 @@ function diagnoseSalesEvaluations() {
     var entry = {
       row: idx + 2,
       interactionId: interactionId,
+      sapId: (row[4] || '').toString().trim(),
       htmlLength: html.length,
       hasCallSummary: hasCallSum,
       endsClean: endsClean,
@@ -110,13 +112,36 @@ function _clearEv2CacheForInteraction_(interactionId, ss) {
 }
 
 function repairNextTruncated() {
+  requireAdmin_();
   var diagnosis = diagnoseSalesEvaluations();
   if (!diagnosis || !diagnosis.truncatedList || !diagnosis.truncatedList.length) {
     Logger.log('✅ All Sales evaluations complete — nothing left to repair.');
     return;
   }
 
-  var entry = diagnosis.truncatedList[0];
+  // Several agents can share one Interaction ID, and each has its own cached evaluation (told apart by the SAP ID in column E). This
+  // tool re-runs the AI on the whole transcript for ONE evaluation, so it only works on an interaction whose sales evaluation belongs
+  // to a single agent; deleting by Interaction ID alone used to wipe the other agents' evaluations as well.
+  var cacheForIds = getOrCreateSheet(getOrCreateSpreadsheet(), CACHE_SHEET);
+  var cacheRows = cacheForIds.getLastRow() >= 2 ? cacheForIds.getRange(2, 1, cacheForIds.getLastRow() - 1, 5).getValues() : [];
+  var sapsOf = function(id) {
+    var seen = {}, n = 0;
+    cacheRows.forEach(function(r) {
+      var t = (r[1] || '').toString().trim().toLowerCase();
+      if ((r[0] || '').toString().trim() === id && t === 'sales') { var s = (r[4] || '').toString().trim(); if (!seen[s]) { seen[s] = true; n++; } }
+    });
+    return n;
+  };
+  var entry = null;
+  for (var ti = 0; ti < diagnosis.truncatedList.length; ti++) {
+    var cand = diagnosis.truncatedList[ti];
+    if (sapsOf(cand.interactionId.trim()) > 1) {
+      Logger.log('SKIP row=' + cand.row + ' id=' + cand.interactionId.substring(0, 8) + '... — several agents share this interaction, repair it by hand (re-submit that audit)');
+      continue;
+    }
+    entry = cand; break;
+  }
+  if (!entry) { Logger.log('Nothing left that is safe to repair automatically.'); return; }
   Logger.log('Repairing: row=' + entry.row + ' id=' + entry.interactionId.substring(0,8) + '... ('+
              diagnosis.truncatedList.length + ' remaining)');
 
@@ -145,7 +170,7 @@ function repairNextTruncated() {
     return;
   }
 
-  var newHtml = analyzeTranscript(transcript, 'sales');
+  var newHtml = analyzeTranscript_(transcript, 'sales');
   newHtml = fixBadgeClasses(
     newHtml.replace(/^```html\s*/i,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim()
   );
@@ -164,7 +189,8 @@ function repairNextTruncated() {
   var rowsToDelete = [];
   deleteFinder.findAll().forEach(function(match) {
     var rowType = (cacheSheet.getRange(match.getRow(), 2).getValue() || '').toString().toLowerCase();
-    if (rowType === 'sales' || /^sales_\d+$/.test(rowType)) {
+    var rowSap  = (cacheSheet.getRange(match.getRow(), 5).getValue() || '').toString().trim();
+    if ((rowType === 'sales' || /^sales_\d+$/.test(rowType)) && rowSap === entry.sapId) {
       rowsToDelete.push(match.getRow());
     }
   });
@@ -173,7 +199,7 @@ function repairNextTruncated() {
   SpreadsheetApp.flush();
 
   // Save with chunking — handles HTML > 48k chars transparently
-  saveCachedResult(entry.interactionId.trim(), 'sales', newHtml);
+  saveCachedResult_(entry.interactionId.trim(), 'sales', newHtml, entry.sapId);
   SpreadsheetApp.flush();
 
   // Clear ev2_ CacheService entries for all audit refs tied to this interaction.
@@ -189,6 +215,7 @@ function repairNextTruncated() {
 
 // Step 2b — bulk repair (legacy — use repairNextTruncated() to avoid timeout).
 function repairTruncatedSalesEvaluations() {
+  requireAdmin_();
   var diagnosis = diagnoseSalesEvaluations();
   if (!diagnosis || !diagnosis.truncatedList || !diagnosis.truncatedList.length) {
     Logger.log('Nothing to repair — all Sales evaluations look complete.');
@@ -224,16 +251,16 @@ function repairTruncatedSalesEvaluations() {
     }
     try {
       Logger.log('Re-running AI for: ' + entry.interactionId);
-      var newHtml = analyzeTranscript(transcript, 'sales');
+      var newHtml = analyzeTranscript_(transcript, 'sales');
       newHtml = fixBadgeClasses(newHtml
         .replace(/^```html\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim());
 
-      // Use saveCachedResult so chunk rows are properly deleted before writing.
+      // Use saveCachedResult_ so chunk rows are properly deleted before writing.
       // The old approach (direct setValue on entry.row) only updated the primary
-      // chunk but left any sales_2/sales_3 rows intact — causing findCachedResult
+      // chunk but left any sales_2/sales_3 rows intact — causing findCachedResult_
       // to concatenate new HTML + stale old chunks, producing worse corruption
       // than the truncation it was trying to fix.
-      saveCachedResult(entry.interactionId, 'sales', newHtml);
+      saveCachedResult_(entry.interactionId, 'sales', newHtml);
 
       // Clear ev2_ CacheService entries so EvalView pages serve the repaired HTML
       // immediately instead of waiting up to 6 hours for the TTL to expire.
@@ -252,6 +279,7 @@ function repairTruncatedSalesEvaluations() {
 
 // Run once from editor to confirm exact Locale column in roster
 function diagnoseRosterColumns() {
+  requireAdmin_();
   var ss    = openSheetWithRetry(ROSTER_SHEET_ID, 'Roster Sheet');
   var sheet = ss.getSheetByName('roster');
   if (!sheet) { Logger.log('roster sheet not found'); return; }
@@ -276,6 +304,7 @@ function diagnoseRosterColumns() {
 // ── One-time: backfill blank Dashboard_Data columns from Analysis sheet HTML ───
 // Run from the editor after pushing the extractTextBlock fix.
 function backfillDashboardData() {
+  requireAdmin_();
   var ss       = getOrCreateSpreadsheet();
   var aSheet   = getOrCreateSheet(ss, ANALYSIS_SHEET);
   var dSheet   = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
@@ -389,7 +418,7 @@ function backfillDashboardData() {
   if (updated > 0) {
     dSheet.getRange(2, 1, dData.length, dHeaders.length).setValues(dData);
     Logger.log('Backfilled ' + updated + ' Dashboard_Data rows');
-    invalidateDashboardCache();
+    invalidateDashboardCache_();
   } else {
     Logger.log('Nothing to backfill — all rows already have data');
   }
@@ -399,6 +428,7 @@ function backfillDashboardData() {
 // Reads cached HTML for each audit, calls AI to extract structured RCA fields,
 // writes them back to Dashboard_Data. Run once from the editor after submission.
 function enrichDashboardData() {
+  requireAdmin_();
   var ss      = getOrCreateSpreadsheet();
   var dSheet  = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
   var logSheet= getOrCreateSheet(ss, AUDIT_LOG_SHEET);
@@ -490,7 +520,7 @@ function enrichDashboardData() {
     if (repeatFromHTML) Logger.log('  Repeat % from HTML: ' + repeatFromHTML + '%');
 
     try {
-      var structured = extractStructuredRCA(html, atype, ref);
+      var structured = extractStructuredRCA_(html, atype, ref);
       // Prefer HTML-extracted repeat % over AI-extracted (AI gets confused by plain text)
       if (repeatFromHTML && structured) structured.repeatPct = repeatFromHTML;
       if (structured) {
@@ -525,7 +555,7 @@ function enrichDashboardData() {
     }
   }
 
-  invalidateDashboardCache();
+  invalidateDashboardCache_();
   Logger.log('=== Enriched ' + enriched + ' rows ===');
 }
 
@@ -533,6 +563,7 @@ function enrichDashboardData() {
 // Run ONCE from the Apps Script editor: open Code.gs → Run → backfillLocaleInDashboard
 // Safe to re-run — only patches rows where Locale is currently blank.
 function backfillLocaleInDashboard() {
+  requireAdmin_();
   var ss    = getOrCreateSpreadsheet();
   var sheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
   var lastRow = sheet.getLastRow();
@@ -557,7 +588,7 @@ function backfillLocaleInDashboard() {
     if (!sapId) { skipped++; continue; }   // no SAP ID to look up
 
     try {
-      var rosterRow = lookupBySapId(sapId);
+      var rosterRow = lookupBySapId_(sapId);
       if (rosterRow && rosterRow.locale) {
         sheet.getRange(i + 2, localeCol).setValue(rosterRow.locale);
         patched++;
@@ -572,7 +603,7 @@ function backfillLocaleInDashboard() {
     }
   }
 
-  invalidateDashboardCache();
+  invalidateDashboardCache_();
   Logger.log('=== backfillLocale done: ' + patched + ' patched, ' + skipped + ' skipped ===');
 }
 
@@ -674,7 +705,7 @@ function extractStructuredRCAFromHTML(html) {
       productOpportunity:metaAttr('product-opportunity').substring(0, 100),
       salesAttempted:    metaAttr('sales-attempted').substring(0, 10),
       callSummaryShort:  callSummary,
-      criticalFlags:     flags.slice(0, 5).join(', ').substring(0, 500),
+      criticalFlags:     flags.slice(0, 5).join(' | ').substring(0, 500),
       repeatPct:         repeatPct,
       smartS:            smartS.substring(0, 300),
       smartM:            smartM.substring(0, 300),
@@ -689,7 +720,7 @@ function extractStructuredRCAFromHTML(html) {
 }
 
 // ── Call AI to extract structured RCA fields from cached HTML ─────────────────
-function extractStructuredRCA(html, analysisType, auditRef) {
+function extractStructuredRCA_(html, analysisType, auditRef) {
   var isSales = (analysisType || '').indexOf('Sales') !== -1;
 
   // Strip HTML to plain text first
@@ -777,10 +808,11 @@ function extractStructuredRCA(html, analysisType, auditRef) {
 // Runs the second AI call in the background and patches the 3 AI-only cells
 // in the Dashboard_Data row for this auditRef. Errors are non-fatal.
 function enrichDashboardRCA(auditRef, analysisType, html) {
+  requireAdmin_();
   try {
     if (!auditRef || !html) return;
 
-    var aiRca = extractStructuredRCA(html, analysisType, auditRef);
+    var aiRca = extractStructuredRCA_(html, analysisType, auditRef);
     if (!aiRca) {
       Logger.log('enrichDashboardRCA: AI returned null for ' + auditRef);
       return;
@@ -790,7 +822,7 @@ function enrichDashboardRCA(auditRef, analysisType, html) {
     var sheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
     if (sheet.getLastRow() < 2) return;
 
-    // Find the row by auditRef using TextFinder (same pattern as findCachedResult)
+    // Find the row by auditRef using TextFinder (same pattern as findCachedResult_)
     var finder  = sheet.getRange('A:A').createTextFinder(auditRef.trim()).matchEntireCell(true);
     var matches = finder.findAll();
     if (!matches || !matches.length) {
@@ -815,7 +847,7 @@ function enrichDashboardRCA(auditRef, analysisType, html) {
     if (prodOppCol  > 0 && aiRca.productOpportunity) sheet.getRange(targetRow, prodOppCol).setValue(aiRca.productOpportunity);
     if (salesAttCol > 0 && aiRca.salesAttempted)     sheet.getRange(targetRow, salesAttCol).setValue(aiRca.salesAttempted);
 
-    invalidateDashboardCache();
+    invalidateDashboardCache_();
     Logger.log('enrichDashboardRCA: patched row ' + targetRow + ' for ' + auditRef);
   } catch(e) {
     Logger.log('enrichDashboardRCA error (non-fatal): ' + e);
@@ -823,7 +855,7 @@ function enrichDashboardRCA(auditRef, analysisType, html) {
 }
 
 // ── Translate a transcript to English using FuelIX ───────────────────────────
-function translateTranscriptText(text) {
+function translateTranscriptText_(text) {
   if (!text || !text.trim()) return null;
   var prompt =
     'Translate the following call center transcript to English.\n' +
@@ -840,7 +872,7 @@ function translateTranscriptText(text) {
     stream:     false,
     max_tokens: 8000
   };
-  // deadline capped at 55s (not 120s) because translateTranscriptText runs inside
+  // deadline capped at 55s (not 120s) because translateTranscriptText_ runs inside
   // submitTranscript BEFORE the main AI analysis call (deadline 270s). The GAS hard
   // execution limit is 360s. Budget: 6s lock + 55s translate + 270s AI + ~20s I/O = 351s.
   // A 120s translate deadline would leave only 360-120-6-20 = 214s for AI analysis,
@@ -855,14 +887,14 @@ function translateTranscriptText(text) {
   try {
     var response = UrlFetchApp.fetch(FUELIX_CONFIG.baseUrl + '/v1/chat/completions', options);
     if (response.getResponseCode() !== 200) {
-      Logger.log('translateTranscriptText HTTP error: ' + response.getResponseCode());
+      Logger.log('translateTranscriptText_ HTTP error: ' + response.getResponseCode());
       return null;
     }
     var content = JSON.parse(response.getContentText()).choices[0].message.content.trim();
     Logger.log('Translation complete: ' + content.length + ' chars (original: ' + text.length + ')');
     return content || null;
   } catch(e) {
-    Logger.log('translateTranscriptText error: ' + e);
+    Logger.log('translateTranscriptText_ error: ' + e);
     return null;
   }
 }
@@ -899,6 +931,7 @@ function synthesizeSpeech(text) {
 // ── Admin: run once from GAS editor to fix manually-typed locale values ──
 // Fixes bad Locale values in both Dashboard_Data and Audit_Log sheets.
 function fixTruncatedLocale() {
+  requireAdmin_();
   var FIXES = [
     { bad: 'TI M',   good: 'TI Morocco (CAS)' },
     { bad: 'TI Mo',  good: 'TI Morocco (CAS)' },
@@ -912,7 +945,7 @@ function fixTruncatedLocale() {
   total += _fixLocaleInSheet(ss, DASHBOARD_DATA_SHEET, FIXES);
   total += _fixLocaleInSheet(ss, AUDIT_LOG_SHEET,      FIXES);
 
-  if (total > 0) invalidateDashboardCache();
+  if (total > 0) invalidateDashboardCache_();
   Logger.log('=== fixTruncatedLocale done: ' + total + ' patched across both sheets ===');
 }
 
@@ -950,6 +983,7 @@ function _fixLocaleInSheet(ss, sheetName, fixes) {
 // and appends 5 new SMART columns (S/M/A/R/T). Safe to run on a live sheet —
 // it only adds/renames header cells and does not touch data rows.
 function updateSpreadsheetSMARTFormat() {
+  requireAdmin_();
   var ss     = getOrCreateSpreadsheet();
   var dSheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
   if (dSheet.getLastRow() < 1) { Logger.log('Sheet is empty — nothing to update'); return; }
@@ -1004,6 +1038,7 @@ function updateSpreadsheetSMARTFormat() {
 
 // ── Run ONCE: insert 'Sales Attempted' column after 'Product Opportunity' ────────
 function addSalesAttemptedColumn() {
+  requireAdmin_();
   var ss     = getOrCreateSpreadsheet();
   var dSheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
   if (dSheet.getLastRow() < 1) { Logger.log('Sheet is empty — nothing to update'); return; }
@@ -1068,6 +1103,7 @@ function getSalesAttemptedCounts() {
 
 // ── Run once from GAS editor to verify Sales Attempted column mapping ─────────
 function testSalesAttempted() {
+  requireAdmin_();
   var ss     = getOrCreateSpreadsheet();
   var dSheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
   var lastCol = dSheet.getLastColumn();
@@ -1092,6 +1128,7 @@ function testSalesAttempted() {
 // ── Backfill VTID into Audit_Log from Dashboard_Data ─────────────────────────
 // ── Backfill VTID in Dashboard_Data from AT Data GCP using SAP ID ────────────
 function backfillVTIDFromATData() {
+  requireAdmin_();
   var ss     = getOrCreateSpreadsheet();
   var dSheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
 
@@ -1146,7 +1183,7 @@ function backfillVTIDFromATData() {
       updated++;
     }
   });
-  invalidateDashboardCache();
+  invalidateDashboardCache_();
   Logger.log('=== Updated VTID for ' + updated + ' Dashboard_Data rows ===');
 }
 
@@ -1156,6 +1193,7 @@ function dbUniqServer(arr) {
 }
 
 function backfillVTIDToAuditLog() {
+  requireAdmin_();
   var ss       = getOrCreateSpreadsheet();
   var logSheet = getOrCreateSheet(ss, AUDIT_LOG_SHEET);
   var dSheet   = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
@@ -1198,11 +1236,12 @@ function backfillVTIDToAuditLog() {
       updated++;
     }
   });
-  invalidateDashboardCache();
+  invalidateDashboardCache_();
   Logger.log('=== Backfilled VTID for ' + updated + ' Audit_Log rows ===');
 }
 
 function fixRepeatProjectionPct() {
+  requireAdmin_();
   var ss      = getOrCreateSpreadsheet();
   var dSheet  = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
   var logSheet= getOrCreateSheet(ss, AUDIT_LOG_SHEET);
@@ -1282,11 +1321,12 @@ function fixRepeatProjectionPct() {
     }
   });
 
-  invalidateDashboardCache();
+  invalidateDashboardCache_();
   Logger.log('=== Fixed Repeat Projection % for ' + fixed + ' rows ===');
 }
 
 function addDashboardColumnNotes() {
+  requireAdmin_();
   var ss     = getOrCreateSpreadsheet();
   var sheet  = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
@@ -1320,12 +1360,13 @@ function addDashboardColumnNotes() {
 
 // ── Run from editor — shows recent errors from Stackdriver logs ───────────────
 function showRecentErrors() {
+  requireAdmin_();
   try {
     // Test getRosterBySapId directly to reproduce the error
     Logger.log('=== Testing getRosterBySapId ===');
     var testSap = '2007888';
     var start = new Date();
-    var result = lookupBySapId(testSap);
+    var result = lookupBySapId_(testSap);
     var elapsed = new Date() - start;
     Logger.log('Result: ' + JSON.stringify(result));
     Logger.log('Time taken: ' + elapsed + 'ms');
@@ -1352,6 +1393,7 @@ function showRecentErrors() {
 }
 
 function diagnoseFCRDashboard() {
+  requireAdmin_();
   var SAP_ID = '2007888';
   var ss     = openSheetWithRetry(FCR_DASHBOARD_SS_ID, 'Main Analyzer Spreadsheet');
   var sheets = ss.getSheets();
@@ -1377,11 +1419,12 @@ function diagnoseFCRDashboard() {
   });
 
   Logger.log('\n=== FCR lookup for SAP: ' + SAP_ID + ' ===');
-  var result = lookupFromFCRDashboard(SAP_ID, Number(SAP_ID));
+  var result = lookupFromFCRDashboard_(SAP_ID, Number(SAP_ID));
   Logger.log('Result: ' + JSON.stringify(result));
 }
 
 function diagnoseATDataRow() {
+  requireAdmin_();
   var SAP_ID = '2007888';
   var ss     = openSheetWithRetry(AT_DATA_GCP_SS_ID, 'AT Data GCP / Trainee Roster Sheet');
   var sheet  = ss.getSheetByName('Roster') || ss.getSheetByName('roster') || ss.getSheets()[0];
@@ -1409,6 +1452,7 @@ function diagnoseATDataRow() {
 }
 
 function testLookupDirect() {
+  requireAdmin_();
   var SAP_ID     = '2007888';
   var AGENT_NAME = 'James Collado';
 
@@ -1440,12 +1484,12 @@ function testLookupDirect() {
 
   // 2. Test VTID lookup with the typed SAP ID
   Logger.log('--- VTID lookup for SAP ID: ' + SAP_ID + ' ---');
-  var vtid = lookupVTID(SAP_ID);
+  var vtid = lookupVTID_(SAP_ID);
   Logger.log('VTID result: [' + vtid + ']');
 
   // 3. Full lookup
-  Logger.log('--- Full lookupBySapId for: ' + SAP_ID + ' ---');
-  var result = lookupBySapId(SAP_ID);
+  Logger.log('--- Full lookupBySapId_ for: ' + SAP_ID + ' ---');
+  var result = lookupBySapId_(SAP_ID);
   Logger.log('Result: ' + JSON.stringify(result));
 
   if (!result) {
@@ -1479,6 +1523,7 @@ function testLookupDirect() {
 }
 
 function diagnoseSapIdRow() {
+  requireAdmin_();
   var SAP_ID = '2007888';   // <-- change this to test any SAP ID
 
   var ss    = openSheetWithRetry(ROSTER_SHEET_ID, 'Roster Sheet');
@@ -1510,6 +1555,7 @@ function diagnoseSapIdRow() {
 
 // ── Run this to see AT Data GCP columns ──────────────────────────────────────
 function diagnoseATDataForAgent() {
+  requireAdmin_();
   var AGENT_NAME = 'James Collado';  // <-- change to test any agent
 
   var ss    = openSheetWithRetry(AT_DATA_GCP_SS_ID, 'AT Data GCP / Trainee Roster Sheet');
@@ -1540,6 +1586,7 @@ function diagnoseATDataForAgent() {
 // ── Run to clean ALL HTML from every cell in the Analysis sheet ───────────────
 // Scans every column in every row — catches any analysis type, any column order
 function cleanAnalysisSheet() {
+  requireAdmin_();
   var ss      = getOrCreateSpreadsheet();
   var sheet   = getOrCreateSheet(ss, ANALYSIS_SHEET);
   var lastRow = sheet.getLastRow();
@@ -1585,7 +1632,7 @@ function cleanAnalysisSheet() {
 //   Column B: Name
 //   Column C: Role  ← filter for exactly "Admin/Dev"
 //
-// Usage: call notifyAdmins(formData, auditRef) after each submitTranscript
+// Usage: call notifyAdmins_(formData, auditRef) after each submitTranscript
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -1596,23 +1643,26 @@ function cleanAnalysisSheet() {
  */
 var _rosterRecipientsInMemory = null;
 
-function getRecipientsFromRoster(roleFilter) {
+function getRecipientsFromRoster_(roleFilter) {
   try {
     var allRows = null;
+    var source  = 'sheet';   // where this call's rows came from, for the log line below
 
     if (_rosterRecipientsInMemory) {
       allRows = _rosterRecipientsInMemory;
+      source  = 'memory';
     } else {
       var cache    = CacheService.getScriptCache();
-      var cacheKey = 'audit_roster_rows_v2'; // bumped to bust stale cache after Trainer role added
+      var cacheKey = 'audit_roster_rows_v3'; // v3: v2 could hold a stale list that matched nobody (sendAuditEmail "could not resolve recipients")
       var cached   = cache.get(cacheKey);
       if (cached) {
         try { allRows = JSON.parse(cached); } catch(e) {}
+        if (allRows) source = 'cache';
       }
       if (!allRows) {
         var ss    = openSheetWithRetry(AUDIT_TRACKING_SS_ID, 'Main Analyzer Spreadsheet');
         var sheet = ss.getSheetByName('Roster') || ss.getSheetByName('roster');
-        if (!sheet) { Logger.log('getRecipientsFromRoster: Roster sheet not found'); return []; }
+        if (!sheet) { Logger.log('getRecipientsFromRoster_: Roster sheet not found'); return []; }
         var data = sheet.getDataRange().getValues();
         if (data.length < 2) return [];
         var hdrs = data[0];
@@ -1625,6 +1675,14 @@ function getRecipientsFromRoster(roleFilter) {
           if (hl === 'supervisor')                                     supCol      = i;
           if (hl === 'supervisor email' || hl === 'supervisoremail')   supEmailCol = i;
         });
+        // Say WHICH tab was read and whether the columns were found. A tab of the
+        // same name with other columns reads as "nobody has this role", silently.
+        Logger.log('getRecipientsFromRoster_: read tab "' + sheet.getName() + '" (' + (data.length - 1) +
+                   ' rows); name col=' + nameCol + ', role col=' + roleCol + ', email col=' + emailCol +
+                   '; headers=' + JSON.stringify(hdrs.slice(0, 8)));
+        if (roleCol === -1 || emailCol === -1) {
+          Logger.log('getRecipientsFromRoster_ WARNING: this tab has no "Role" and/or "Email Address" column, so no recipient can be found in it.');
+        }
         allRows = data.slice(1).map(function(row) {
           return {
             name:            nameCol     > -1 ? (row[nameCol]     || '').toString().trim() : '',
@@ -1653,10 +1711,13 @@ function getRecipientsFromRoster(roleFilter) {
       seenEmails[key] = true;
       return true;
     });
-    Logger.log('getRecipientsFromRoster("' + roleFilter + '"): ' + results.length + ' found (after dedup)');
+    var roleCounts = {};
+    allRows.forEach(function(r) { var k = r.role || '(blank)'; roleCounts[k] = (roleCounts[k] || 0) + 1; });
+    Logger.log('getRecipientsFromRoster_("' + roleFilter + '"): ' + results.length + ' found (after dedup); source=' + source +
+               '; rows=' + allRows.length + '; roles present=' + JSON.stringify(roleCounts));
     return results;
   } catch(e) {
-    Logger.log('getRecipientsFromRoster error: ' + e);
+    Logger.log('getRecipientsFromRoster_ error: ' + e);
     return [];
   }
 }
@@ -1664,8 +1725,8 @@ function getRecipientsFromRoster(roleFilter) {
 /**
  * Returns Admin/Dev recipients from the Audit Tracking SS Roster tab.
  */
-function getAdminRecipients() {
-  return getRecipientsFromRoster('Admin/Dev');
+function getAdminRecipients_() {
+  return getRecipientsFromRoster_('Admin/Dev');
 }
 
 /**
@@ -1676,9 +1737,9 @@ function getAdminRecipients() {
  * Tenured  (SAP ID not in trainee roster):
  *   Team Member + Team Leader Email + OM Email + QA Observer
  *
- * Admin/Dev is intentionally excluded — notifyAdmins() handles that separately.
+ * Admin/Dev is intentionally excluded — notifyAdmins_() handles that separately.
  */
-function buildAuditRecipients(formData) {
+function buildAuditRecipients_(formData) {
   var agentName = (formData.participant || '').trim();
   var sapId     = (formData.sapId       || '').trim();
 
@@ -1688,8 +1749,8 @@ function buildAuditRecipients(formData) {
   //
   // Guard: if sapId is blank the trainee check returns null immediately.
   // Attempt a name→SAP reverse lookup so a transcript-parsed name still routes correctly.
-  var resolvedSapId = sapId || (agentName ? lookupSapId(agentName) : '');
-  var traineeInfo = getTraineeInfo(resolvedSapId);
+  var resolvedSapId = sapId || (agentName ? lookupSapId_(agentName) : '');
+  var traineeInfo = getTraineeInfo_(resolvedSapId);
   var teamMemberEmail, recipientB, recipientC;
 
   if (traineeInfo) {
@@ -1698,31 +1759,37 @@ function buildAuditRecipients(formData) {
     teamMemberEmail = traineeInfo.username ? traineeInfo.username + '@telus.com'
                     : (formData.agentEmail || '').trim();
     if (!teamMemberEmail) {
-      Logger.log('buildAuditRecipients [trainee WARNING]: no email for ' + agentName +
+      Logger.log('buildAuditRecipients_ [trainee WARNING]: no email for ' + agentName +
                  ' (SAP ' + resolvedSapId + ') — username field is blank in trainee roster.' +
                  ' Trainee will NOT receive the audit email.');
     }
 
-    var trainerInfo = getTrainerInfo(traineeInfo.facilitator);
+    var trainerInfo = getTrainerInfo_(traineeInfo.facilitator);
     if (!trainerInfo) {
-      Logger.log('buildAuditRecipients [trainee WARNING]: facilitator "' + traineeInfo.facilitator +
+      Logger.log('buildAuditRecipients_ [trainee WARNING]: facilitator "' + traineeInfo.facilitator +
                  '" not found in Trainer Lookup. Trainer and Supervisor will NOT receive the audit email.' +
                  ' Check spelling in trainee roster vs trainer lookup sheet.');
     }
     recipientB = trainerInfo ? trainerInfo.trainerEmail    : '';
     recipientC = trainerInfo ? trainerInfo.supervisorEmail : '';
-    Logger.log('buildAuditRecipients [trainee]: ' + agentName +
+    Logger.log('buildAuditRecipients_ [trainee]: ' + agentName +
                ' | facilitator=' + traineeInfo.facilitator +
                ' | trainer='    + recipientB +
                ' | supervisor=' + recipientC);
   } else {
-    // Tenured — look up email from regular agent roster, TL + OM from formData.
-    teamMemberEmail = lookupAgentEmail(agentName)
-                    || resolveEmail(agentName)
-                    || (formData.agentEmail || '').trim();
-    recipientB = resolveEmail(formData.teamLeader || '');
-    recipientC = resolveEmail(formData.opsManager || '');
-    Logger.log('buildAuditRecipients [tenured]: ' + agentName +
+    // Tenured — TL + OM from formData. The agent's address is resolved by who
+    // the SAP ID IDENTIFIES, not by what they are called: a name can be shared by
+    // two roster agents, and the old name-first order sent one of them the
+    // other's evaluation. Order: the roster row for the SAP ID, then the address
+    // the SAP lookup showed the analyst, then the name — which only resolves
+    // when exactly one person has it (see _getAgentEmailMap).
+    teamMemberEmail = _agentEmailForSap_(sapId)
+                    || (formData.agentEmail || '').trim()
+                    || lookupAgentEmail_(agentName)
+                    || resolveEmail_(agentName);
+    recipientB = resolveEmail_(formData.teamLeader || '');
+    recipientC = resolveEmail_(formData.opsManager || '');
+    Logger.log('buildAuditRecipients_ [tenured]: ' + agentName +
                ' | TL=' + recipientB + ' | OM=' + recipientC);
   }
 
@@ -1730,9 +1797,9 @@ function buildAuditRecipients(formData) {
   var observerName = (formData.observerName  || '').trim();
   var qaEmail      = (formData.observerEmail || '').trim();
   if (!qaEmail && observerName) {
-    var qaRows  = getRecipientsFromRoster(QA_ROLE);
+    var qaRows  = getRecipientsFromRoster_(QA_ROLE);
     var qaMatch = qaRows.filter(function(r) { return r.name.toLowerCase() === observerName.toLowerCase(); });
-    qaEmail = qaMatch.length ? qaMatch[0].email : resolveEmail(observerName);
+    qaEmail = qaMatch.length ? qaMatch[0].email : resolveEmail_(observerName);
   }
 
   // ── Deduplicate + validate ────────────────────────────────────────────────
@@ -1754,7 +1821,7 @@ function _getAgentEmailMap() {
   if (_agentEmailMapInMemory) return _agentEmailMapInMemory;
   try {
     var cache    = CacheService.getScriptCache();
-    var cacheKey = 'agent_email_map_v2';
+    var cacheKey = 'agent_email_map_v3';   // v3: shared names are null, not last-row-wins
     var cached   = cache.get(cacheKey);
     if (cached) {
       try { _agentEmailMapInMemory = JSON.parse(cached); return _agentEmailMapInMemory; } catch(e) {}
@@ -1776,11 +1843,16 @@ function _getAgentEmailMap() {
       _agentEmailMapInMemory = {};
       return {};
     }
+    // A name shared by people with DIFFERENT addresses is stored as null: it
+    // identifies nobody, and guessing sends one person the other's evaluation.
+    // The same address listed twice is one person and is kept.
     var map = {};
     data.slice(1).forEach(function(row) {
       var name  = (row[nameCol]  || '').toString().trim().toLowerCase();
       var email = (row[emailCol] || '').toString().trim();
-      if (name && email) map[name] = email;
+      if (!name || !email) return;
+      if (!Object.prototype.hasOwnProperty.call(map, name)) { map[name] = email; return; }
+      if (map[name] !== null && map[name].toLowerCase() !== email.toLowerCase()) map[name] = null;
     });
     var _em = JSON.stringify(map);
     if (_em.length <= 99000) { try { cache.put(cacheKey, _em, 2 * 60 * 60); } catch(e) {} }
@@ -1793,10 +1865,18 @@ function _getAgentEmailMap() {
   }
 }
 
-function lookupAgentEmail(participantName) {
+function lookupAgentEmail_(participantName) {
   if (!participantName) return '';
   var map = _getAgentEmailMap();
-  return map[participantName.trim().toLowerCase()] || '';
+  return map[participantName.trim().toLowerCase()] || '';   // null (shared name) -> ''
+}
+
+// The address on the roster row for this exact SAP ID, or ''. Unlike the name
+// map this cannot land on a namesake.
+function _agentEmailForSap_(sapId) {
+  if (!sapId) return '';
+  var hit = _findRosterRow_(ROSTER_COL_SAP_ID, sapId);
+  return hit ? (hit.email || '') : '';
 }
 
 /**
@@ -1806,11 +1886,11 @@ function lookupAgentEmail(participantName) {
  * @param {Object} formData - The submitted form data
  * @param {string} auditRef - The generated audit reference number
  */
-function notifyAdmins(formData, auditRef) {
+function notifyAdmins_(formData, auditRef) {
   try {
-    var recipients = getAdminRecipients();
+    var recipients = getAdminRecipients_();
     if (!recipients.length) {
-      Logger.log('notifyAdmins: No Admin/Dev recipients found — skipping');
+      Logger.log('notifyAdmins_: No Admin/Dev recipients found — skipping');
       return;
     }
 
@@ -1820,11 +1900,11 @@ function notifyAdmins(formData, auditRef) {
       var quotaLeft = MailApp.getRemainingDailyQuota();
       var needed    = recipients.length + 50; // admin list + safety buffer
       if (quotaLeft < needed) {
-        Logger.log('notifyAdmins: quota too low (' + quotaLeft + ' remaining, need ' + needed + ') — skipping to protect main email quota');
+        Logger.log('notifyAdmins_: quota too low (' + quotaLeft + ' remaining, need ' + needed + ') — skipping to protect main email quota');
         return;
       }
     } catch(qe) {
-      Logger.log('notifyAdmins: quota check failed — ' + qe + ' — proceeding anyway');
+      Logger.log('notifyAdmins_: quota check failed — ' + qe + ' — proceeding anyway');
     }
 
     var agentName     = formData.participant  || 'Unknown Agent';
@@ -1892,7 +1972,7 @@ function notifyAdmins(formData, auditRef) {
     }
 
   } catch(e) {
-    Logger.log('notifyAdmins error: ' + e.toString());
+    Logger.log('notifyAdmins_ error: ' + e.toString());
     // Non-fatal — don't break the main submission flow
   }
 }
@@ -1909,6 +1989,7 @@ function adminRow(label, value) {
 
 /** Run from editor to see exactly what's in the Roster tab of the main spreadsheet */
 function diagnoseRosterTabInMainSS() {
+  requireAdmin_();
   var ss    = getOrCreateSpreadsheet();
   var sheet = ss.getSheetByName('Roster') || ss.getSheetByName('roster');
   if (!sheet) { Logger.log('No Roster tab found in main spreadsheet'); return; }
@@ -1936,7 +2017,8 @@ function diagnoseRosterTabInMainSS() {
 
 /** One-time test: run from editor to verify recipients and email content */
 function testAdminNotification() {
-  var recipients = getAdminRecipients();
+  requireAdmin_();
+  var recipients = getAdminRecipients_();
   Logger.log('=== Admin/Dev recipients ===');
   if (!recipients.length) {
     Logger.log('NONE FOUND — check that the Roster sheet has a "Role" column with value "Admin/Dev"');
@@ -1947,7 +2029,7 @@ function testAdminNotification() {
   });
 
   // Send a test email using sample data
-  notifyAdmins({
+  notifyAdmins_({
     participant:    'Test Agent',
     sapId:          '9999999',
     vtid:           'VTI-TEST-001',
@@ -1968,6 +2050,7 @@ function testAdminNotification() {
 
 /** Run from GAS editor to verify agent email lookup is working */
 function testEmailLookup() {
+  requireAdmin_();
   // ── 1. Clear stale cache so we force a fresh sheet read ───────────────────
   CacheService.getScriptCache().remove('agent_email_map_v1');
   CacheService.getScriptCache().remove('agent_email_map_v2');
@@ -1993,10 +2076,10 @@ function testEmailLookup() {
 
   // ── 4. Test a specific name (change this to a real agent name) ────────────
   var testName = 'Harpreet Singh'; // ← change to actual agent name to test
-  var result   = lookupAgentEmail(testName);
-  Logger.log('lookupAgentEmail("' + testName + '"): "' + result + '"');
-  var result2  = resolveEmail(testName);
-  Logger.log('resolveEmail("' + testName + '"): "' + result2 + '"');
+  var result   = lookupAgentEmail_(testName);
+  Logger.log('lookupAgentEmail_("' + testName + '"): "' + result + '"');
+  var result2  = resolveEmail_(testName);
+  Logger.log('resolveEmail_("' + testName + '"): "' + result2 + '"');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2005,16 +2088,25 @@ function testEmailLookup() {
 // Safe to run multiple times — it never deletes data, only reorders columns.
 // ─────────────────────────────────────────────────────────────────────────────
 function repairSheetHeaders() {
+  requireAdmin_();
   var ss = getOrCreateSpreadsheet();
   Logger.log('=== Starting sheet header repair ===');
 
-  _repairSheet(ss, TRANSCRIPTS_SHEET,    TRANSCRIPTS_HEADERS);
-  _repairSheet(ss, ANALYSIS_SHEET,       ANALYSIS_HEADERS);
-  _repairSheet(ss, DASHBOARD_DATA_SHEET, DASHBOARD_HEADERS);
-  _repairSheet(ss, AUDIT_LOG_SHEET,      AUDIT_LOG_HEADERS);
+  // The repair clears each sheet and writes it again, so no audit may be saved in between (it would be wiped): take the same
+  // script lock the audit save takes, and refuse to run without it.
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    _repairSheet(ss, TRANSCRIPTS_SHEET,    TRANSCRIPTS_HEADERS);
+    _repairSheet(ss, ANALYSIS_SHEET,       ANALYSIS_HEADERS);
+    _repairSheet(ss, DASHBOARD_DATA_SHEET, DASHBOARD_HEADERS);
+    _repairSheet(ss, AUDIT_LOG_SHEET,      AUDIT_LOG_HEADERS);
+  } finally {
+    try { lock.releaseLock(); } catch (le) {}
+  }
 
   // Invalidate dashboard cache so next open reflects repaired data
-  invalidateDashboardCache();
+  invalidateDashboardCache_();
 
   Logger.log('=== Repair complete ===');
 }
@@ -2042,7 +2134,8 @@ function _repairSheet(ss, sheetName, correctHeaders) {
 
   // Check if headers already match
   var alreadyCorrect = correctHeaders.every(function(h, i) { return currentHdr[i] === h; });
-  if (alreadyCorrect && currentHdr.length === correctHeaders.length) {
+  var extraAfter = currentHdr.slice(correctHeaders.length).some(function(h) { return h; });
+  if (alreadyCorrect && (currentHdr.length === correctHeaders.length || extraAfter)) {   // known columns first: extra ones after are kept as they are
     Logger.log(sheetName + ': headers already correct, skipping');
     return;
   }
@@ -2054,27 +2147,39 @@ function _repairSheet(ss, sheetName, correctHeaders) {
   var currentIndexOf = {};
   currentHdr.forEach(function(h, i) { if (h) currentIndexOf[h] = i; });
 
-  // Reorder each data row to match correct headers
+  // A column the code does not know (an old one such as Recommendations, or one somebody added) is KEPT after the known ones, with
+  // its header and data. The repair used to drop it for good. A column with no header is kept only when it holds something.
   var dataRows   = allData.slice(1); // skip existing header row
+  var known = {}; correctHeaders.forEach(function(h) { known[h] = true; });
+  var extraIdx = [];
+  currentHdr.forEach(function(h, i) {
+    if (h && known[h] && currentIndexOf[h] === i) return;              // a known column, used in place
+    if (h && known[h]) return;                                          // a repeated known header: the later copy is not kept twice
+    var holdsData = dataRows.some(function(row) { return i < row.length && String(row[i] === null || row[i] === undefined ? '' : row[i]).trim() !== ''; });
+    if (h || holdsData) extraIdx.push(i);
+  });
+  var allHeaders = correctHeaders.concat(extraIdx.map(function(i) { return currentHdr[i]; }));
   var reordered  = dataRows.map(function(row) {
-    return correctHeaders.map(function(h) {
+    var known = correctHeaders.map(function(h) {
       var idx = currentIndexOf[h];
       return (idx !== undefined && idx < row.length) ? row[idx] : '';
     });
+    return known.concat(extraIdx.map(function(i) { return i < row.length ? row[i] : ''; }));
   });
+  if (extraIdx.length) Logger.log(sheetName + ': kept ' + extraIdx.length + ' extra column(s) after the standard ones: ' + extraIdx.map(function(i) { return currentHdr[i] || '(no header)'; }).join(', '));
 
   // Clear the sheet and rewrite cleanly
   sheet.clearContents();
 
   // Write header row with styling
-  _writeHeaderRow(sheet, correctHeaders);
+  _writeHeaderRow(sheet, allHeaders);
 
   // Write data rows
   if (reordered.length > 0) {
-    sheet.getRange(2, 1, reordered.length, correctHeaders.length).setValues(reordered);
+    sheet.getRange(2, 1, reordered.length, allHeaders.length).setValues(reordered);
   }
 
-  Logger.log(sheetName + ': repaired — ' + reordered.length + ' data rows rewritten with ' + correctHeaders.length + ' columns');
+  Logger.log(sheetName + ': repaired — ' + reordered.length + ' data rows rewritten with ' + allHeaders.length + ' columns');
 }
 
 function _writeHeaderRow(sheet, headers) {
@@ -2087,11 +2192,19 @@ function _writeHeaderRow(sheet, headers) {
   try { sheet.autoResizeColumns(1, headers.length); } catch(e) {}
 }
 
+function isValidAuditRef_(ref) {
+  return typeof ref === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(ref);
+}
+
 function doGet(e) {
   var page = e && e.parameter && e.parameter.page;
-  if (page === 'dashboard') return doGetDashboard();
+  if (page === 'dashboard') return doGetDashboard_();
   if (page === 'eval') {
     var ref = (e && e.parameter && e.parameter.ref) || '';
+    // An audit ref is letters, digits, dot, underscore and hyphen (NHA-20261012-0001,
+    // NHA-20261012-0001-D2). Anything else is not a ref: it is printed into the page
+    // and sent to the lookup, so it is refused rather than escaped and trusted.
+    if (!isValidAuditRef_(ref)) ref = '';
     var tmpl = HtmlService.createTemplateFromFile('EvalView');
     tmpl.auditRef = ref;
     tmpl.preloadedData = 'null';
@@ -2099,8 +2212,11 @@ function doGet(e) {
       try {
         var evalData = getEvalViewData(ref);
         if (evalData && evalData.success) {
-          // Escape </script> to prevent HTML parser from closing the JS block early
-          tmpl.preloadedData = JSON.stringify(evalData).replace(/<\/script/gi, '<\\/script');
+          // Escape every "<" (not just "</script"): "<!--<script>" also confuses a
+          // script block. \u003c is a valid JSON string escape, so the data is unchanged.
+          tmpl.preloadedData = JSON.stringify(evalData)
+            .replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026')
+            .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
         }
       } catch(er) { Logger.log('EvalView preload failed: ' + er); }
     }
@@ -2159,47 +2275,19 @@ function getEvalViewData(auditRef) {
       }
     }
 
-    // 3. Cache sheet → AI HTML (keyed by Interaction ID)
-    // Read directly from the sheet — bypasses CacheService which truncates at 95KB
+    // 3. Cache sheet → AI HTML, keyed by Interaction ID + analysis type + the SAP
+    // ID of THIS audit's agent (several agents can share one Interaction ID).
+    // findCachedResult_ assembles continuation chunks and never returns another
+    // agent's evaluation.
     var interactionId = meta['Interaction ID'] || dash['Interaction ID'] || '';
     var evalHtml = '';
     if (interactionId) {
       var rawType = (meta['Analysis Type'] || dash['Analysis Type'] || '').toLowerCase();
       var normalizedType = rawType.indexOf('sales') !== -1 ? 'sales' : 'repeats';
+      var evalSapId = meta['SAP ID'] || dash['SAP ID'] || '';
       try {
-        var cSheet   = getOrCreateSheet(ss, CACHE_SHEET);
-        var cfinder  = cSheet.getRange('A:A').createTextFinder(interactionId.trim()).matchEntireCell(true);
-        var cmatches = cfinder.findAll();
-        for (var ci = 0; ci < cmatches.length; ci++) {
-          var crow  = cmatches[ci].getRow();
-          if (crow < 2) continue;
-          var cdata = cSheet.getRange(crow, 1, 1, 4).getValues()[0];
-          var ctype = (cdata[1] || '').toString().trim().toLowerCase();
-          if (ctype === normalizedType) {
-            var chtml = cdata[3] ? cdata[3].toString() : '';
-            if (!chtml) break;
-            // Assemble continuation chunks (sales_2, repeats_2, etc.)
-            var ckNum = 2;
-            while (true) {
-              var ckType = normalizedType + '_' + ckNum;
-              var ckFound = false;
-              for (var ck = 0; ck < cmatches.length; ck++) {
-                var ckRow  = cmatches[ck].getRow();
-                if (ckRow < 2) continue;
-                var ckData = cSheet.getRange(ckRow, 1, 1, 4).getValues()[0];
-                if ((ckData[1] || '').toString().trim().toLowerCase() === ckType) {
-                  chtml += (ckData[3] || '').toString();
-                  ckFound = true;
-                  break;
-                }
-              }
-              if (!ckFound) break;
-              ckNum++;
-            }
-            evalHtml = sharedCSS() + fixBadgeClasses(chtml);
-            break;
-          }
-        }
+        var chtml = findCachedResult_(interactionId, normalizedType, evalSapId);
+        if (chtml) evalHtml = sharedCSS() + fixBadgeClasses(chtml);
       } catch(ce) { Logger.log('Cache sheet read error: ' + ce); }
     }
 
@@ -2216,7 +2304,10 @@ function getEvalViewData(auditRef) {
           recent.push({
             ref:  rRef,
             date: (r[logHeaders2.indexOf('Submitted At')] || '').toString().substring(0,10),
-            ban:  (r[logHeaders2.indexOf('Interaction ID')] || '').toString()
+            ban:  (r[logHeaders2.indexOf('Interaction ID')] || '').toString(),
+            // EvalView.html reads these two names (it showed "—" and "Repeats" for every row before)
+            interactionId: (r[logHeaders2.indexOf('Interaction ID')] || '').toString(),
+            analysisType:  (r[logHeaders2.indexOf('Analysis Type')] || '').toString()
           });
         }
       });
@@ -2239,7 +2330,7 @@ function getEvalViewData(auditRef) {
     // Cache for 6 hours so repeat visits (and doGet injection) skip sheet reads
     try {
       var resultJson = JSON.stringify(result);
-      if (resultJson.length < 90000) {
+      if (evalHtml && resultJson.length < 90000) {   // not while the report is still being processed
         sc.put(evKey, resultJson, 21600);
       }
     } catch(ce) {}
@@ -2399,7 +2490,7 @@ function extractTextBlock(html, keyword) {
     }
 
     if (kw.indexOf('flag') !== -1) {
-      var flagTitles = joinMatches(html, /<div[^>]*ai-flag-title[^>]*>[\s\S]*?<\/div>/gi, ', ');
+      var flagTitles = joinMatches(html, /<div[^>]*ai-flag-title[^>]*>[\s\S]*?<\/div>/gi, ' | ');
       if (flagTitles) return flagTitles.substring(0, 500);
     }
 
@@ -2467,7 +2558,7 @@ function extractTextBlock(html, keyword) {
   } catch(e) { Logger.log('extractTextBlock error: ' + e); return ''; }
 }
 
-function getSapIdForParticipant(name) { return lookupSapId(name); }
+function getSapIdForParticipant(name) { return lookupSapId_(name); }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AI ANALYTICS ENGINE
@@ -2481,6 +2572,9 @@ function getSapIdForParticipant(name) { return lookupSapId(name); }
  */
 function getAIAnalytics(rows, filters, analysisType) {
   try {
+    // The page sends 'sales' or 'repeats'. Anything else would be written to the AI_Analytics sheet as it came (a text that starts with =
+    // would run as a formula there), so it is reduced to one of the two.
+    analysisType = analysisType === 'sales' ? 'sales' : 'repeats';
     if (!rows || !rows.length) {
       return { success: false, error: 'No data to analyze. Apply filters that return at least 1 record.' };
     }
@@ -2491,7 +2585,7 @@ function getAIAnalytics(rows, filters, analysisType) {
     ).substring(0, 250);
 
     // Check sheet cache (lasts 24h)
-    var cached = readAnalyticsCache(cacheKey);
+    var cached = readAnalyticsCache_(cacheKey);
     if (cached) {
       Logger.log('AI Analytics cache HIT');
       return { success: true, html: cached.html, fromCache: true, generatedAt: cached.generatedAt };
@@ -2500,10 +2594,10 @@ function getAIAnalytics(rows, filters, analysisType) {
     Logger.log('AI Analytics cache MISS — calling AI for ' + rows.length + ' rows');
 
     // Build context summary from rows
-    var context = buildAnalyticsContext(rows, filters, analysisType);
+    var context = buildAnalyticsContext_(rows, filters, analysisType);
 
     // Call AI
-    var briefingJson = callAIForAnalytics(context, analysisType);
+    var briefingJson = callAIForAnalytics_(context, analysisType);
     if (!briefingJson) return { success: false, error: 'AI did not return a valid response.' };
 
     // Render to HTML
@@ -2511,7 +2605,7 @@ function getAIAnalytics(rows, filters, analysisType) {
 
     // Cache result
     var generatedAt = new Date().toISOString();
-    writeAnalyticsCache(cacheKey, html, generatedAt, rows.length, analysisType);
+    writeAnalyticsCache_(cacheKey, html, generatedAt, rows.length, analysisType);
 
     return { success: true, html: html, fromCache: false, generatedAt: generatedAt };
   } catch(e) {
@@ -2538,7 +2632,7 @@ function getOverviewHighlightsLowlights(rows, filters) {
     }).join('');
     var cacheKey = 'ov_hl|' + rows.length + '|' + digestHex;
 
-    var cached = readAnalyticsCache(cacheKey);
+    var cached = readAnalyticsCache_(cacheKey);
     if (cached) {
       try {
         var parsed = JSON.parse(cached.html);
@@ -2547,7 +2641,9 @@ function getOverviewHighlightsLowlights(rows, filters) {
       } catch(e) {}
     }
 
-    var context = buildAnalyticsContext(rows, filters || {}, 'repeats');
+    // The page says which tab it is (filters.analysisType: 'repeats' or 'sales'); the Overview sends none and gets both analyzers together.
+    var kind = filters && (filters.analysisType === 'sales' || filters.analysisType === 'repeats') ? filters.analysisType : 'overview';
+    var context = buildAnalyticsContext_(rows, filters || {}, kind);
     var prompt =
       'You are a QA analytics expert for TELUS contact center operations. ' +
       'Based on the data summary below, return ONLY a valid JSON object — no extra text:\n' +
@@ -2574,7 +2670,7 @@ function getOverviewHighlightsLowlights(rows, filters) {
     var d       = JSON.parse(match[0]);
 
     var genAt = new Date().toISOString();
-    writeAnalyticsCache(cacheKey,
+    writeAnalyticsCache_(cacheKey,
       JSON.stringify({ highlights: d.highlights || [], lowlights: d.lowlights || [] }),
       genAt, rows.length, 'overview');
 
@@ -2587,18 +2683,21 @@ function getOverviewHighlightsLowlights(rows, filters) {
 }
 
 /** Build a rich text context from the filtered rows for the AI prompt */
-function buildAnalyticsContext(rows, filters, analysisType) {
+function buildAnalyticsContext_(rows, filters, analysisType) {
   var isSales = analysisType === 'sales';
   var total   = rows.length;
 
   // Aggregate stats
-  var members    = dbUniqServer(rows.map(function(r){ return r['Team Member']||''; })).filter(Boolean);
+  // An agent name with stray spaces is the same agent (the dashboard's _dbName), and a cell that holds several people is not one agent.
+  var members    = dbUniqServer(rows.map(function(r){ var m = _scName_(r['Team Member']); return (m.length > 0 && m.length <= 80 && String(r['Team Member']).indexOf('\n') === -1) ? m : ''; })).filter(Boolean);
+  var flagLabel  = {};
   var rcaCats    = {};
   var callDrivers= {};
   var topOpps    = {};
   var critFlags  = {};
   var repeatPcts = [];
   var resolved   = 0;
+  var verdicts   = { yes: 0, partial: 0, no: 0, unknown: 0 };   // the dashboard's rule (_scResolution_), so the AI quotes the same numbers the tiles show
 
   rows.forEach(function(r) {
     var cat = (r['RCA Category']||'').trim();
@@ -2610,13 +2709,23 @@ function buildAnalyticsContext(rows, filters, analysisType) {
     var opp = (r['RCA Sub-Parameter']||'').trim();
     if (opp) topOpps[opp] = (topOpps[opp]||0) + 1;
 
-    var flags = (r['Critical Flags']||'').split(',');
-    flags.forEach(function(f){ f=f.trim(); if(f && f!=='None') critFlags[f]=(critFlags[f]||0)+1; });
+    // The dashboard's rule (_scSplitFlags_): " | " or ", " between flags, a flag title may hold a comma, "None" is no flag, a flag written twice in
+    // one audit counts once. The same flag in other capitals or spacing is the same flag (the first spelling is shown).
+    _scSplitFlags_(r['Critical Flags']).forEach(function(f){
+      var fk = _scKey_(f);
+      if (!flagLabel[fk]) flagLabel[fk] = f;
+      critFlags[flagLabel[fk]] = (critFlags[flagLabel[fk]]||0) + 1;
+    });
 
-    var pct = parseFloat(r['Repeat Projection %']);
-    if (!isNaN(pct) && pct > 0) repeatPcts.push(pct);
+    // The dashboard's rule (_scNum_): 0.78 is 78 percent, a sentence that starts with a percentage is read, a blank is not a number, and a real 0 counts.
+    var pct = _scNum_(r['Repeat Projection %']);
+    if (pct !== null) repeatPcts.push(pct);
 
-    if ((r['Issue Resolved']||'').toLowerCase().indexOf('yes') !== -1) resolved++;
+    // This used to count any cell that contained the letters yes anywhere ("Partially resolved - yes the credit..."), and missed a sentence
+    // that begins with its verdict, so the AI summary said 23 percent while the dashboard tile said 25.
+    var verdict = _scResolution_(r['Issue Resolved']);
+    verdicts[verdict]++;
+    if (verdict === 'yes') resolved++;
   });
 
   var avgRepeat = repeatPcts.length
@@ -2625,8 +2734,8 @@ function buildAnalyticsContext(rows, filters, analysisType) {
   // Find top performer (least critical flags)
   var memberFlagCount = {};
   rows.forEach(function(r){
-    var m = r['Team Member']||''; var f = (r['Critical Flags']||'').split(',').filter(function(x){return x.trim()&&x.trim()!=='None';}).length;
-    memberFlagCount[m] = (memberFlagCount[m]||0) + f;
+    var m = _scName_(r['Team Member']);
+    memberFlagCount[m] = (memberFlagCount[m]||0) + _scSplitFlags_(r['Critical Flags']).length;
   });
   var topPerformer = members.reduce(function(best, m){
     return (!best || (memberFlagCount[m]||0) < (memberFlagCount[best]||0)) ? m : best;
@@ -2637,16 +2746,23 @@ function buildAnalyticsContext(rows, filters, analysisType) {
     return Object.keys(obj).sort(function(a,b){return obj[b]-obj[a];}).map(function(k){return k+' ('+obj[k]+')';});
   };
 
-  var ctx = 'ANALYSIS TYPE: ' + (isSales ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer') + '\n';
+  // 'sales' and 'repeats' are one tab each; anything else (the Overview) is both analyzers together. It used to say Repeats & Transfer for all.
+  var typeLabel = isSales ? 'Sales Analyzer' : analysisType === 'repeats' ? 'Repeats & Transfer Analyzer' : 'All analyzers (Repeats & Transfer and Sales together)';
+  var ctx = 'ANALYSIS TYPE: ' + typeLabel + '\n';
   ctx += 'TOTAL INTERACTIONS: ' + total + '\n';
   ctx += 'AGENTS EVALUATED: ' + members.join(', ') + '\n';
   ctx += 'DATE RANGE: ' + (filters.dateFrom||'All time') + ' to ' + (filters.dateTo||'present') + '\n';
   if (filters.members && filters.members.length) ctx += 'FILTERED TEAM MEMBERS: ' + filters.members.join(', ') + '\n';
   if (filters.leaders && filters.leaders.length) ctx += 'TEAM LEADERS: ' + filters.leaders.join(', ') + '\n';
+  if (filters.ops && filters.ops.length) ctx += 'OPERATIONS MANAGERS: ' + filters.ops.join(', ') + '\n';
   if (filters.lobs && filters.lobs.length) ctx += 'LINE OF BUSINESS: ' + filters.lobs.join(', ') + '\n';
   if (filters.locales && filters.locales.length) ctx += 'LOCALE/SITE: ' + filters.locales.join(', ') + '\n';
+  if (filters.vtids && filters.vtids.length) ctx += 'VTID: ' + filters.vtids.join(', ') + '\n';
+  if (filters.qas && filters.qas.length) ctx += 'QA OBSERVERS: ' + filters.qas.join(', ') + '\n';
+  if (filters.sapQ) ctx += 'SAP ID SEARCH: ' + filters.sapQ + '\n';
   ctx += '\nKEY METRICS:\n';
   ctx += '- Issues Resolved: ' + resolved + ' of ' + total + ' (' + Math.round(resolved/total*100) + '%)\n';
+  ctx += '- Issue Resolved, all answers: Resolved ' + verdicts.yes + ', Partially resolved ' + verdicts.partial + ', Unresolved ' + verdicts.no + ', Not recorded ' + verdicts.unknown + '\n';
   ctx += '- Average Repeat Risk: ' + avgRepeat + '%\n';
   ctx += '\nTOP CALL DRIVERS:\n' + sortDesc(callDrivers).slice(0,5).map(function(x){return '- '+x;}).join('\n') + '\n';
   ctx += '\nRCA CATEGORIES:\n' + sortDesc(rcaCats).map(function(x){return '- '+x;}).join('\n') + '\n';
@@ -2664,7 +2780,7 @@ function buildAnalyticsContext(rows, filters, analysisType) {
 }
 
 /** Call FuelIX to generate the executive briefing JSON */
-function callAIForAnalytics(context, analysisType) {
+function callAIForAnalytics_(context, analysisType) {
   var isSales = analysisType === 'sales';
   var prompt =
     'You are a senior QA analytics expert for TELUS contact center operations. ' +
@@ -2721,13 +2837,18 @@ function renderAnalyticsHTML(d, filters, analysisType, rowCount) {
   var e        = function(s){ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
 
   // Active filters summary
+  // `filters` comes from the caller's browser and this HTML is saved to the
+  // analytics cache and emailed, so every value is escaped with e() — an
+  // unescaped member name was a stored-HTML injection.
+  filters = filters || {};
+  var fList = function(a) { return (Array.isArray(a) ? a : []).map(function(x) { return e(x); }).join(', '); };
   var filterSummary = [];
-  if (filters.dateFrom || filters.dateTo) filterSummary.push((filters.dateFrom||'*') + ' → ' + (filters.dateTo||'*'));
-  if (filters.members  && filters.members.length)  filterSummary.push('Agent: ' + filters.members.join(', '));
-  if (filters.leaders  && filters.leaders.length)  filterSummary.push('TL: ' + filters.leaders.join(', '));
-  if (filters.lobs     && filters.lobs.length)     filterSummary.push('LOB: ' + filters.lobs.join(', '));
-  if (filters.locales  && filters.locales.length)  filterSummary.push('Locale: ' + filters.locales.join(', '));
-  if (filters.vtids    && filters.vtids.length)    filterSummary.push('VTID: ' + filters.vtids.join(', '));
+  if (filters.dateFrom || filters.dateTo) filterSummary.push(e(filters.dateFrom||'*') + ' → ' + e(filters.dateTo||'*'));
+  if (Array.isArray(filters.members) && filters.members.length) filterSummary.push('Agent: '  + fList(filters.members));
+  if (Array.isArray(filters.leaders) && filters.leaders.length) filterSummary.push('TL: '     + fList(filters.leaders));
+  if (Array.isArray(filters.lobs)    && filters.lobs.length)    filterSummary.push('LOB: '    + fList(filters.lobs));
+  if (Array.isArray(filters.locales) && filters.locales.length) filterSummary.push('Locale: ' + fList(filters.locales));
+  if (Array.isArray(filters.vtids)   && filters.vtids.length)   filterSummary.push('VTID: '   + fList(filters.vtids));
   var filterLine = filterSummary.length ? filterSummary.join(' &nbsp;·&nbsp; ') : 'All records — no filters applied';
 
   var html = '<div class="analytics-body">';
@@ -2854,7 +2975,7 @@ function renderAnalyticsHTML(d, filters, analysisType, rowCount) {
 }
 
 /** Cache read — checks AI_Analytics sheet for matching key within 24h */
-function readAnalyticsCache(key) {
+function readAnalyticsCache_(key) {
   try {
     var ss    = getOrCreateSpreadsheet();
     var sheet = ss.getSheetByName(AI_ANALYTICS_SHEET);
@@ -2872,7 +2993,7 @@ function readAnalyticsCache(key) {
 }
 
 /** Cache write — stores result in AI_Analytics sheet */
-function writeAnalyticsCache(key, html, generatedAt, rowCount, atype) {
+function writeAnalyticsCache_(key, html, generatedAt, rowCount, atype) {
   try {
     var ss    = getOrCreateSpreadsheet();
     var sheet = ss.getSheetByName(AI_ANALYTICS_SHEET);
@@ -2890,14 +3011,50 @@ function writeAnalyticsCache(key, html, generatedAt, rowCount, atype) {
         if (keys[i][0] === key) sheet.deleteRow(i+2);
       }
     }
-    sheet.appendRow([key, generatedAt, html, rowCount, atype]);
+    appendRow(sheet, [key, generatedAt, html, rowCount, atype]);   // the wrapper makes a text that starts with = + - @ plain text, not a formula
     Logger.log('AI Analytics cached: ' + atype + ' (' + rowCount + ' rows)');
   } catch(e) { Logger.log('Analytics cache write error: ' + e); }
+}
+
+// A Sheets cell holds at most 50,000 characters and the AI accepts 150,000 (TRANSCRIPT_MAX_CHARS), so a long call made the save of the
+// transcript row throw and the whole submit fail with a raw Google error. The saved copy is cut with a note; the AI still gets the whole text.
+function _cellSafeTranscript_(t) {
+  var max = 49000;   // under the 50,000 of a cell, with room for the note
+  var s = String(t === null || t === undefined ? '' : t);
+  if (s.length <= max) return s;
+  var note = '\n[saved copy cut here: the call text was ' + s.length + ' characters and a sheet cell holds 50000]';
+  return s.substring(0, max - note.length) + note;
+}
+
+var BRIEFING_EMAIL_DOMAINS = ['telus.com', 'telusinternational.com'];
+
+// Exactly one address (no list separators, whitespace or angle brackets) whose
+// domain is on BRIEFING_EMAIL_DOMAINS. Subdomains do not count.
+function isAllowedBriefingRecipient_(addr) {
+  if (typeof addr !== 'string' || addr.length > 254) return false;
+  var m = /^[A-Za-z0-9._%+'-]+@([A-Za-z0-9.-]+)$/.exec(addr);
+  return !!m && BRIEFING_EMAIL_DOMAINS.indexOf(m[1].toLowerCase()) !== -1;
 }
 
 /** Send analytics briefing email */
 function sendAnalyticsBriefing(toEmail, analyticsHTML, filters, analysisType, rowCount) {
   try {
+    // This function is callable from any signed-in user's browser and sends from
+    // the script owner's mailbox, so it must not be an open relay: one address,
+    // on a TELUS domain, and the body reduced to the allow-list.
+    var to = (toEmail || '').toString().trim();
+    if (!isAllowedBriefingRecipient_(to)) {
+      Logger.log('sendAnalyticsBriefing refused recipient: ' + to);
+      return { success: false, error: 'Briefings can only be sent to one @telus.com or @telusinternational.com address.' };
+    }
+    toEmail = to;
+    // Sent from the owner's mailbox, so it counts against the same hourly limit as the audit emails (sendAuditEmail).
+    var _briefCaller = ''; try { _briefCaller = (Session.getActiveUser().getEmail() || '').toString().toLowerCase().trim(); } catch (ce) {}
+    if (!_emailRateTake_(_briefCaller, isAdminCaller_())) {
+      return { success: false, error: 'You have already sent a lot of emails in the last hour, so nothing was sent. Please try again later.' };
+    }
+    analyticsHTML = sanitizeEvalHtml_(analyticsHTML);
+    rowCount = Number(rowCount) || 0;
     var isSales = analysisType === 'sales';
     var atype   = isSales ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
     var subject = 'AI Performance Intelligence Report — ' + atype + ' (' + rowCount + ' records)';
@@ -2931,6 +3088,10 @@ function sendAnalyticsBriefing(toEmail, analyticsHTML, filters, analysisType, ro
 // ── Generate PDF and return a temporary Drive view URL ────────────────────────
 function generateAndServePDF(formData, htmlResult) {
   try {
+    // Client-supplied, so sanitised (see sendAuditEmail). The sanitiser drops every
+    // <style>, and the PDF used to get its styling from the one the browser sent
+    // along, so the server puts its OWN stylesheet back rather than trusting theirs.
+    htmlResult = sharedCSS() + sanitizeEvalHtml_(htmlResult);
     var auditRef  = formData.auditRef || _generateTempRef();
     var agentName = formData.participant || 'Agent';
     var fullHtml  = buildEvalFormHTML(formData, auditRef, htmlResult);
@@ -2949,8 +3110,7 @@ function generateAndServePDF(formData, htmlResult) {
 
     // Save PDF to a named folder and lazy-clean files older than 2 hours
     var folderName = 'NH Analyzer PDFs (auto-cleanup)';
-    var folderIt   = DriveApp.getFoldersByName(folderName);
-    var folder     = folderIt.hasNext() ? folderIt.next() : DriveApp.createFolder(folderName);
+    var folder     = _ownedFolder_(folderName);
 
     // Lazy cleanup: trash PDF files in this folder older than 2 hours
     try {
@@ -2976,7 +3136,7 @@ function generateAndServePDF(formData, htmlResult) {
 
 function _generateTempRef() {
   var now = new Date();
-  return 'NHA-' + now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + '-TEMP';
+  return getAuditRefPrefix_() + '-' + now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + '-TEMP';
 }
 
 // ── Retrieve cached evaluation HTML by Audit Ref (for dashboard link) ─────────
@@ -2996,80 +3156,57 @@ function getEvaluationByAuditRef(auditRef) {
         // If plain text (already cleaned), return null — can't show as HTML
         if (stored.indexOf('<') === -1) {
           // Try Cache sheet for the original HTML
-          return getEvaluationFromCache(auditRef);
+          return getEvaluationFromCache_(auditRef);
         }
         return { html: sharedCSS() + fixBadgeClasses(stored), css: '' };
       }
     }
     // Not in Analysis sheet — try cache
-    return getEvaluationFromCache(auditRef);
+    return getEvaluationFromCache_(auditRef);
   } catch(e) {
     Logger.log('getEvaluationByAuditRef error: ' + e);
     return null;
   }
 }
 
-function getEvaluationFromCache(auditRef) {
+function getEvaluationFromCache_(auditRef) {
   try {
     var ss       = getOrCreateSpreadsheet();
     var logSheet = getOrCreateSheet(ss, AUDIT_LOG_SHEET);
     var logLast  = logSheet.getLastRow();
     if (logLast < 2) return null;
-    var logData  = logSheet.getRange(2, 1, logLast - 1, 3).getValues();
+
+    // Resolve columns by header name. Column B is 'Submitted At', not the
+    // analysis type, so reading it positionally never matched a cache row type.
+    var headers = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0];
+    var refCol  = headers.indexOf('Audit Ref');
+    var idCol   = headers.indexOf('Interaction ID');
+    var sapCol  = headers.indexOf('SAP ID');
+    var typeCol = headers.indexOf('Analysis Type');
+    if (refCol < 0 || idCol < 0) return null;
+
+    var logData = logSheet.getRange(2, 1, logLast - 1, headers.length).getValues();
     var interactionId = '';
     var analysisType  = '';
+    var sapId         = '';
     for (var i = 0; i < logData.length; i++) {
-      if ((logData[i][0] || '').toString().trim() === auditRef.trim()) {
-        interactionId = (logData[i][2] || '').toString().trim();
-        analysisType  = (logData[i][1] || '').toString().trim().toLowerCase();
+      if ((logData[i][refCol] || '').toString().trim() === auditRef.trim()) {
+        interactionId = (logData[i][idCol] || '').toString().trim();
+        analysisType  = typeCol >= 0 ? _normalizeAnalysisType(logData[i][typeCol]) : 'repeats';
+        sapId         = sapCol  >= 0 ? (logData[i][sapCol] || '').toString().trim() : '';
         break;
       }
     }
     if (!interactionId) return null;
 
-    var cacheSheet = getOrCreateSheet(ss, CACHE_SHEET);
-    var matches    = cacheSheet.getRange('A:A').createTextFinder(interactionId).matchEntireCell(true).findAll();
-    if (!matches.length) return null;
-
-    // Find the primary row (exact analysis type, no chunk suffix)
-    var primaryHtml = null;
-    var typeLower   = analysisType || 'repeats';
-    for (var m = 0; m < matches.length; m++) {
-      var rData = cacheSheet.getRange(matches[m].getRow(), 1, 1, 4).getValues()[0];
-      var rType = (rData[1] || '').toString().trim().toLowerCase();
-      if (rType === typeLower) {
-        primaryHtml = (rData[3] || '').toString();
-        break;
-      }
-    }
-    // Fallback: use first match if no type match
-    if (!primaryHtml) {
-      var fData = cacheSheet.getRange(matches[0].getRow(), 1, 1, 4).getValues()[0];
-      primaryHtml = (fData[3] || '').toString();
-    }
-    if (!primaryHtml) return null;
-
-    // Assemble continuation chunks (same pattern as findCachedResult)
-    var html = primaryHtml;
-    var chunkNum = 2;
-    while (true) {
-      var chunkType  = typeLower + '_' + chunkNum;
-      var chunkFound = false;
-      for (var j = 0; j < matches.length; j++) {
-        var cData = cacheSheet.getRange(matches[j].getRow(), 1, 1, 4).getValues()[0];
-        if ((cData[1] || '').toString().trim().toLowerCase() === chunkType) {
-          html += (cData[3] || '').toString();
-          chunkFound = true;
-          break;
-        }
-      }
-      if (!chunkFound) break;
-      chunkNum++;
-    }
+    // Keyed by Interaction ID + analysis type + THIS audit's agent, so two
+    // agents on the same call each get their own evaluation back.
+    var html = findCachedResult_(interactionId, analysisType, sapId);
+    if (!html) return null;
 
     return { html: sharedCSS() + fixBadgeClasses(html), css: '' };
   } catch(e) {
-    Logger.log('getEvaluationFromCache error: ' + e);
+    Logger.log('getEvaluationFromCache_ error: ' + e);
     return null;
   }
 }
@@ -3123,7 +3260,7 @@ function chatAssistant(userMessage, recentHistory) {
     return 'Sorry, something went wrong: ' + e.toString();
   }
 }
-function getTranscriptMetadata(txt)   { return parseTranscriptMetadata(txt); }
+function getTranscriptMetadata_(txt)   { return parseTranscriptMetadata(txt); }
 // A lookup that cannot complete must not reach the analyst as a red banner.
 // One of the roster sheets is shared with the telus.com domain only, while the
 // TI deployment runs as a @telusinternational.com account, so opening it throws
@@ -3131,12 +3268,23 @@ function getTranscriptMetadata(txt)   { return parseTranscriptMetadata(txt); }
 // to users mid-typing — and often for a partial SAP ID they had not finished
 // entering. Returning null leaves the fields blank, which is what already
 // happens for an agent who genuinely is not on the roster.
+//
+// But null alone cannot tell "this agent is not on the roster" from "the roster
+// could not be read", so the page showed nothing at all in both cases. A miss
+// that coincides with an unreadable source now returns { _error, ... } so the
+// page can say which. A genuine miss is still null, and a hit is still the row.
 function getRosterBySapId(sapId) {
+  _resetSourceErrors_();
   try {
-    return lookupBySapId(sapId);
+    var row = lookupBySapId_(sapId);
+    if (row) return row;
+    if (_lookupSourceErrors.length) {
+      return { _error: 'source_unavailable', sources: _lookupSourceErrors.slice() };
+    }
+    return null;
   } catch(e) {
     Logger.log('getRosterBySapId failed for "' + sapId + '": ' + e);
-    return null;
+    return { _error: 'lookup_failed' };
   }
 }
 
@@ -3148,8 +3296,8 @@ function getTranscriptMetadataAndRoster(txt) {
     var sapId = '';
     var roster = null;
     if (meta && meta.participant) {
-      sapId = lookupSapId(meta.participant) || '';
-      if (sapId) roster = lookupBySapId(sapId);
+      sapId = lookupSapId_(meta.participant) || '';
+      if (sapId) roster = lookupBySapId_(sapId);
     }
     return { meta: meta || {}, sapId: sapId, roster: roster };
   } catch(e) {
@@ -3157,9 +3305,9 @@ function getTranscriptMetadataAndRoster(txt) {
     return { meta: {}, sapId: '', roster: null };
   }
 }
-function getRosterAll()               { return getAllRosterData(); }
+function getRosterAll()               { return getAllRosterData_(); }
 function getObserverInfo() {
-  var obs = resolveObserver() || {};
+  var obs = resolveObserver_() || {};
 
   // Get email — try both Session methods independently
   var userEmail = '';
@@ -3171,20 +3319,23 @@ function getObserverInfo() {
   if (!obs.email && userEmail) obs.email = userEmail;
   if (!obs.name  && userEmail) obs.name  = userEmail.split('@')[0];
 
-  // Admin check — compare username against hardcoded ADMIN_USERNAMES list (no external sheet needed)
-  var userLocal = userEmail.split('@')[0];
-  obs.isAdmin = !!userLocal && ADMIN_USERNAMES.indexOf(userLocal) !== -1;
+  // Admin check — the SAME rule sendAuditEmail enforces (isAdminCaller_): the person
+  // actually running this call, on ADMIN_USERNAMES, on a TELUS domain. The display
+  // fallback above to the effective user is only for showing a name; it must not
+  // decide who sees the TEST toggle. In "Execute as: Me" the effective user is the
+  // OWNER, so a caller whose own email is hidden would otherwise look like an admin.
+  obs.isAdmin = isAdminCaller_();
 
   return obs;
 }
-function getAuditLogData()            { return readAuditLog(); }
+function getAuditLogData()            { return readAuditLog_(); }
 
-// ── Generate unique Audit Reference Number: NHA-YYYYMMDD-XXXX ────────────────
+// ── Generate unique Audit Reference Number: <PREFIX>-YYYYMMDD-XXXX ──────────────
 // Uses PropertiesService to persist today's counter — avoids scanning the full
 // sheet. PropertiesService has no expiry, unlike CacheService (hard 6-hour cap
 // on put()'s TTL) — a per-day counter needs to survive up to 24 hours, so
 // CacheService can't hold it without throwing and silently corrupting refs.
-function generateAuditRef() {
+function generateAuditRef_() {
   var now      = new Date();
   var y        = now.getFullYear();
   var m        = String(now.getMonth() + 1).padStart(2, '0');
@@ -3199,9 +3350,9 @@ function generateAuditRef() {
     var current = parseInt(props.getProperty(propKey) || '0', 10);
     var seq     = current + 1;
     props.setProperty(propKey, String(seq));
-    return 'NHA-' + dateStr + '-' + String(seq).padStart(4, '0');
+    return getAuditRefPrefix_() + '-' + dateStr + '-' + String(seq).padStart(4, '0');
   } catch(e) {
-    Logger.log('generateAuditRef error: ' + e);
+    Logger.log('generateAuditRef_ error: ' + e);
     return _uniqueFallbackAuditRef(dateStr);
   } finally {
     try { lock.releaseLock(); } catch(re) {}
@@ -3220,20 +3371,20 @@ function _uniqueFallbackAuditRef(dateStr) {
     var ss       = getOrCreateSpreadsheet();
     var logSheet = getOrCreateSheet(ss, AUDIT_LOG_SHEET);
     for (var attempt = 0; attempt < 10; attempt++) {
-      var candidate = 'NHA-' + dateStr + '-' + String(Math.floor(Math.random() * 9999)).padStart(4, '0');
+      var candidate = getAuditRefPrefix_() + '-' + dateStr + '-' + String(Math.floor(Math.random() * 9999)).padStart(4, '0');
       var finder    = logSheet.getRange('A:A').createTextFinder(candidate).matchEntireCell(true);
       if (!finder.findNext()) return candidate;
     }
   } catch(e2) {
     Logger.log('_uniqueFallbackAuditRef error: ' + e2);
   }
-  return 'NHA-' + dateStr + '-T' + (Date.now() % 100000);
+  return getAuditRefPrefix_() + '-' + dateStr + '-T' + (Date.now() % 100000);
 }
 
 // ── Resolve observer from logged-in user email ────────────────────────────────
 // Priority: 1) Users sheet  2) Roster sheet  3) email prefix fallback
 // Returns { name, role, sapId, email }
-function resolveObserver() {
+function resolveObserver_() {
   try {
     var email = '';
     try { email = Session.getActiveUser().getEmail() || ''; } catch(e) {}
@@ -3246,7 +3397,7 @@ function resolveObserver() {
     if (cached) { try { return JSON.parse(cached); } catch(e) {} }
 
     // ── 1. Users sheet (canonical source — Email Address, Name, Role) ─────────
-    var userRow = lookupUserFromUsersSheet(email);
+    var userRow = lookupUserFromUsersSheet_(email);
     if (userRow && userRow.name) {
       var result = { name: userRow.name, role: userRow.role, sapId: '', email: email };
       try { cache.put(cacheKey, JSON.stringify(result), 8 * 60 * 60); } catch(e) {}
@@ -3291,7 +3442,7 @@ function resolveObserver() {
     try { cache.put(cacheKey, JSON.stringify(result), 8 * 60 * 60); } catch(e) {}
     return result;
   } catch(e) {
-    Logger.log('resolveObserver error: ' + e);
+    Logger.log('resolveObserver_ error: ' + e);
     return { name: '', role: '', sapId: '', email: '' };
   }
 }
@@ -3328,7 +3479,7 @@ function getFlagDropdownOptions() {
 var AUDIT_LOG_CACHE_KEY = 'audit_log_data_v2';
 var AUDIT_LOG_CACHE_TTL = 20 * 60; // 20 minutes — localStorage handles the faster layer
 
-function readAuditLog() {
+function readAuditLog_() {
   try {
     var cache  = CacheService.getScriptCache();
     var cached = cache.get(AUDIT_LOG_CACHE_KEY);
@@ -3343,7 +3494,7 @@ function readAuditLog() {
     if (lastRow < 2) return [];
 
     // Read by actual header names so column order in the sheet never matters.
-    // Mirrors readDashboardSheet — fixes silent misreads when columns were added.
+    // Mirrors readDashboardSheet_ — fixes silent misreads when columns were added.
     var lastCol      = sheet.getLastColumn();
     var actualHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
     var data   = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
@@ -3358,15 +3509,15 @@ function readAuditLog() {
     var _al = JSON.stringify(result);
     if (_al.length <= 99000) { try { cache.put(AUDIT_LOG_CACHE_KEY, _al, AUDIT_LOG_CACHE_TTL); } catch(e) {} }
     return result;
-  } catch(e) { Logger.log('readAuditLog: ' + e); return []; }
+  } catch(e) { Logger.log('readAuditLog_: ' + e); return []; }
 }
 
-function invalidateAuditLogCache() {
+function invalidateAuditLogCache_() {
   try { CacheService.getScriptCache().remove(AUDIT_LOG_CACHE_KEY); } catch(e) {}
 }
 
 // Dashboard entry point — served at ?page=dashboard
-function doGetDashboard() {
+function doGetDashboard_() {
   return HtmlService
     .createHtmlOutputFromFile('Dashboard')
     .setTitle('NH Call Analyzer — Dashboard')
@@ -3374,14 +3525,17 @@ function doGetDashboard() {
 }
 
 // ── Dashboard data cache keys ─────────────────────────────────────────────────
-var DB_CACHE_KEY      = 'dashboard_data_v2';
-var DB_CACHE_META_KEY = 'dashboard_data_meta_v2';
+var DB_CACHE_KEY      = 'dashboard_data_v3';       // v3: v2 could be left half-written
+var DB_CACHE_META_KEY = 'dashboard_data_meta_v3';
 var DB_CACHE_TTL      = 60 * 60;   // 60 minutes — extended since localStorage is the fast layer
-// CacheService limit is 100 KB per key — split into chunks if needed
-var DB_CACHE_CHUNK    = 90000;      // bytes per chunk (safe margin under 100 KB)
+// CacheService limit is 100 KB per key, counted in BYTES. Accented and non-Latin
+// text is up to 3 bytes a character, so the chunk is 30,000 CHARACTERS (at most
+// ~90 KB). It used to be 90,000 characters, which overflowed as soon as the
+// dashboard held enough such text, and the failure blanked the whole dashboard.
+var DB_CACHE_CHUNK    = 30000;
 
 // ── Read from sheet and return raw rows ───────────────────────────────────────
-function readDashboardSheet() {
+function readDashboardSheet_() {
   var ss    = getOrCreateSpreadsheet();
   var sheet = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
   ensureHeaders(sheet, DASHBOARD_HEADERS);
@@ -3402,7 +3556,7 @@ function readDashboardSheet() {
 }
 
 // ── Write rows to CacheService in chunks ─────────────────────────────────────
-function writeDashboardCache(rows) {
+function writeDashboardCache_(rows) {
   var cache   = CacheService.getScriptCache();
   var json    = JSON.stringify(rows);
   var chunks  = [];
@@ -3410,15 +3564,29 @@ function writeDashboardCache(rows) {
     chunks.push(json.slice(i, i + DB_CACHE_CHUNK));
   }
   var meta = { chunks: chunks.length, ts: new Date().toISOString(), rowCount: rows.length };
-  cache.put(DB_CACHE_META_KEY, JSON.stringify(meta), DB_CACHE_TTL);
-  chunks.forEach(function(chunk, idx) {
-    cache.put(DB_CACHE_KEY + '_' + idx, chunk, DB_CACHE_TTL);
-  });
-  Logger.log('Dashboard cache written: ' + rows.length + ' rows, ' + chunks.length + ' chunk(s)');
+  // The cache is an optimisation. A failure to fill it must NEVER take the dashboard
+  // down with it: the callers have already read the sheet successfully, and an
+  // exception here used to make them return an empty dashboard. The meta entry goes
+  // in LAST, so its presence means every chunk was stored; on any failure what was
+  // written is removed and the next load simply reads the sheet again.
+  try {
+    chunks.forEach(function(chunk, idx) {
+      cache.put(DB_CACHE_KEY + '_' + idx, chunk, DB_CACHE_TTL);
+    });
+    cache.put(DB_CACHE_META_KEY, JSON.stringify(meta), DB_CACHE_TTL);
+    Logger.log('Dashboard cache written: ' + rows.length + ' rows, ' + chunks.length + ' chunk(s)');
+  } catch (e) {
+    Logger.log('Dashboard cache write failed (served from the sheet instead): ' + e);
+    try {
+      var keys = [DB_CACHE_META_KEY];
+      for (var k = 0; k < chunks.length; k++) keys.push(DB_CACHE_KEY + '_' + k);
+      cache.removeAll(keys);
+    } catch (e2) {}
+  }
 }
 
 // ── Read rows from CacheService ───────────────────────────────────────────────
-function readDashboardCache() {
+function readDashboardCache_() {
   var cache = CacheService.getScriptCache();
   var metaStr = cache.get(DB_CACHE_META_KEY);
   if (!metaStr) return null;
@@ -3432,13 +3600,13 @@ function readDashboardCache() {
     }
     return { rows: JSON.parse(json), ts: meta.ts, rowCount: meta.rowCount };
   } catch(e) {
-    Logger.log('readDashboardCache parse error: ' + e);
+    Logger.log('readDashboardCache_ parse error: ' + e);
     return null;
   }
 }
 
 // ── Invalidate dashboard cache (call after new data is written) ───────────────
-function invalidateDashboardCache() {
+function invalidateDashboardCache_() {
   var cache = CacheService.getScriptCache();
   var metaStr = cache.get(DB_CACHE_META_KEY);
   if (!metaStr) return;
@@ -3455,14 +3623,14 @@ function invalidateDashboardCache() {
 // Returns { rows, ts, rowCount, fromCache }
 function getDashboardData() {
   try {
-    var cached = readDashboardCache();
+    var cached = readDashboardCache_();
     if (cached) {
       Logger.log('Dashboard cache HIT — ' + cached.rowCount + ' rows from ' + cached.ts);
       return { rows: cached.rows, ts: cached.ts, rowCount: cached.rowCount, fromCache: true };
     }
     Logger.log('Dashboard cache MISS — reading sheet');
-    var rows = readDashboardSheet();
-    writeDashboardCache(rows);
+    var rows = readDashboardSheet_();
+    writeDashboardCache_(rows);
     var ts = new Date().toISOString();
     return { rows: rows, ts: ts, rowCount: rows.length, fromCache: false };
   } catch(e) {
@@ -3474,9 +3642,9 @@ function getDashboardData() {
 // ── Public: force refresh (used by Refresh button) ────────────────────────────
 function getDashboardDataFresh() {
   try {
-    invalidateDashboardCache();
-    var rows = readDashboardSheet();
-    writeDashboardCache(rows);
+    invalidateDashboardCache_();
+    var rows = readDashboardSheet_();
+    writeDashboardCache_(rows);
     var ts = new Date().toISOString();
     Logger.log('Dashboard force-refreshed: ' + rows.length + ' rows');
     return { rows: rows, ts: ts, rowCount: rows.length, fromCache: false };
@@ -3486,22 +3654,32 @@ function getDashboardDataFresh() {
   }
 }
 
-// ── Look up audit ref for a cached interaction ────────────────────────────────
-function findAuditRefForInteraction(interactionId, analysisType) {
-  try {
-    var ss    = getOrCreateSpreadsheet();
-    var sheet = getOrCreateSheet(ss, AUDIT_LOG_SHEET);
-    ensureHeaders(sheet, AUDIT_LOG_HEADERS);
-    var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return '';
-    var data = sheet.getRange(2, 1, lastRow - 1, 3).getValues(); // col A=AuditRef, C=InteractionId
-    for (var i = 0; i < data.length; i++) {
-      if (data[i][2] && data[i][2].toString().trim() === interactionId.trim()) {
-        return data[i][0].toString().trim();
-      }
-    }
-    return '';
-  } catch(e) { return ''; }
+// ── Look up the audit ref of THIS agent's audit of a cached interaction ────────
+// Several agents can share one Interaction ID, so the agent (SAP ID) and the
+// analysis type are part of the match. Returning the first row for the
+// Interaction ID handed the second agent the first agent's ref.
+function findAuditRefForInteraction_(interactionId, analysisType, sapId) {
+  return _findAuditRefForAgent(interactionId, analysisType, sapId);
+}
+
+// Index of the sheet row that belongs to THIS audit, or -1.
+// A reference should be unique, but rows written before the NH and TI scripts
+// got separate prefixes can share one. Prefer the row whose reference AND
+// Interaction ID both match; otherwise fall back to the first row with the
+// reference (the old behaviour). A blank or 'N/A' Interaction ID is not a claim.
+// refVals / idVals are the sheet's Audit Ref and Interaction ID columns, as
+// returned by getRange(...).getValues().
+function _findAuditRowIndex(refVals, idVals, wantRef, wantInteractionId) {
+  var ref = (wantRef || '').toString().trim();
+  var iid = (wantInteractionId || '').toString().trim();
+  if (iid.toUpperCase() === 'N/A') iid = '';
+  var firstByRef = -1;
+  for (var i = 0; i < refVals.length; i++) {
+    if ((refVals[i][0] || '').toString().trim() !== ref) continue;
+    if (firstByRef < 0) firstByRef = i;
+    if (iid && idVals && (idVals[i][0] || '').toString().trim() === iid) return i;
+  }
+  return firstByRef;
 }
 
 // Called after email sent — update Dashboard_Data and Audit_Log
@@ -3521,11 +3699,22 @@ function findAuditRefForInteraction(interactionId, analysisType) {
 // the analyst ever sees the report, so an override made afterwards has to be
 // written back — and this is the one call that already reaches both sheets on
 // send, so it costs no extra execution. Omitted or blank leaves the value alone.
-function updateDashboardPDFLink(interactionId, emailStatus, recipients, auditRef, issueResolved) {
+function updateDashboardPDFLink_(interactionId, emailStatus, recipients, auditRef, issueResolved) {
   try {
     var ss = getOrCreateSpreadsheet();
-    var status           = (emailStatus || 'Sent').toString().trim();
-    var resolvedOverride = (issueResolved || '').toString().trim();
+    // Everything written below goes in with setValue, which turns a string that starts with = into a FORMULA that runs with the
+    // owner's rights. The analyst's override comes from the report HTML the browser sent, so it is reduced to the three answers the
+    // badge can show, and every other string is stored as text.
+    var safe = function(v) { var s = String(v === null || v === undefined ? '' : v); return /^[=+\-@\t\r]/.test(s) ? "'" + s : s; };
+    var status           = safe((emailStatus || 'Sent').toString().trim().substring(0, 40));
+    var resolvedOverride = (function(v) {
+      var m = /^(yes|no|partial|partially|partially resolved)$/i.exec(String(v || '').trim());
+      return m ? (/^y/i.test(m[1]) ? 'Yes' : (/^n/i.test(m[1]) ? 'No' : 'Partially resolved')) : '';
+    })(issueResolved);
+    // Match this audit's OWN row by Audit Ref. Several agents can share one
+    // Interaction ID, and matching on it alone wrote the status, recipients and
+    // Issue Resolved override onto the first agent's row.
+    var wantRef          = (auditRef || '').toString().trim();
 
     // Update Dashboard_Data — col C = Interaction ID (index 3), col W=PDF, col X=Status
     var dSheet  = getOrCreateSheet(ss, DASHBOARD_DATA_SHEET);
@@ -3535,11 +3724,16 @@ function updateDashboardPDFLink(interactionId, emailStatus, recipients, auditRef
       var dHeaderRow = dSheet.getRange(1, 1, 1, dSheet.getLastColumn()).getValues()[0];
       var dStatusCol= dHeaderRow.indexOf('Email Status')   + 1;
       var dIdCol    = dHeaderRow.indexOf('Interaction ID') + 1;
+      var dRefCol   = dHeaderRow.indexOf('Audit Ref')      + 1;
       var dResCol   = dHeaderRow.indexOf('Issue Resolved') + 1;
       if (dIdCol < 1) dIdCol = 3; // safe fallback to col C
-      var ids = dSheet.getRange(2, dIdCol, lastRow - 1, 1).getValues();
+      var dByRef    = !!wantRef && dRefCol >= 1;
+      var ids = dSheet.getRange(2, dByRef ? dRefCol : dIdCol, lastRow - 1, 1).getValues();
+      var dPick = dByRef
+        ? _findAuditRowIndex(ids, dSheet.getRange(2, dIdCol, lastRow - 1, 1).getValues(), wantRef, interactionId)
+        : -1;
       for (var i = 0; i < ids.length; i++) {
-        if (ids[i][0].toString().trim() === interactionId.trim()) {
+        if (dByRef ? i === dPick : ids[i][0].toString().trim() === interactionId.trim()) {
           if (dStatusCol > 0) dSheet.getRange(i + 2, dStatusCol).setValue(status);
           if (dResCol > 0 && resolvedOverride)
             dSheet.getRange(i + 2, dResCol).setValue(resolvedOverride);
@@ -3556,13 +3750,18 @@ function updateDashboardPDFLink(interactionId, emailStatus, recipients, auditRef
       var logStatusCol  = logHeaderRow.indexOf('Email Status')   + 1;
       var logRecipCol   = logHeaderRow.indexOf('Recipients')     + 1;
       var logIdCol      = logHeaderRow.indexOf('Interaction ID') + 1;
+      var logRefCol     = logHeaderRow.indexOf('Audit Ref')      + 1;
       var logResCol     = logHeaderRow.indexOf('Issue Resolved') + 1;
       if (logIdCol < 1) logIdCol = 3; // safe fallback
-      var logIds = logSheet.getRange(2, logIdCol, logLast - 1, 1).getValues();
+      var logByRef      = !!wantRef && logRefCol >= 1;
+      var logIds = logSheet.getRange(2, logByRef ? logRefCol : logIdCol, logLast - 1, 1).getValues();
+      var logPick = logByRef
+        ? _findAuditRowIndex(logIds, logSheet.getRange(2, logIdCol, logLast - 1, 1).getValues(), wantRef, interactionId)
+        : -1;
       for (var j = 0; j < logIds.length; j++) {
-        if (logIds[j][0].toString().trim() === interactionId.trim()) {
+        if (logByRef ? j === logPick : logIds[j][0].toString().trim() === interactionId.trim()) {
           if (logStatusCol > 0) logSheet.getRange(j + 2, logStatusCol).setValue(status);
-          if (logRecipCol  > 0) logSheet.getRange(j + 2, logRecipCol).setValue((recipients || []).join(', '));
+          if (logRecipCol  > 0) logSheet.getRange(j + 2, logRecipCol).setValue(safe((recipients || []).join(', ')));
           if (logResCol > 0 && resolvedOverride)
             logSheet.getRange(j + 2, logResCol).setValue(resolvedOverride);
           break;
@@ -3570,8 +3769,9 @@ function updateDashboardPDFLink(interactionId, emailStatus, recipients, auditRef
       }
     }
 
-    invalidateDashboardCache();
-  } catch(e) { Logger.log('updateDashboardPDFLink: ' + e); }
+    invalidateDashboardCache_();
+    invalidateAuditLogCache_();   // Audit_Log holds the Email Status and Recipients too; its cache showed Not Sent for 20 minutes
+  } catch(e) { Logger.log('updateDashboardPDFLink_: ' + e); }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3589,7 +3789,7 @@ function detectTranscriptSpeakers(transcriptText, sapId) {
     var targetName = '';
     if (sapId) {
       try {
-        var looked = lookupBySapId(sapId);
+        var looked = lookupBySapId_(sapId);
         targetName = (looked && looked.participant) ? looked.participant : sapId;
       } catch(e) { targetName = sapId; }
     }
@@ -3685,47 +3885,194 @@ function detectTranscriptSpeakers(transcriptText, sapId) {
   }
 }
 
+// Key of the "this audit is being processed" flag. One per Interaction ID AND
+// agent, so a second agent on the same call is not blocked by the first. The
+// acquire and both release paths in submitTranscript must build it the same way.
+function _procKey_(interactionId, sapId) {
+  return 'proc_' + (interactionId || '').toString().trim() + '_' + (sapId || '').toString().trim();
+}
+
+// Translate (if asked), narrow to the agent, run the AI, tidy and sanitise the output and
+// put it in the cache. Throws on an AI failure; submitTranscript turns that into its
+// friendly error. Returns { html, filterStats }.
+function produceEvaluation_(formData, p) {
+  var interactionId = p.interactionId, participant = p.participant, analysisType = p.analysisType,
+      auditRef = p.auditRef, observerName = p.observerName;
+  // ── 3.5 Translate transcript to English if requested ─────────────────────
+  var transcriptForAnalysis = formData.transcript;
+  if (formData.translateToEnglish && transcriptForAnalysis.trim()) {
+    try {
+      Logger.log('translateToEnglish=true — translating transcript for ' + (interactionId || 'unknown'));
+      var translated = translateTranscriptText_(transcriptForAnalysis);
+      if (translated) {
+        transcriptForAnalysis = translated;
+      } else {
+        Logger.log('Translation returned null — proceeding with original transcript');
+      }
+    } catch(te) {
+      Logger.log('Translation step failed (non-fatal, using original): ' + te);
+    }
+  }
+
+  // ── 4. Run AI ─────────────────────────────────────────────────────────────
+  // Filter transcript to only include the target agent's turns + customer lines
+  var filterStats = { applied: false, targetFound: false };
+  if (participant) {
+    var filterResult = filterTranscriptByAgent(transcriptForAnalysis, participant);
+    transcriptForAnalysis = filterResult.filtered;
+    filterStats = filterResult.stats;
+  }
+  var rawAI = analyzeTranscript_(transcriptForAnalysis, analysisType, participant, formData.selectedLOB || '');
+  Logger.log('AI response length: ' + rawAI.length);
+
+  var html = fixBadgeClasses(
+    rawAI
+      .replace(/^```html\s*/i, '')
+      .replace(/^```\s*/,      '')
+      .replace(/\s*```$/,      '')
+      .trim()
+  );
+
+  // Replace report placeholders with actual values so cache, email, and
+  // Dashboard all receive the final content (no deferred substitution needed).
+  html = html
+    .replace(/__AUDIT_REF__/g, auditRef     || '')
+    .replace(/__OBSERVER__/g,  observerName || 'N/A');
+
+  // The model's output includes whatever was said on the call, and a transcript
+  // can ask it to emit markup that runs. Reduce it to the allow-list BEFORE it is
+  // cached, written to a sheet, emailed or shown. (After the placeholders, so a
+  // name substituted in is covered too.)
+  html = sanitizeEvalHtml_(html);
+
+  // ── 5. Save to Cache sheet FIRST — so a retry after any downstream failure ──
+  //      hits the cache instead of re-running the paid AI call and duplicating rows.
+  if (interactionId) {
+    saveCachedResult_(interactionId, analysisType, html, formData.sapId);
+  }
+  return { html: html, filterStats: filterStats };
+}
+
+// Writes the Analysis, Dashboard_Data and Audit_Log rows of one audit and returns the
+// warnings. Each write is independent: one failing never stops the others. When
+// `f.recovering` is set (completing an audit whose report was already cached) a row that
+// is already there is not written a second time.
+function writeAuditRecords_(spreadsheet, formData, f) {
+  var auditRef = f.auditRef, now = f.now, participant = f.participant, interactionId = f.interactionId,
+      direction = f.direction, duration = f.duration, resolvedLocale = f.resolvedLocale,
+      observerName = f.observerName, analysisLabel = f.analysisLabel, html = f.html,
+      recovering = !!f.recovering, warnings = [];
+  // ── 6. Save to Analysis sheet (plain text only — no HTML) ─────────────────
+  try {
+    var aSheet = getOrCreateSheet(spreadsheet, ANALYSIS_SHEET);
+    ensureHeaders(aSheet, ANALYSIS_HEADERS);
+    if (!recovering || !_sheetHasRef_(aSheet, auditRef)) appendRow(aSheet, [
+      auditRef, now,
+      formData.sapId || '', formData.participant || '',
+      observerName, analysisLabel, htmlToPlainText(html)
+    ]);
+  } catch (ae) {
+    // Like the Dashboard and Audit_Log writes below, this must not stop the others: it
+    // used to throw, and the Dashboard and Audit_Log rows were then never written.
+    Logger.log('Analysis write error (non-fatal): ' + ae);
+    warnings.push('Analysis entry failed to save — contact admin with ref ' + auditRef);
+  }
+
+  // ── 7. Write to Dashboard_Data ────────────────────────────────────────────
+  try {
+    var dSheet = getOrCreateSheet(spreadsheet, DASHBOARD_DATA_SHEET);
+    ensureHeaders(dSheet, DASHBOARD_HEADERS);
+    var callReason       = extractTextBlock(html, 'Call Reason')      || '';
+    var callSummary      = extractTextBlock(html, 'Call Summary')      || '';
+    var opportunities    = extractTextBlock(html, 'Opportunities')     || '';
+    var recommendations  = extractTextBlock(html, 'Recommendation')    || '';
+    var criticalFlags    = extractTextBlock(html, 'Critical Flag')     || '';
+    var repeatPct        = extractTextBlock(html, 'Repeat Risk')       || '';
+    var issueResolved    = extractTextBlock(html, 'Issue Resolution')  || '';
+    var transferOccurred = extractTextBlock(html, 'Transfer')          || '';
+
+    // Structured RCA fields — all parsed from the evaluation HTML. RCA category,
+    // product opportunity and sales attempted now arrive in the hidden
+    // div.ai-meta the evaluation prompt emits, so the separate enrichment AI
+    // call this used to need is gone.
+    var structured = null;
+    try {
+      structured = extractStructuredRCAFromHTML(html);
+    } catch(re) {
+      // Do not swallow this silently: it blanks eleven Dashboard columns while
+      // the submit still reports success.
+      Logger.log('extractStructuredRCAFromHTML FAILED for ' + auditRef + ' — 11 Dashboard columns will be blank: ' + re);
+      warnings.push('Some dashboard fields could not be extracted for ref ' + auditRef);
+    }
+    var callDriver        = structured ? structured.callDriver        : '';
+    var rcaCategory       = structured ? structured.rcaCategory       : '';
+    var rcaSubParameter   = structured ? structured.rcaSubParameter   : '';
+    var topOpportunity    = structured ? structured.topOpportunity    : '';
+    var productOpportunity= structured ? structured.productOpportunity: '';
+    var salesAttempted    = structured ? structured.salesAttempted    : '';
+
+
+    var smartS            = structured ? structured.smartS            : '';
+    var smartM            = structured ? structured.smartM            : '';
+    var smartA            = structured ? structured.smartA            : '';
+    var smartR            = structured ? structured.smartR            : '';
+    var smartT            = structured ? structured.smartT            : '';
+    if (structured && structured.callSummaryShort && !callSummary)
+      callSummary = structured.callSummaryShort;
+
+    if (!recovering || !_sheetHasRef_(dSheet, auditRef)) appendRow(dSheet, [
+      auditRef, now, interactionId,
+      formData.sapId || '', participant,
+      formData.teamLeader || '', formData.opsManager || '',
+      formData.lineOfBusiness || '', resolvedLocale,
+      formData.vtid || '',
+      observerName,
+      '',               // Department
+      direction, duration,
+      analysisLabel,
+      callReason, callSummary, opportunities, recommendations,
+      criticalFlags, repeatPct, issueResolved, transferOccurred,
+      callDriver, rcaCategory, rcaSubParameter, topOpportunity, productOpportunity, salesAttempted,
+      smartS, smartM, smartA, smartR, smartT,
+      'Pending', 'Not Sent', formData.agentEmail || ''
+    ]);
+    invalidateDashboardCache_();
+  } catch(de) {
+    Logger.log('Dashboard_Data write error (non-fatal): ' + de);
+    warnings.push('Dashboard entry failed to save — contact admin with ref ' + auditRef);
+  }
+
+  // ── 8. Write to Audit_Log ─────────────────────────────────────────────────
+  try {
+    var logSheet = getOrCreateSheet(spreadsheet, AUDIT_LOG_SHEET);
+    ensureHeaders(logSheet, AUDIT_LOG_HEADERS);
+    if (!recovering || !_sheetHasRef_(logSheet, auditRef)) appendRow(logSheet, [
+      auditRef, now, interactionId,
+      formData.sapId || '', participant,
+      formData.teamLeader || '', formData.opsManager || '',
+      formData.lineOfBusiness || '', resolvedLocale,
+      formData.vtid || '',
+      observerName, analysisLabel,
+      direction, duration,
+      repeatPct || '', issueResolved || '', transferOccurred || '',
+      'Not Sent', '', formData.agentEmail || ''
+    ]);
+    invalidateAuditLogCache_(); // bust cache so next read is fresh
+  } catch(le) {
+    Logger.log('Audit_Log write error (non-fatal): ' + le);
+    warnings.push('Audit log entry failed to save — contact admin with ref ' + auditRef);
+  }
+  return warnings;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main submission — cache check first, then AI if needed
 // ─────────────────────────────────────────────────────────────────────────────
 function submitTranscript(formData) {
+  var _procFlagKey = '';   // set only while THIS call holds the "being processed" flag
   try {
     if (!formData.sapId || !formData.transcript) {
       return { success: false, error: 'SAP ID and transcript are required.' };
-    }
-
-    // ── Per-Interaction-ID duplicate-submission guard ──────────────────────────
-    // Two QA analysts submitting the same Interaction ID concurrently would each
-    // pass the cache-miss check, both run the AI (~2-5 min each), and both
-    // append duplicate rows to every sheet.  We use a short LockService window
-    // to atomically check/set a CacheService "processing" flag, then release
-    // the lock immediately so the slow AI work does not block other submissions.
-    // CacheService (not PropertiesService) is used because it supports TTL:
-    // if a GAS execution is killed by the 6-minute hard timeout, the flag
-    // auto-expires and the interaction becomes submittable again — PropertiesService
-    // has no expiry and would deadlock that interaction ID permanently.
-    var _intIdForLock = (formData.interactionId || '').trim();
-    if (_intIdForLock) {
-      var _lock = LockService.getScriptLock();
-      var _alreadyProcessing = false;
-      try {
-        _lock.waitLock(6000); // only hold long enough to read+write one cache entry
-        var _procCache = CacheService.getScriptCache();
-        var _procKey   = 'proc_' + _intIdForLock;
-        if (_procCache.get(_procKey)) {
-          _alreadyProcessing = true;
-        } else {
-          _procCache.put(_procKey, String(Date.now()), 10 * 60); // auto-expires in 10 min
-        }
-      } catch(le) {
-        Logger.log('submitTranscript: lock acquisition failed — ' + le);
-        // Non-fatal: proceed without the guard rather than blocking the user
-      } finally {
-        try { _lock.releaseLock(); } catch(le2) {}
-      }
-      if (_alreadyProcessing) {
-        return { success: false, error: 'This interaction is already being processed. Please wait a moment and refresh.' };
-      }
     }
 
     // If QA analyst manually selected a LOB from the modal, use it as the primary LOB
@@ -3756,35 +4103,87 @@ function submitTranscript(formData) {
 
     Logger.log('Interaction ID resolved: "' + interactionId + '" (form: "' + (formData.interactionId||'') + '", transcript: "' + (transcriptMeta.interactionId||'') + '")');
 
-    // ── 1. Cache check ────────────────────────────────────────────────────────
+    // The guard keys on the RESOLVED Interaction ID (the form's, else the one read from the
+    // transcript). It used to read only the form field, so with that field blank (it is
+    // filled from the transcript) there was no guard and a double click ran the AI twice.
+    // It is released in the finally block at the bottom: a cache hit and "Access denied"
+    // used to return without releasing it, which told the analyst their own finished
+    // submit was "already being processed" for the next ten minutes.
+    // ── Per-Interaction-ID duplicate-submission guard ──────────────────────────
+    // Two QA analysts submitting the same Interaction ID concurrently would each
+    // pass the cache-miss check, both run the AI (~2-5 min each), and both
+    // append duplicate rows to every sheet.  We use a short LockService window
+    // to atomically check/set a CacheService "processing" flag, then release
+    // the lock immediately so the slow AI work does not block other submissions.
+    // CacheService (not PropertiesService) is used because it supports TTL:
+    // if a GAS execution is killed by the 6-minute hard timeout, the flag
+    // auto-expires and the interaction becomes submittable again — PropertiesService
+    // has no expiry and would deadlock that interaction ID permanently.
     if (interactionId) {
-      var cached = findCachedResult(interactionId, analysisType);
+      var _lock = LockService.getScriptLock();
+      var _alreadyProcessing = false;
+      try {
+        _lock.waitLock(6000); // only hold long enough to read+write one cache entry
+        var _procCache = CacheService.getScriptCache();
+        var _flagKey   = _procKey_(interactionId, formData.sapId);
+        if (_procCache.get(_flagKey)) {
+          _alreadyProcessing = true;
+        } else {
+          _procCache.put(_flagKey, String(Date.now()), 10 * 60); // auto-expires in 10 min
+          _procFlagKey = _flagKey;   // ours: released in the finally block, on EVERY way out
+        }
+      } catch(le) {
+        Logger.log('submitTranscript: lock acquisition failed — ' + le);
+        // Non-fatal: proceed without the guard rather than blocking the user
+      } finally {
+        try { _lock.releaseLock(); } catch(le2) {}
+      }
+      if (_alreadyProcessing) {
+        return { success: false, error: 'This interaction is already being processed. Please wait a moment and refresh.' };
+      }
+    }
+
+    // ── 1. Cache check ────────────────────────────────────────────────────────
+    var reusedHtml = null;   // set when the evaluation is cached but this audit has no record yet
+    if (interactionId) {
+      var cached = findCachedResult_(interactionId, analysisType, formData.sapId);
       if (cached) {
-        Logger.log('Returning cached result for: ' + interactionId);
-        // Still return the auditRef from the cache row if available
-        var cachedRef = findAuditRefForInteraction(interactionId, analysisType);
-        return {
-          success:      true,
-          html:         sharedCSS() + fixBadgeClasses(cached),
-          sheetUrl:     spreadsheet.getUrl(),
-          fromCache:    true,
-          auditRef:     cachedRef,
-          observerName: (formData.observerName || '')
-        };
+        var cachedRef = findAuditRefForInteraction_(interactionId, analysisType, formData.sapId);
+        if (cachedRef) {
+          Logger.log('Returning cached result for: ' + interactionId);
+          return {
+            success:      true,
+            html:         sharedCSS() + fixBadgeClasses(cached),
+            sheetUrl:     spreadsheet.getUrl(),
+            fromCache:    true,
+            auditRef:     cachedRef,
+            observerName: (formData.observerName || '')
+          };
+        }
+        // The report is cached but no Audit_Log row exists for this agent: an earlier attempt
+        // failed (or was killed) after the cache write. Reporting success here used to hand
+        // back an EMPTY audit reference and write nothing, so the analyst saw a report that
+        // was in no sheet and the email then failed. Finish the records from the cached
+        // report instead; the AI is not called again.
+        Logger.log('Cached evaluation for ' + interactionId + ' has no audit record - completing the records from the cache');
+        reusedHtml = cached;
       }
     }
 
     // ── 2. Generate audit reference + resolve observer ────────────────────────
-    var auditRef     = generateAuditRef();
-    var observerName = (formData.observerName || '').trim();
+    var observerName  = (formData.observerName || '').trim();
     var analysisLabel = analysisType === 'sales' ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
     var warnings      = [];
+    // Completing a cached audit: reuse the reference the failed attempt already stamped into
+    // the report (its Transcripts row has it). Otherwise a new one.
+    var reusedRef = (reusedHtml !== null) ? findOrphanTranscriptRef_(interactionId, formData.sapId, analysisLabel) : '';
+    var auditRef  = reusedRef || generateAuditRef_();
 
     // Resolve locale — fall back to roster lookup if the form field was blank
     var resolvedLocale = (formData.locale || '').trim();
     if (!resolvedLocale && formData.sapId) {
       try {
-        var rosterRow = lookupBySapId(formData.sapId.trim());
+        var rosterRow = lookupBySapId_(formData.sapId.trim());
         if (rosterRow && rosterRow.locale) resolvedLocale = rosterRow.locale;
       } catch(le) { Logger.log('Locale fallback lookup failed (non-fatal): ' + le); }
     }
@@ -3796,7 +4195,7 @@ function submitTranscript(formData) {
     // reassigned since their last audit — flagged as a warning, not applied
     // silently.
     if (formData.sapId && (!formData.teamLeader || !formData.opsManager || !formData.lineOfBusiness || !resolvedLocale || !formData.vtid)) {
-      var teamHistory = getTeamDetailsFromAuditHistory(formData.sapId.trim());
+      var teamHistory = getTeamDetailsFromAuditHistory_(formData.sapId.trim());
       if (teamHistory) {
         var usedHistoryFallback = false;
         if (!formData.teamLeader     && teamHistory.teamLeader)     { formData.teamLeader     = teamHistory.teamLeader;     usedHistoryFallback = true; }
@@ -3810,178 +4209,56 @@ function submitTranscript(formData) {
       }
     }
 
-    // ── 3. Save transcript row ────────────────────────────────────────────────
-    try {
-      var tSheet = getOrCreateSheet(spreadsheet, TRANSCRIPTS_SHEET);
-      ensureHeaders(tSheet, TRANSCRIPTS_HEADERS);
-      appendRow(tSheet, [
-        auditRef, now,
-        formData.sapId || '', participant,
-        formData.teamLeader || '', formData.opsManager || '',
-        formData.lineOfBusiness || '', resolvedLocale,
-        observerName,
-        startTime, customerBAN, interactionId,
-        direction, duration,
-        analysisLabel, formData.transcript,
-        formData.agentEmail || ''
-      ]);
-    } catch(we) {
-      var msg = we.toString();
-      if (msg.indexOf('permission') !== -1 || msg.indexOf('document') !== -1 || msg.indexOf('access') !== -1) {
-        return {
-          success: false,
-          error: 'Access denied: You need Editor (not Viewer) access to the "' + SPREADSHEET_NAME + '" spreadsheet. ' +
-                 'Please ask your admin to update your sharing permissions to Editor access.'
-        };
-      }
-      throw we;
-    }
-
-    // ── 3.5 Translate transcript to English if requested ─────────────────────
-    var transcriptForAnalysis = formData.transcript;
-    if (formData.translateToEnglish && transcriptForAnalysis.trim()) {
+    // ── 3. Save transcript row (not again when completing an audit whose row exists) ─
+    if (!reusedRef) {
       try {
-        Logger.log('translateToEnglish=true — translating transcript for ' + (interactionId || 'unknown'));
-        var translated = translateTranscriptText(transcriptForAnalysis);
-        if (translated) {
-          transcriptForAnalysis = translated;
-        } else {
-          Logger.log('Translation returned null — proceeding with original transcript');
+        var tSheet = getOrCreateSheet(spreadsheet, TRANSCRIPTS_SHEET);
+        ensureHeaders(tSheet, TRANSCRIPTS_HEADERS);
+        appendRow(tSheet, [
+          auditRef, now,
+          formData.sapId || '', participant,
+          formData.teamLeader || '', formData.opsManager || '',
+          formData.lineOfBusiness || '', resolvedLocale,
+          observerName,
+          startTime, customerBAN, interactionId,
+          direction, duration,
+          analysisLabel, _cellSafeTranscript_(formData.transcript),
+          formData.agentEmail || ''
+        ]);
+      } catch(we) {
+        var msg = we.toString();
+        if (msg.indexOf('permission') !== -1 || msg.indexOf('document') !== -1 || msg.indexOf('access') !== -1) {
+          return {
+            success: false,
+            error: 'Access denied: You need Editor (not Viewer) access to the "' + SPREADSHEET_NAME + '" spreadsheet. ' +
+                   'Please ask your admin to update your sharing permissions to Editor access.'
+          };
         }
-      } catch(te) {
-        Logger.log('Translation step failed (non-fatal, using original): ' + te);
+        throw we;
       }
     }
 
-    // ── 4. Run AI ─────────────────────────────────────────────────────────────
-    // Filter transcript to only include the target agent's turns + customer lines
     var filterStats = { applied: false, targetFound: false };
-    if (participant) {
-      var filterResult = filterTranscriptByAgent(transcriptForAnalysis, participant);
-      transcriptForAnalysis = filterResult.filtered;
-      filterStats = filterResult.stats;
-    }
-    var rawAI = analyzeTranscript(transcriptForAnalysis, analysisType, participant, formData.selectedLOB || '');
-    Logger.log('AI response length: ' + rawAI.length);
-
-    var html = fixBadgeClasses(
-      rawAI
-        .replace(/^```html\s*/i, '')
-        .replace(/^```\s*/,      '')
-        .replace(/\s*```$/,      '')
-        .trim()
-    );
-
-    // Replace report placeholders with actual values so cache, email, and
-    // Dashboard all receive the final content (no deferred substitution needed).
-    html = html
-      .replace(/__AUDIT_REF__/g, auditRef     || '')
-      .replace(/__OBSERVER__/g,  observerName || 'N/A');
-
-    // ── 5. Save to Cache sheet FIRST — so a retry after any downstream failure ──
-    //      hits the cache instead of re-running the paid AI call and duplicating rows.
-    if (interactionId) {
-      saveCachedResult(interactionId, analysisType, html);
+    var html;
+    if (reusedHtml !== null) {
+      html = reusedHtml;
+      warnings.push('This evaluation had already been generated, but its audit record was missing, so the records were completed from the saved report (ref ' + auditRef + ').');
+    } else {
+      var made = produceEvaluation_(formData, {
+        interactionId: interactionId, participant: participant, analysisType: analysisType,
+        auditRef: auditRef, observerName: observerName
+      });
+      html = made.html;
+      filterStats = made.filterStats;
     }
 
-    // ── 6. Save to Analysis sheet (plain text only — no HTML) ─────────────────
-    var aSheet = getOrCreateSheet(spreadsheet, ANALYSIS_SHEET);
-    ensureHeaders(aSheet, ANALYSIS_HEADERS);
-    appendRow(aSheet, [
-      auditRef, now,
-      formData.sapId || '', formData.participant || '',
-      observerName, analysisLabel, htmlToPlainText(html)
-    ]);
-
-    // ── 7. Write to Dashboard_Data ────────────────────────────────────────────
-    try {
-      var dSheet = getOrCreateSheet(spreadsheet, DASHBOARD_DATA_SHEET);
-      ensureHeaders(dSheet, DASHBOARD_HEADERS);
-      var callReason       = extractTextBlock(html, 'Call Reason')      || '';
-      var callSummary      = extractTextBlock(html, 'Call Summary')      || '';
-      var opportunities    = extractTextBlock(html, 'Opportunities')     || '';
-      var recommendations  = extractTextBlock(html, 'Recommendation')    || '';
-      var criticalFlags    = extractTextBlock(html, 'Critical Flag')     || '';
-      var repeatPct        = extractTextBlock(html, 'Repeat Risk')       || '';
-      var issueResolved    = extractTextBlock(html, 'Issue Resolution')  || '';
-      var transferOccurred = extractTextBlock(html, 'Transfer')          || '';
-
-      // Structured RCA fields — all parsed from the evaluation HTML. RCA category,
-      // product opportunity and sales attempted now arrive in the hidden
-      // div.ai-meta the evaluation prompt emits, so the separate enrichment AI
-      // call this used to need is gone.
-      var structured = null;
-      try {
-        structured = extractStructuredRCAFromHTML(html);
-      } catch(re) {
-        // Do not swallow this silently: it blanks eleven Dashboard columns while
-        // the submit still reports success.
-        Logger.log('extractStructuredRCAFromHTML FAILED for ' + auditRef + ' — 11 Dashboard columns will be blank: ' + re);
-        warnings.push('Some dashboard fields could not be extracted for ref ' + auditRef);
-      }
-      var callDriver        = structured ? structured.callDriver        : '';
-      var rcaCategory       = structured ? structured.rcaCategory       : '';
-      var rcaSubParameter   = structured ? structured.rcaSubParameter   : '';
-      var topOpportunity    = structured ? structured.topOpportunity    : '';
-      var productOpportunity= structured ? structured.productOpportunity: '';
-      var salesAttempted    = structured ? structured.salesAttempted    : '';
-
-
-      var smartS            = structured ? structured.smartS            : '';
-      var smartM            = structured ? structured.smartM            : '';
-      var smartA            = structured ? structured.smartA            : '';
-      var smartR            = structured ? structured.smartR            : '';
-      var smartT            = structured ? structured.smartT            : '';
-      if (structured && structured.callSummaryShort && !callSummary)
-        callSummary = structured.callSummaryShort;
-
-      appendRow(dSheet, [
-        auditRef, now, interactionId,
-        formData.sapId || '', participant,
-        formData.teamLeader || '', formData.opsManager || '',
-        formData.lineOfBusiness || '', resolvedLocale,
-        formData.vtid || '',
-        observerName,
-        '',               // Department
-        direction, duration,
-        analysisLabel,
-        callReason, callSummary, opportunities, recommendations,
-        criticalFlags, repeatPct, issueResolved, transferOccurred,
-        callDriver, rcaCategory, rcaSubParameter, topOpportunity, productOpportunity, salesAttempted,
-        smartS, smartM, smartA, smartR, smartT,
-        'Pending', 'Not Sent', formData.agentEmail || ''
-      ]);
-      invalidateDashboardCache();
-    } catch(de) {
-      Logger.log('Dashboard_Data write error (non-fatal): ' + de);
-      warnings.push('Dashboard entry failed to save — contact admin with ref ' + auditRef);
-    }
-
-    // ── 8. Write to Audit_Log ─────────────────────────────────────────────────
-    try {
-      var logSheet = getOrCreateSheet(spreadsheet, AUDIT_LOG_SHEET);
-      ensureHeaders(logSheet, AUDIT_LOG_HEADERS);
-      appendRow(logSheet, [
-        auditRef, now, interactionId,
-        formData.sapId || '', participant,
-        formData.teamLeader || '', formData.opsManager || '',
-        formData.lineOfBusiness || '', resolvedLocale,
-        formData.vtid || '',
-        observerName, analysisLabel,
-        direction, duration,
-        repeatPct || '', issueResolved || '', transferOccurred || '',
-        'Not Sent', '', formData.agentEmail || ''
-      ]);
-      invalidateAuditLogCache(); // bust cache so next read is fresh
-    } catch(le) {
-      Logger.log('Audit_Log write error (non-fatal): ' + le);
-      warnings.push('Audit log entry failed to save — contact admin with ref ' + auditRef);
-    }
-
-    // ── Release the per-Interaction-ID processing flag ──────────────────────
-    if (_intIdForLock) {
-      try { CacheService.getScriptCache().remove('proc_' + _intIdForLock); } catch(pe) {}
-    }
+    // ── 6-8. Analysis, Dashboard_Data and Audit_Log rows ──────────────────────
+    warnings = warnings.concat(writeAuditRecords_(spreadsheet, formData, {
+      auditRef: auditRef, now: now, participant: participant, interactionId: interactionId,
+      direction: direction, duration: duration, resolvedLocale: resolvedLocale,
+      observerName: observerName, analysisLabel: analysisLabel, html: html,
+      recovering: reusedHtml !== null
+    }));
 
     return {
       success:      true,
@@ -4011,20 +4288,23 @@ function submitTranscript(formData) {
     // Also write it straight into the spreadsheet — reading Stackdriver/GCP
     // logs needs a non-default GCP project linked to this script, which this
     // project does not have, so Logger.log alone is not actually reachable.
-    logSubmissionError('submitTranscript', formData, e);
-    // Release the processing flag on error so the analyst can retry
-    try {
-      var _intIdForLockErr = (formData && formData.interactionId || '').trim();
-      if (_intIdForLockErr) CacheService.getScriptCache().remove('proc_' + _intIdForLockErr);
-    } catch(pe) {}
+    logSubmissionError_('submitTranscript', formData, e);
     // Google's raw error was going straight to the analyst's screen. It tells
-    // them nothing they can act on. Check the AI-service tag FIRST: callFuelIX()
+    // them nothing they can act on. Check the AI-service tag FIRST: callFuelIX_()
     // (AIService.gs) is called completely unguarded above, and a FuelIX auth/
     // outage error's response body often contains wording like "permission" or
     // "access" — the generic substring check below used to catch that and
     // misreport it as a Sheets/Drive lookup problem, sending everyone hunting
     // through Roster sharing for a bug that was actually the AI call.
     var _msg = e.toString();
+    if (_msg.indexOf('AI_SERVICE_ERROR[truncated]') !== -1) {
+      return {
+        success: false,
+        error: 'The AI report came out too long and was cut off, so this audit was not saved. ' +
+               'Please submit again; a new attempt is usually shorter. If it keeps happening ' +
+               'with the same transcript, report it to the Analyzer admin.'
+      };
+    }
     if (_msg.indexOf('AI_SERVICE_ERROR') !== -1) {
       return {
         success: false,
@@ -4049,91 +4329,12 @@ function submitTranscript(formData) {
       };
     }
     return { success: false, error: _msg };
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Auto-send email on every submission — Team Member, QA, QA TL, Admin/Dev
-// ─────────────────────────────────────────────────────────────────────────────
-function sendSubmissionEmail(formData, htmlResult, auditRef) {
-  try {
-    var agentName     = formData.participant    || 'Agent';
-    var sapId         = formData.sapId         || 'N/A';
-    var interactionId = formData.interactionId || 'N/A';
-    var observerName  = (formData.observerName || '').trim();
-    var analysisLabel = formData.analysisType === 'sales'
-                        ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
-
-    var recipients = buildAuditRecipients(formData);
-
-    if (!recipients.length) {
-      Logger.log('sendSubmissionEmail: no valid recipients — skipping');
-      return;
+  } finally {
+    // Every way out (success, cache hit, access denied, AI failure, an unexpected error)
+    // releases the flag THIS call took, and only that one.
+    if (_procFlagKey) {
+      try { CacheService.getScriptCache().remove(_procFlagKey); } catch (pe) {}
     }
-
-    Logger.log('sendSubmissionEmail: sending to ' + recipients.join(', '));
-
-    var firstName  = agentName.split(' ')[0];
-    var evalTitle  = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
-    var lobLabel   = formData.selectedLOB || formData.lineOfBusiness || '';
-    var auditType  = formData.auditType || '';
-    var subject    = 'Real Time Feedback — ' + agentName + ' (' + sapId + ')' +
-                     (auditType ? ' | ' + auditType : '') +
-                     (lobLabel  ? ' | ' + lobLabel  : '') +
-                     ' | BAN: ' + (formData.customerBAN || 'N/A');
-
-    var body =
-      'Hi ' + firstName + ',\n\n' +
-      'We\'re excited to share feedback from your recent customer interaction!\n\n' +
-      'Your call has been reviewed to highlight your strengths and provide insights that will help you continue to grow and excel in your role.\n\n' +
-      'Remember: This evaluation is a tool for your development, and we\'re here to support your success every step of the way.\n\n' +
-      'EVALUATION DETAILS\n' +
-      '─────────────────────────────────────\n' +
-      'Audit Reference:  ' + auditRef + '\n' +
-      'Interaction Date: ' + (formData.startTime || 'N/A') + '\n' +
-      'Customer BAN:     ' + (formData.customerBAN || 'N/A') + '\n' +
-      'Interaction ID:   ' + interactionId + '\n' +
-      'Listening Type:   ' + (formData.direction || 'N/A') + '\n' +
-      'Analysis Type:    ' + analysisLabel + '\n' +
-      '─────────────────────────────────────\n\n' +
-      'What\'s included in your evaluation:\n' +
-      '  • Call summary and key points\n' +
-      '  • Highlights of your performance\n' +
-      '  • SMART coaching recommendations\n' +
-      '  • Skill ratings and detailed feedback\n\n' +
-      'Please review your evaluation and discuss with your Team Leader for coaching and development opportunities.\n\n' +
-      'QA & LS Team\n' +
-      'This evaluation is for development purposes.\n';
-
-    var evalUrl  = ScriptApp.getService().getUrl() + '?page=eval&ref=' + encodeURIComponent(auditRef);
-    var htmlBody = buildAgentEmailHTML(
-      evalTitle, firstName, agentName, sapId,
-      auditRef, interactionId,
-      formData.startTime || 'N/A',
-      formData.customerBAN || 'N/A',
-      formData.direction || 'N/A',
-      analysisLabel, evalUrl
-    );
-
-    // Wrap sendEmailInBatches_ so a partial batch failure doesn't skip the
-    // dashboard update or admin notification — both always run.
-    var _subEmailErr = null;
-    try {
-      sendEmailInBatches_(recipients, subject, body, htmlBody, 'NH Call Analyzer');
-    } catch(emailEx) {
-      _subEmailErr = emailEx.toString();
-      Logger.log('sendSubmissionEmail: partial email failure — ' + _subEmailErr);
-    }
-
-    Logger.log('Submission email ' + (_subEmailErr ? 'PARTIALLY' : '') + ' sent to: ' + recipients.join(', '));
-    // Must be the literal 'Sent' on success — the dashboards gate on `=== 'Sent'`.
-    updateDashboardPDFLink(interactionId, _subEmailErr ? 'Partial send' : 'Sent', recipients, auditRef);
-    // Admin notification deliberately removed from sendSubmissionEmail.
-    // notifyAdmins() is called once in sendAuditEmail (when user clicks Submit Email).
-    // Calling it here as well was doubling quota consumption per audit.
-
-  } catch(e) {
-    Logger.log('sendSubmissionEmail error: ' + e.toString());
   }
 }
 
@@ -4142,57 +4343,139 @@ function sendSubmissionEmail(formData, htmlResult, auditRef) {
 // ─────────────────────────────────────────────────────────────────────────────
 function sendAuditEmail(formData, htmlResult) {
   try {
+    // htmlResult is the analyst's EDITED report as the browser serialised it. It
+    // goes into the email and, via updateCachedResult_, into the page the agent
+    // opens, so it is reduced to the allow-list first.
+    htmlResult = sanitizeEvalHtml_(htmlResult);
+
     // ── Verify the audit actually exists before sending anything ──────────────
     var auditRefCheck = (formData.auditRef || '').trim();
     if (!auditRefCheck) {
       return { success: false, error: 'Missing audit reference.' };
     }
-    var auditLog = readAuditLog();
-    var auditRow = null;
-    for (var ai = 0; ai < auditLog.length; ai++) {
-      if ((auditLog[ai]['Audit Ref'] || '').toString().trim() === auditRefCheck) {
-        auditRow = auditLog[ai];
-        break;
-      }
-    }
-    if (!auditRow) {
+    var auditLog = readAuditLog_();
+    var formSapId         = (formData.sapId         || '').toString().trim();
+    var formInteractionId = (formData.interactionId || '').toString().trim();
+    var rowsWithRef = auditLog.filter(function(r) {
+      return (r['Audit Ref'] || '').toString().trim() === auditRefCheck;
+    });
+    if (!rowsWithRef.length) {
       return { success: false, error: 'Audit reference not found.' };
     }
+    // A reference that two audits share cannot be emailed safely: the link
+    // carries only the reference and always opens the first of the two rows, so
+    // the second agent would be shown the first agent's evaluation. This only
+    // affects references issued before the NH and TI scripts got separate
+    // prefixes; reportDuplicateAuditRefs() lists them and
+    // applyDuplicateAuditRefRenames() gives the later row of each pair a new one.
+    if (rowsWithRef.length > 1) {
+      var sharedMsg = 'The audit reference ' + auditRefCheck + ' is shared by more than one saved evaluation ' +
+        '(an old reference from before the NH and TI references were separated), so nothing was emailed. ' +
+        'Please contact the QA and LS admin team to clean it up.';
+      Logger.log('sendAuditEmail: reference ' + auditRefCheck + ' is shared by ' + rowsWithRef.length + ' rows');
+      logSubmissionError_('sendAuditEmail:sharedReference', formData, new Error(sharedMsg));
+      return { success: false, error: sharedMsg };
+    }
+    var auditRow = rowsWithRef[0];
+
+    // ── The form must still be the audit that was saved under this ref ────────────────
+    // The subject and recipients below come from the form, but the evaluation
+    // link opens whatever the Audit_Log row for this ref holds. If the two are
+    // about different agents the email would tell one person and link to
+    // another's evaluation, so send nothing. A blank field on either side is
+    // not a claim and is not compared.
+    var rowSapId         = (auditRow['SAP ID']         || '').toString().trim();
+    var rowInteractionId = (auditRow['Interaction ID'] || '').toString().trim();
+    // (the check below makes the two equal whenever both are filled in; when the form's is blank the saved one is used, so the
+    // recipients are always looked up for the agent who was audited, never for whatever is left in the form)
+    if ((formSapId && rowSapId && formSapId !== rowSapId) ||
+        (formInteractionId && rowInteractionId && formInteractionId !== rowInteractionId)) {
+      var mismatchMsg = 'This evaluation (' + auditRefCheck + ') was saved for a different team member or ' +
+        'interaction than the one now on the form, so nothing was emailed. ' +
+        'Please click Clear All, then Process Script again for the correct team member.';
+      Logger.log('sendAuditEmail: identity mismatch for ' + auditRefCheck +
+                 ' — form SAP ' + formSapId + ' / interaction ' + formInteractionId +
+                 ' vs saved SAP ' + rowSapId + ' / interaction ' + rowInteractionId);
+      logSubmissionError_('sendAuditEmail:identityMismatch', formData, new Error(mismatchMsg));
+      return { success: false, error: mismatchMsg };
+    }
+    if (rowSapId) formData.sapId = rowSapId;   // the recipients are looked up for the audited agent, whatever the form still holds
 
     // ── Re-check admin status server-side — never trust the client's emailMode claim ──
-    var callerEmail = '';
-    try { callerEmail = Session.getActiveUser().getEmail() || ''; } catch(ee) {}
-    callerEmail = callerEmail.toLowerCase().trim();
-    var callerLocal  = callerEmail.split('@')[0];
-    var callerDomain = callerEmail.split('@')[1] || '';
-    var callerIsAdmin = !!callerLocal &&
-                        ADMIN_USERNAMES.indexOf(callerLocal) !== -1 &&
-                        callerDomain === ADMIN_DOMAIN.toLowerCase();
-    var effectiveMode = (formData.emailMode === 'test' && callerIsAdmin) ? 'test' : 'live';
+    // Same rule as the screen's TEST toggle (getObserverInfo): isAdminCaller_().
+    // They used to differ — the screen accepted any domain, this accepted only
+    // telus.com — so an admin signed in on telusinternational.com saw TEST but the
+    // server quietly made it LIVE and emailed the real agent and leaders.
+    var callerIsAdmin = isAdminCaller_();
+
+    // Only an admin, or the analyst who saved this audit, may email it. sendAuditEmail is open to every signed-in user (the page calls it)
+    // and sends from the owner's mailbox, so without this anyone could send mail about any audit (the refs are easy to guess).
+    var _obs = {}; try { _obs = resolveObserver_() || {}; } catch (oe) {}
+    var _callerEmail = ''; try { _callerEmail = (Session.getActiveUser().getEmail() || '').toString().toLowerCase().trim(); } catch (ce) {}
+    if (!callerIsAdmin && !_callerOwnsAudit_(auditRow, _obs, _callerEmail)) {
+      var notYoursMsg = 'Only the analyst who saved this audit, or an admin, can email it. Nothing was sent.';
+      Logger.log('sendAuditEmail: ' + (_callerEmail || 'unknown caller') + ' is not the observer of ' + auditRefCheck + ' (' + (auditRow['Observer Name'] || 'no observer') + '); nothing sent');
+      logSubmissionError_('sendAuditEmail:notYourAudit', formData, new Error(notYoursMsg));
+      return { success: false, error: notYoursMsg };
+    }
+    if (!_emailRateTake_(_callerEmail, callerIsAdmin)) {
+      return { success: false, error: 'You have already sent a lot of audit emails in the last hour, so nothing was sent. Please try again later.' };
+    }
+    // The QA recipient is the person who is signed in, never an address typed into the form (an admin sending on someone's behalf is
+    // resolved from the roster by the observer name on the saved audit).
+    if (!callerIsAdmin) formData.observerEmail = _callerEmail;
+    else formData.observerEmail = '';
+    if (!formData.observerName && auditRow['Observer Name']) formData.observerName = auditRow['Observer Name'];
+
+    // Asking for TEST and not being allowed to is REFUSED, never turned into a real
+    // send: sending nothing is recoverable, emailing the wrong people is not.
+    if (formData.emailMode === 'test' && !callerIsAdmin) {
+      Logger.log('sendAuditEmail: TEST mode requested by a caller who is not an admin; nothing sent for ' + auditRefCheck);
+      return { success: false, error: 'Test mode is only for the admin team, so nothing was emailed. ' +
+        'Switch the email mode to LIVE if you mean to email the team, or ask an admin to run the test.' };
+    }
+    var effectiveMode = (formData.emailMode === 'test') ? 'test' : 'live';
 
     var recipients;
     if (effectiveMode === 'test') {
-      var adminList = getRecipientsFromRoster('Admin/Dev');
+      var adminList = getRecipientsFromRoster_('Admin/Dev');
       recipients = adminList.map(function(r) { return r.email; }).filter(Boolean);
     } else {
-      recipients = buildAuditRecipients(formData);
+      recipients = buildAuditRecipients_(formData);
+    }
+    // An address outside the company domains is never mailed. It is dropped, logged and reported back so it is not silent.
+    var _split = _splitInternalRecipients_(recipients);
+    var _dropped = _split.dropped;
+    recipients = _split.ok;
+    if (_dropped.length) {
+      Logger.log('sendAuditEmail: not mailed (not a company address): ' + _dropped.join(', '));
+      logSubmissionError_('sendAuditEmail:externalRecipient', formData, new Error('Not mailed, not a company address: ' + _dropped.join(', ')));
     }
 
+    if (!recipients.length && _dropped.length) {
+      return { success: false, error: 'None of the recipients is a company address, so nothing was emailed: ' + _dropped.join(', ') };
+    }
     if (!recipients.length) {
-      return { success: false, error: 'Could not resolve recipient email addresses.' };
+      // Say which list came up empty: "nobody found" in TEST mode (the Admin/Dev
+      // list) is a different problem from LIVE mode (agent, leader, ops manager, QA).
+      Logger.log('sendAuditEmail: no recipients resolved in ' + effectiveMode + ' mode for ' + auditRefCheck);
+      return { success: false, error: 'Could not resolve recipient email addresses' +
+        (effectiveMode === 'test'
+          ? ' (TEST mode: no Admin/Dev address was found in the Roster tab).'
+          : ' (LIVE mode: none of the agent, team leader, ops manager or QA addresses were found).') };
     }
 
-    var agentName     = formData.participant   || 'Agent';
-    var sapId         = formData.sapId         || 'N/A';
-    var interactionId = formData.interactionId || 'N/A';
-    var auditRef      = formData.auditRef      || 'N/A';
+    var agentName     = _oneLine_(auditRow['Team Member'] || formData.participant || 'Agent', 80);
+    var sapId         = _oneLine_(rowSapId || formData.sapId || 'N/A', 20);
+    var interactionId = _oneLine_(rowInteractionId || formData.interactionId || 'N/A', 120);
+    var auditRef      = _oneLine_(auditRefCheck, 64);
     var analysisLabel = formData.analysisType === 'sales' ? 'Sales Analyzer' : 'Repeats & Transfer Analyzer';
     var firstName     = agentName.split(' ')[0];
     var evalTitle     = formData.analysisType === 'sales' ? 'Sales Performance Evaluation' : 'New Hire Evaluation';
-    var lobDisplay    = formData.selectedLOB || formData.lineOfBusiness || 'N/A';
-    var auditType2    = formData.auditType || 'N/A';
+    var lobDisplay    = _oneLine_(formData.selectedLOB || formData.lineOfBusiness || 'N/A', 60);
+    var auditType2    = _oneLine_(formData.auditType || 'N/A', 40);
     var subject       = (effectiveMode === 'test' ? '[TEST] ' : '') +
-                        agentName + ' | ' + auditRef + ' | ' + (formData.observerName || 'N/A') + ' | ' + auditType2 + ' | ' + lobDisplay + ' | ' + (formData.locale || 'N/A');
+                        agentName + ' | ' + auditRef + ' | ' + _oneLine_(formData.observerName || 'N/A', 80) + ' | ' + auditType2 + ' | ' + lobDisplay + ' | ' + _oneLine_(formData.locale || 'N/A', 60);
 
     // ── Plain-text body ───────────────────────────────────────────────────────
     var body =
@@ -4202,10 +4485,10 @@ function sendAuditEmail(formData, htmlResult) {
       'EVALUATION DETAILS\n' +
       '─────────────────────────────────────\n' +
       'Audit Reference:  ' + auditRef + '\n' +
-      'Interaction Date: ' + (formData.startTime || 'N/A') + '\n' +
-      'Customer BAN:     ' + (formData.customerBAN || 'N/A') + '\n' +
+      'Interaction Date: ' + _oneLine_(formData.startTime || 'N/A', 40) + '\n' +
+      'Customer BAN:     ' + _oneLine_(formData.customerBAN || 'N/A', 40) + '\n' +
       'Interaction ID:   ' + interactionId + '\n' +
-      'Listening Type:   ' + (formData.direction || 'N/A') + '\n' +
+      'Listening Type:   ' + _oneLine_(formData.direction || 'N/A', 30) + '\n' +
       'Audit Type:       ' + auditType2 + '\n' +
       'Analysis Type:    ' + analysisLabel + '\n' +
       '─────────────────────────────────────\n\n' +
@@ -4223,9 +4506,9 @@ function sendAuditEmail(formData, htmlResult) {
     var htmlBody = buildAgentEmailHTML(
       evalTitle, firstName, agentName, sapId,
       auditRef, interactionId,
-      formData.startTime || 'N/A',
-      formData.customerBAN || 'N/A',
-      formData.direction || 'N/A',
+      _oneLine_(formData.startTime || 'N/A', 40),
+      _oneLine_(formData.customerBAN || 'N/A', 40),
+      _oneLine_(formData.direction || 'N/A', 30),
       analysisLabel, evalUrl
     );
 
@@ -4261,45 +4544,54 @@ function sendAuditEmail(formData, htmlResult) {
     // a failure here is a separate, non-critical step (recording delivery
     // status on the sheet) and must not make the whole request report as
     // failed when the email itself went out fine. Same reasoning as the
-    // notifyAdmins/updateCachedResult guards just below.
+    // notifyAdmins_/updateCachedResult_ guards just below.
     try {
-      updateDashboardPDFLink(interactionId, sheetStatus, recipients, auditRef, resolvedByAnalyst);
+      updateDashboardPDFLink_(interactionId, sheetStatus, recipients, auditRef, resolvedByAnalyst);
     } catch(de) {
       Logger.log('updateDashboardPDFLink in sendAuditEmail failed: ' + de);
-      logSubmissionError('sendAuditEmail:updateDashboardPDFLink', formData, de);
+      logSubmissionError_('sendAuditEmail:updateDashboardPDFLink', formData, de);
     }
 
     Logger.log('Audit email ' + (_auditEmailErr ? 'PARTIALLY FAILED' : _auditEmailWarn ? 'QUOTA EXCEEDED' : '') + ' sent to: ' + recipients.join(', '));
-    // notifyAdmins only runs in live mode. In test mode the main email already went
-    // exclusively to Admin/Dev, so calling notifyAdmins would cause a double-send.
+    // notifyAdmins_ only runs in live mode. In test mode the main email already went
+    // exclusively to Admin/Dev, so calling notifyAdmins_ would cause a double-send.
     if (effectiveMode === 'live') {
-      try { notifyAdmins(formData, auditRefCheck); } catch(ne) { Logger.log('notifyAdmins failed: ' + ne); }
+      try { notifyAdmins_(formData, auditRefCheck); } catch(ne) { Logger.log('notifyAdmins_ failed: ' + ne); }
     }
 
     // Update Cache Sheet with user-edited HTML so EvalView shows the edited version
     try {
-      var intId = (formData.interactionId || '').trim();
-      var aType = (formData.analysisType  || 'repeats').trim();
+      var intId = formInteractionId || rowInteractionId;
+      // The saved audit decides the type. The Repeats/Sales radio can still be
+      // flipped after Process, and an edit written under the other type would
+      // never be shown and would be served to a later audit of that type.
+      var aType = auditRow['Analysis Type']
+        ? _normalizeAnalysisType(auditRow['Analysis Type'])
+        : (formData.analysisType || 'repeats').trim();
       if (intId && htmlResult) {
-        updateCachedResult(intId, aType, htmlResult);
+        updateCachedResult_(intId, aType, htmlResult, rowSapId || formSapId);
         // Clear the EvalView CacheService entry so the next visit re-reads the updated sheet
         var evKey = 'ev2_' + Utilities.base64Encode(auditRefCheck).substring(0, 200);
         CacheService.getScriptCache().remove(evKey);
       }
-    } catch(ue) { Logger.log('updateCachedResult in sendAuditEmail failed: ' + ue); }
+    } catch(ue) { Logger.log('updateCachedResult_ in sendAuditEmail failed: ' + ue); }
 
+    var _result;
     if (_auditEmailErr) {
       return { success: false, error: _auditEmailErr, recipients: recipients, auditRef: auditRef };
     }
     // Quota warning: audit was saved and form should lock, but show a warning banner
     if (_auditEmailWarn) {
-      return { success: true, emailWarning: _auditEmailWarn, recipients: recipients, auditRef: auditRef };
+      _result = { success: true, emailWarning: _auditEmailWarn, recipients: recipients, auditRef: auditRef };
+    } else {
+      _result = { success: true, recipients: recipients, auditRef: auditRef };
     }
-    return { success: true, recipients: recipients, auditRef: auditRef };
+    if (_dropped.length) _result.droppedRecipients = _dropped;
+    return _result;
 
   } catch(e) {
     Logger.log('sendAuditEmail error: ' + e.toString() + '\n' + (e.stack || '(no stack)'));
-    logSubmissionError('sendAuditEmail', formData, e);
+    logSubmissionError_('sendAuditEmail', formData, e);
     // Same reasoning as submitTranscript's catch: this deployment runs as the
     // script owner (Execute as: Me), so a per-user permission gap is not the
     // likely cause here — showing the raw Google/Sheets message just sends
@@ -4376,7 +4668,7 @@ function sendEmailInBatches_(recipients, subject, body, htmlBody, senderName) {
 }
 
 // ── Resolve email from name — checks Primary Roster then Global Roster ────────
-function resolveEmail(name) {
+function resolveEmail_(name) {
   if (!name) return '';
   try {
     var nameLower = name.trim().toLowerCase();
@@ -4385,7 +4677,10 @@ function resolveEmail(name) {
     //    _getAgentEmailMap() reads the sheet once per execution then caches in
     //    memory, so this avoids an additional uncached sheet read on every call.
     var _emailMap = _getAgentEmailMap();
-    if (_emailMap && _emailMap[nameLower]) return _emailMap[nameLower];
+    if (_emailMap && Object.prototype.hasOwnProperty.call(_emailMap, nameLower)) {
+      // null means two people share this name: stop, do not scan for a first match.
+      return _emailMap[nameLower] || '';
+    }
 
     // 1. Primary Roster — match on Agent_Name column only (col C, index 2)
     var ss    = openSheetWithRetry(ROSTER_SHEET_ID, 'Roster Sheet');
@@ -4425,7 +4720,7 @@ function resolveEmail(name) {
 
     return '';
   } catch(e) {
-    Logger.log('resolveEmail error: ' + e);
+    Logger.log('resolveEmail_ error: ' + e);
     return '';
   }
 }
@@ -4664,6 +4959,7 @@ function buildEvalFormHTML(formData, auditRef, analysisResult) {
 
 // ── Generate PDF blob from structured form HTML ───────────────────────────────
 function generateAuditPDF(formData, htmlResult) {
+  requireAdmin_();
   try {
     var agentName     = formData.participant    || 'Agent';
     var interactionId = formData.interactionId  || 'N/A';
@@ -4995,53 +5291,7 @@ function buildAdminEmailHTML(
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Export rows to a new Google Spreadsheet and return its URL
-// Called from dashboard Export All / Export Filtered buttons
-// ─────────────────────────────────────────────────────────────────────────────
-function exportToSpreadsheet(rows, title) {
-  try {
-    if (!rows || !rows.length) return { success: false, error: 'No records to export.' };
-
-    var ss      = SpreadsheetApp.create(title + ' — ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'));
-    var sheet   = ss.getActiveSheet();
-    var headers = Object.keys(rows[0]);
-
-    // Write header row
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers])
-      .setFontWeight('bold')
-      .setBackground('#4B286D')
-      .setFontColor('#ffffff');
-    sheet.setFrozenRows(1);
-
-    // Write data rows
-    var data = rows.map(function(row) {
-      return headers.map(function(h) {
-        var v = row[h];
-        return (v !== null && v !== undefined) ? v.toString() : '';
-      });
-    });
-    if (data.length) sheet.getRange(2, 1, data.length, headers.length).setValues(data);
-
-    // Auto-resize all columns
-    try { sheet.autoResizeColumns(1, headers.length); } catch(e) {}
-
-    // Restrict to org domain only — never public
-    var file = DriveApp.getFileById(ss.getId());
-    try {
-      file.setSharing(DriveApp.Access.DOMAIN, DriveApp.Permission.VIEW);
-    } catch(se) {
-      // Fallback if domain sharing not available (personal accounts)
-      Logger.log('Domain sharing unavailable, export URL requires login: ' + se);
-    }
-
-    Logger.log('Export spreadsheet created: ' + ss.getUrl());
-    return { success: true, url: ss.getUrl(), title: ss.getName(), rowCount: rows.length };
-  } catch(e) {
-    Logger.log('exportToSpreadsheet error: ' + e);
-    return { success: false, error: e.toString() };
-  }
-}
+// Export to Google Sheets: see exportAudits in ExportService.gs (the browser sends Audit Refs only).
 
 // ─────────────────────────────────────────────────────────────────────────────
 // serverParseJSON removed — project now uses AI-returned HTML directly.
@@ -5449,16 +5699,29 @@ function buildFallbackHTML(rawText) {
 }
 
 // ── Action Registry logging — called from append_registry.py via Web App POST ──
-var REGISTRY_SECRET = 'NH_REGISTRY_2026_DPZ';
+//
+// The secret belongs in Script Properties (key: REGISTRY_SECRET), not in source
+// control. This constant WAS the secret and is in the git history, so treat it as
+// public. It is kept only as a TRANSITIONAL fallback so the external poster keeps
+// working until the property is set; once the property exists the constant is
+// ignored, and it can then be deleted.
+var REGISTRY_SECRET_LEGACY = 'NH_REGISTRY_2026_DPZ';
+
+function getRegistrySecret_() {
+  var v = PropertiesService.getScriptProperties().getProperty('REGISTRY_SECRET');
+  if (v) return v;
+  Logger.log('WARNING: Script Property REGISTRY_SECRET is not set; using the legacy secret that is in source control. Set the property and rotate it.');
+  return REGISTRY_SECRET_LEGACY;
+}
 
 function doPost(e) {
   try {
     var payload = JSON.parse(e.postData.contents);
-    if (payload.key !== REGISTRY_SECRET) {
+    if (!payload.key || payload.key !== getRegistrySecret_()) {
       return ContentService.createTextOutput(JSON.stringify({success: false, error: 'Unauthorized'}))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    var result = appendRegistryRow(payload.data || {});
+    var result = appendRegistryRow_(payload.data || {});
     return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
@@ -5467,7 +5730,15 @@ function doPost(e) {
   }
 }
 
+// Public entry for the Apps Script Execution API and manual runs. It must stay
+// public (private functions cannot be called that way), so it is admin-only; the
+// secret-guarded doPost() calls the private writer below instead.
 function appendRegistryRow(data) {
+  requireAdmin_();
+  return appendRegistryRow_(data);
+}
+
+function appendRegistryRow_(data) {
   var REGISTRY_SS_ID = '1a58nCQPv9B0C1E0m30x5fibDrgnaJL6A7Pyz265Fjac';
   var ss = SpreadsheetApp.openById(REGISTRY_SS_ID);
   var sh = ss.getSheetByName('Registry');
@@ -5494,7 +5765,7 @@ function appendRegistryRow(data) {
     data.author || 'Danzen',
     data.status || 'Done'
   ];
-  sh.appendRow(row);
+  appendRow(sh, row);   // the sanitising wrapper: a value starting with = + - @ must not become a formula
   SpreadsheetApp.flush();
 
   var newRow = sh.getLastRow();

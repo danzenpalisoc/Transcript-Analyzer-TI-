@@ -1,5 +1,5 @@
 /**
- * Regression test for getTeamDetailsFromAuditHistory() (SheetService.gs).
+ * Regression test for getTeamDetailsFromAuditHistory_() (SheetService.gs).
  *
  * Idea (from the admin, in response to the "lookup source" investigation):
  * if the live Roster/AT-Data/Global-Roster lookup fails or leaves a field
@@ -34,7 +34,7 @@ function extractFunction(source, name) {
   return source.slice(i, end);
 }
 
-const fnSource = extractFunction(src, 'getTeamDetailsFromAuditHistory');
+const fnSource = extractFunction(src, 'getTeamDetailsFromAuditHistory_');
 
 const AUDIT_LOG_HEADERS = [
   'Audit Ref', 'Submitted At', 'Interaction ID', 'SAP ID', 'Team Member',
@@ -74,7 +74,7 @@ function run(rows, extraGlobals) {
   sandbox.globalThis = sandbox;
   const ctx = vm.createContext(sandbox);
   vm.runInContext(fnSource, ctx);
-  return { getTeamDetailsFromAuditHistory: ctx.getTeamDetailsFromAuditHistory, logs };
+  return { getTeamDetailsFromAuditHistory_: ctx.getTeamDetailsFromAuditHistory_, logs };
 }
 
 let failures = 0;
@@ -83,34 +83,34 @@ function check(name, cond) {
   if (!cond) failures++;
 }
 
-console.log('NH Analyzer — getTeamDetailsFromAuditHistory regression test');
+console.log('NH Analyzer — getTeamDetailsFromAuditHistory_ regression test');
 console.log('file: ' + gsPath);
 
 console.log('\nTest 1 — no history for this SAP ID returns null, does not throw');
 {
-  const { getTeamDetailsFromAuditHistory } = run([
+  const { getTeamDetailsFromAuditHistory_ } = run([
     { 'SAP ID': '1111111', 'Team Leader': 'Someone Else' },
   ]);
-  const result = getTeamDetailsFromAuditHistory('2222222');
+  const result = getTeamDetailsFromAuditHistory_('2222222');
   check('returns null', result === null);
 }
 
 console.log('\nTest 2 — empty Audit_Log (header only) returns null, does not throw');
 {
-  const { getTeamDetailsFromAuditHistory } = run([]);
-  const result = getTeamDetailsFromAuditHistory('2222222');
+  const { getTeamDetailsFromAuditHistory_ } = run([]);
+  const result = getTeamDetailsFromAuditHistory_('2222222');
   check('returns null', result === null);
 }
 
 console.log('\nTest 3 — one prior entry is returned with all fields');
 {
-  const { getTeamDetailsFromAuditHistory } = run([
+  const { getTeamDetailsFromAuditHistory_ } = run([
     {
       'SAP ID': '2007888', 'Team Leader': 'TL-A', 'Operations Manager': 'OM-A',
       'Line of Business': 'MOB CLS', 'Locale': 'PH', 'VTID': 'V-100',
     },
   ]);
-  const result = getTeamDetailsFromAuditHistory('2007888');
+  const result = getTeamDetailsFromAuditHistory_('2007888');
   check('found the entry', !!result);
   check('Team Leader',         result && result.teamLeader === 'TL-A');
   check('Operations Manager',  result && result.opsManager === 'OM-A');
@@ -121,22 +121,22 @@ console.log('\nTest 3 — one prior entry is returned with all fields');
 
 console.log('\nTest 4 — multiple prior entries: the MOST RECENT (last row) wins, not the oldest');
 {
-  const { getTeamDetailsFromAuditHistory } = run([
+  const { getTeamDetailsFromAuditHistory_ } = run([
     { 'SAP ID': '2007888', 'Team Leader': 'TL-OLD', 'Line of Business': 'MOB CLS' },   // oldest
     { 'SAP ID': '9999999', 'Team Leader': 'Unrelated Agent' },                          // different SAP ID in between
     { 'SAP ID': '2007888', 'Team Leader': 'TL-NEW', 'Line of Business': 'FFH CxSS' },   // most recent
   ]);
-  const result = getTeamDetailsFromAuditHistory('2007888');
+  const result = getTeamDetailsFromAuditHistory_('2007888');
   check('used the most recent entry, not the oldest', result && result.teamLeader === 'TL-NEW');
   check('used the most recent Line of Business too',  result && result.lineOfBusiness === 'FFH CxSS');
 }
 
 console.log('\nTest 5 — SAP ID matching trims whitespace and compares as text');
 {
-  const { getTeamDetailsFromAuditHistory } = run([
+  const { getTeamDetailsFromAuditHistory_ } = run([
     { 'SAP ID': ' 2007888 ', 'Team Leader': 'TL-A' },
   ]);
-  const result = getTeamDetailsFromAuditHistory('2007888');
+  const result = getTeamDetailsFromAuditHistory_('2007888');
   check('matched despite stray whitespace in the sheet', result && result.teamLeader === 'TL-A');
 }
 
@@ -153,7 +153,7 @@ console.log('\nTest 6 — a broken sheet read is swallowed, returns null instead
   vm.runInContext(fnSource, ctx);
   let threw = false;
   let result;
-  try { result = ctx.getTeamDetailsFromAuditHistory('2007888'); } catch (e) { threw = true; }
+  try { result = ctx.getTeamDetailsFromAuditHistory_('2007888'); } catch (e) { threw = true; }
   check('did not throw', !threw);
   check('returned null', result === null);
 }
