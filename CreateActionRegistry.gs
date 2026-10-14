@@ -2088,6 +2088,17 @@ function createActionRegistry() {
       'Code.gs, index.html, tests/review-round2-test.js, tests/server-input-hardening-test.js, tests/submit-recovery-test.js, tests/audit-check-test.js',
       'Danzen',
       'Partly done'
+    ],
+    [
+      '186',
+      '2026-10-14',
+      'Fix',
+      'NH + TI',
+      'The admin asked that the NH and TI Analyzers always stay in step, and for an app-wide review of the TI version after everything was mirrored to it.',
+      'FOUND. The TI project (separate Apps Script, separate GitHub repo) had stopped receiving the NH changes after 29 September: 12 files were missing and index.html differed by about 13000 lines, but the code is meant to be identical (Config.gs picks the TIA audit prefix by script id), so every difference was old code, not a TI feature. FIXED. All .gs, .html, tests and docs of NH were copied to TI, the whole suite passes there, and it was pushed with clasp. After the copy every file compares identical, except appsscript.json: the TI manifest still said USER_ACCESSING while the code assumes the web app runs as the owner (isAdminCaller_, the owned folders, exports, mail), as the NH manifest says since entry of 30 September. The admin confirmed the TI deployment is Execute as Me, so the TI manifest now says USER_DEPLOYING and the two manifests are identical. RULE. Every change pushed to NH is mirrored to TI and pushed with clasp (the admin makes the versions). STILL TRUE FOR BOTH, because they share one spreadsheet: the lock is per script, so an NH save and a TI save can run at the same time; the Script Properties are per project (ANTHROPIC_AUTH_TOKEN, REGISTRY_SECRET, EMAIL_EXTRA_DOMAINS) and are not copied by clasp. NOT done: the TI Script Properties were not seen; the deployed TI app was not seen.',
+      'appsscript.json (TI), every file mirrored to TI',
+      'Danzen',
+      'Partly done'
     ]
   ];
 
