@@ -47,7 +47,7 @@ const MAINTENANCE = [
   'cleanAnalysisSheet', 'diagnoseRosterTabInMainSS', 'testAdminNotification', 'testEmailLookup', 'repairSheetHeaders',
   'createActionRegistry', 'backfillObserverName', 'reportDuplicateAuditRefs', 'applyDuplicateAuditRefRenames',
   'getSpreadsheetUrl', 'diagnoseSalesEvaluations', 'enrichDashboardData', 'generateAuditPDF', 'appendRegistryRow',
-  'verifyLatestAudit', 'verifyMyLatestAudit', 'verifyDashboardData', 'addMissingHeaders', 'diagnoseDataIssues',
+  'verifyLatestAudit', 'verifyMyLatestAudit', 'verifyDashboardData', 'addMissingHeaders', 'backfillAuditorEmail', 'diagnoseDataIssues',
   'previewDataRepairs', 'applyDataRepairs', 'backupSpreadsheet', 'diagnoseAnalyticsContext', 'previewScorecards', 'testSlidesAccess', 'diagnoseDashboardGaps',
 ];
 const INTERNAL = [

@@ -1006,6 +1006,7 @@ Key columns for analytics:
 | Y | RCA Category | AI-enriched (one of 4 categories) |
 | Z | RCA Sub-Parameter | AI-enriched (specific gap) |
 | AA | Top Opportunity | AI-enriched (coaching action) |
+| last | Auditor Email | The signed-in caller as the server reads it (`resolveAuditorEmail_`); if Google hides it, the Users sheet address(es) for the observer name (all of them, separated by `, `, when the name has several); blank when the name is not there |
 
 ### Audit_Log Sheet
 
@@ -1318,6 +1319,7 @@ Admin-only. Run from the Apps Script editor.
 | Function | What it does |
 |---|---|
 | `addMissingHeaders()` | Writes a header that is missing at the **end** of a sheet's header row (for example `Agent Email`). It moves and clears no data, and it does nothing if the existing headers are not exactly the first part of the expected list (it logs why). Safe to run twice. |
+| `backfillAuditorEmail()` | Fills a **blank** `Auditor Email` in Dashboard_Data from the Users sheet, by the row's Observer Name. Writes only that column and never overwrites an email. A name that is not on the Users sheet is left blank and listed in the log. A name on the Users sheet with several different addresses gets all of them, separated by `, `, and is listed in the log as "several addresses" (it may be one person with two addresses or two people with one name). Run `addMissingHeaders()` first so the column exists. |
 | `diagnoseDataIssues()` | Read-only. Prints the exact rows behind the duplicate ref, an audit that is only in Dashboard_Data, SAP ID mismatches, non-numeric Repeat % values and shifted Team Member rows. |
 
 | `diagnoseDashboardGaps()` | Read-only. Three reports about Audit_Log: how many Duration cells Sheets turned into a time of day, where the "Not Sent" audits are (by month, type and observer), and how the Issue Resolved answers with no clear verdict look and start. |

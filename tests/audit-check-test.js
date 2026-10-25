@@ -47,6 +47,7 @@ function makeEnv() {
   vm.runInContext(read('Config.gs'), ctx);
   vm.runInContext(read('HtmlSanitizer.gs'), ctx);
   vm.runInContext(read('SheetService.gs'), ctx);
+  vm.runInContext(read('ObserverHelper.gs'), ctx);   // resolveAuditorEmail_, which writeAuditRecords_ calls
   ['_procKey_', 'htmlToPlainText', 'findAuditRefForInteraction_', 'produceEvaluation_', 'writeAuditRecords_', '_cellSafeTranscript_', 'submitTranscript']
     .forEach(n => vm.runInContext(extractFunction(codeSrc, n), ctx));
   vm.runInContext(read('AuditCheck.gs'), ctx);

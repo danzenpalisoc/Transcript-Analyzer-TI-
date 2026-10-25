@@ -4034,7 +4034,8 @@ function writeAuditRecords_(spreadsheet, formData, f) {
       criticalFlags, repeatPct, issueResolved, transferOccurred,
       callDriver, rcaCategory, rcaSubParameter, topOpportunity, productOpportunity, salesAttempted,
       smartS, smartM, smartA, smartR, smartT,
-      'Pending', 'Not Sent', formData.agentEmail || ''
+      'Pending', 'Not Sent', formData.agentEmail || '',
+      resolveAuditorEmail_(observerName)
     ]);
     invalidateDashboardCache_();
   } catch(de) {

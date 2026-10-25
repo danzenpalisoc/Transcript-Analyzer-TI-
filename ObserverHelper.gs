@@ -99,6 +99,48 @@ function lookupUserFromUsersSheet_(email) {
   }
 }
 
+// ── Users sheet: lower-cased Name → Email Address ─────────────────────────────
+// A name that appears on more than one row with different addresses maps to ALL of them,
+// each once, in sheet order, separated by ", " (the admin chose this over leaving it blank,
+// 2026-10-26; it cannot tell one person with two addresses from two people with one name).
+// Throws when the Users sheet cannot be read; callers decide.
+function usersEmailByName_() {
+  var ss    = openSheetWithRetry(USERS_SS_ID, 'Users / Trainer Lookup Sheet');
+  var sheet = ss.getSheetByName(USERS_TAB);
+  var map   = {};
+  if (!sheet) return map;
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return map;
+  var hdrs     = data[0].map(function(h){ return (h || '').toString().toLowerCase().trim(); });
+  var emailCol = hdrs.indexOf('email address');
+  var nameCol  = hdrs.indexOf('name');
+  if (emailCol < 0 || nameCol < 0) return map;
+  var lists = {};
+  for (var i = 1; i < data.length; i++) {
+    var n = (data[i][nameCol]  || '').toString().toLowerCase().trim();
+    var e = (data[i][emailCol] || '').toString().toLowerCase().trim();
+    if (!n || !e) continue;
+    if (!lists[n]) lists[n] = [];
+    if (lists[n].indexOf(e) === -1) lists[n].push(e);
+  }
+  Object.keys(lists).forEach(function(k) { map[k] = lists[k].join(', '); });
+  return map;
+}
+
+// ── Email of the person who submitted an audit ────────────────────────────────
+// The signed-in caller, read on the server (never the browser's observerEmail, which a
+// user could change). When Google hides the caller's address, the Users sheet row for
+// the observer name (every address when the name has more than one); blank when it is not
+// found. Never throws: a blank
+// email must not stop an audit from being saved.
+function resolveAuditorEmail_(observerName) {
+  var email = '';
+  try { email = (Session.getActiveUser().getEmail() || '').toString().toLowerCase().trim(); } catch (e) {}
+  if (email) return email;
+  try { return usersEmailByName_()[(observerName || '').toString().toLowerCase().trim()] || ''; }
+  catch (le) { Logger.log('resolveAuditorEmail_: Users sheet lookup failed: ' + le); return ''; }
+}
+
 // ── Backfill blank Observer Name rows in Dashboard_Data + Audit_Log ───────────
 // Run ONCE from Apps Script editor when Observer Name is blank for existing records.
 function backfillObserverName() {

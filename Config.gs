@@ -179,7 +179,8 @@ var DASHBOARD_HEADERS = [
   'SMART R (Realistic)',      // Why this is realistic for this agent now
   'SMART T (Time-bound)',     // Timeline for achieving the goal
   // ── Status ──
-  'PDF Email Link', 'Email Status', 'Agent Email'
+  'PDF Email Link', 'Email Status', 'Agent Email',
+  'Auditor Email'             // Who submitted the audit (server-side session email, else the Users sheet)
 ];
 
 // Audit_Log headers — permanent archive of every submitted evaluation

@@ -2099,6 +2099,17 @@ function createActionRegistry() {
       'appsscript.json (TI), every file mirrored to TI',
       'Danzen',
       'Partly done'
+    ],
+    [
+      '187',
+      '2026-10-26',
+      'Feature',
+      'NH + TI',
+      'The admin asked for a new column, Auditor Email, in Dashboard_Data holding the email of whoever submitted each audit (it was first asked as a new tab, then clarified as a column in the same tab).',
+      'DONE IN THE CODE. Auditor Email is the LAST header of Dashboard_Data, after Agent Email, because the sheet is written by position and addMissingHeaders only adds at the end. Each new audit stores the signed-in caller as the server reads it (never the observerEmail the browser sends); when Google hides the caller, the Users sheet address for the observer name; a name with several different addresses gets all of them separated by a comma (the admin chose this on 2026-10-26, so one cell can hold two addresses, and it may be two people with one name); blank when the name is not on the Users sheet. A failed lookup never stops the save. backfillAuditorEmail() (DataRepair.gs, admin, run from the editor) fills blank cells of existing rows from the Users sheet by Observer Name, never overwrites an email, writes only that column, and lists the names with no match and those that got several addresses. FIRST RUN (2026-10-26): 1645 of 2003 rows filled; 358 were left blank because the name was on the Users sheet more than once (Danzen Palisoc 231, Erma Jomolo 49, Grace Landaverde 29, Sheila Danipog 23, Dulce Lorena Garcia Ramirez 8) or not on it (yasmin.hernandez02 10, alizon.avila 5, rabab.loussahi 2, Leidy Mariela Araujo Colocho 1); the rule for several addresses was changed afterwards and the run is repeated. The column also reaches the dashboard in the browser (readDashboardSheet_ sends every column); the admin chose to show it. DONE BY THE ADMIN IN THE SHEET. addMissingHeaders() added the header (column 38); backfillAuditorEmail() ran twice (1645, then 340 rows); the 18 rows of the four names that are not on the Users sheet were typed by hand, and the admin checked that none is blank. TI. NH and TI share one spreadsheet, and until the TI script had this code the audits saved by TI left Auditor Email blank, so backfillAuditorEmail() has to be run once more after the TI Version that has it (it only fills blank cells). The code was mirrored to TI (rule of entry 186). NOT done: the page was not opened in a browser; no audit was submitted after the change to see the column fill; the Users sheet was not seen by the code author (the addresses of the names with several were not checked).',
+      'Config.gs, Code.gs, ObserverHelper.gs, DataRepair.gs, tests/auditor-email-test.js, tests/data-repair-test.js, DOCUMENTATION.md',
+      'Danzen',
+      'Partly done'
     ]
   ];
 

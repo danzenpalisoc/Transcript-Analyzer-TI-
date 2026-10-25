@@ -59,7 +59,7 @@ console.log('\nTest 1 — a missing header is added at the end and no data moves
   const r = e2.ctx.addMissingHeaders();
   const hAL = e2.sheets[e2.ctx.AUDIT_LOG_SHEET].grid[0], hDD = e2.sheets[e2.ctx.DASHBOARD_DATA_SHEET].grid[0];
   check('Audit_Log now ends with Agent Email', hAL[hAL.length - 1] === 'Agent Email' && JSON.stringify(hAL) === JSON.stringify(AL), JSON.stringify(hAL.slice(-3)));
-  check('Dashboard_Data now ends with Agent Email', hDD[hDD.length - 1] === 'Agent Email' && JSON.stringify(hDD) === JSON.stringify(DD));
+  check('Dashboard_Data now ends with Auditor Email', hDD[hDD.length - 1] === 'Auditor Email' && JSON.stringify(hDD) === JSON.stringify(DD));
   check('two headers were added', r.added === 2 && r.skipped === 0, JSON.stringify(r));
   check('no data row changed in Audit_Log', JSON.stringify(e2.sheets[e2.ctx.AUDIT_LOG_SHEET].grid.slice(1)) === beforeAL);
   check('no data row changed in Dashboard_Data', JSON.stringify(e2.sheets[e2.ctx.DASHBOARD_DATA_SHEET].grid.slice(1)) === beforeDD);

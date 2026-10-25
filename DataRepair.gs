@@ -58,6 +58,51 @@ function addMissingHeaders() {
   return result;
 }
 
+// Fills a BLANK "Auditor Email" cell in Dashboard_Data from the Users sheet, by the row's Observer Name.
+// Writes only that one column, never overwrites an email that is already there, and leaves a row blank when
+// its name is not on the Users sheet. A name on the Users sheet with more than one address gets all of them
+// ("a@x.com, b@y.com") and is listed in the log under "several addresses", since it may be two people.
+// Run addMissingHeaders() first so the column exists. Run from the Apps Script editor.
+function backfillAuditorEmail() {
+  requireAdmin_();
+  var ss = getOrCreateSpreadsheet();
+  var sheet = ss.getSheetByName(DASHBOARD_DATA_SHEET);
+  var result = { filled: 0, alreadySet: 0, noMatch: [], multiple: [] };
+  if (!sheet) { Logger.log('backfillAuditorEmail: Dashboard_Data not found, nothing changed'); return result; }
+  var map = usersEmailByName_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var hdrs = _trimmedHeaders_(sheet), eCol = hdrs.indexOf('Auditor Email') + 1, oCol = hdrs.indexOf('Observer Name') + 1;
+    if (eCol < 1 || oCol < 1) {
+      Logger.log('backfillAuditorEmail: the "Auditor Email" or "Observer Name" header is missing. Run addMissingHeaders() first. Nothing changed.');
+      return result;
+    }
+    var n = sheet.getLastRow() - 1;
+    if (n < 1) { Logger.log('backfillAuditorEmail: no data rows'); return result; }
+    var names  = sheet.getRange(2, oCol, n, 1).getValues();
+    var emails = sheet.getRange(2, eCol, n, 1).getValues();
+    var seenNo = {}, seenMulti = {};
+    for (var i = 0; i < n; i++) {
+      if (String(emails[i][0] === null || emails[i][0] === undefined ? '' : emails[i][0]).trim()) { result.alreadySet++; continue; }
+      var raw = String(names[i][0] === null || names[i][0] === undefined ? '' : names[i][0]).trim(), key = raw.toLowerCase();
+      if (!key) continue;
+      if (map[key]) {
+        emails[i][0] = map[key]; result.filled++;
+        if (map[key].indexOf(', ') !== -1 && !seenMulti[key]) { seenMulti[key] = true; result.multiple.push(raw); }
+      }
+      else if (!seenNo[key]) { seenNo[key] = true; result.noMatch.push(raw); }
+    }
+    if (result.filled) sheet.getRange(2, eCol, n, 1).setValues(emails);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+  if (typeof invalidateDashboardCache_ === 'function') invalidateDashboardCache_();
+  Logger.log('backfillAuditorEmail: ' + result.filled + ' filled, ' + result.alreadySet + ' already set. Not on the Users sheet: ' +
+    (result.noMatch.join(', ') || 'none') + '. Several addresses (all written): ' + (result.multiple.join(', ') || 'none') + '.');
+  return result;
+}
+
 // One column of a sheet by header name, short strings only (never loads a transcript or an evaluation).
 function _colByName_(sheet, headers, name) {
   var c = headers.indexOf(name) + 1;
