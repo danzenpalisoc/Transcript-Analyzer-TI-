@@ -210,7 +210,10 @@ console.log('\nTest 6 — the registry secret comes from Script Properties and i
   const e = post('', undefined);
   check('with no property set an empty key is still refused', e.res.success === false && e.appended === 0);
   const f = post('NH_REGISTRY_2026_DPZ', undefined);
-  check('TRANSITIONAL: with no property set the legacy secret still works', f.res.success === true && f.appended === 1, JSON.stringify(f));
+  check('with no property set the old public secret is REFUSED and nothing is written', f.res.success === false && f.appended === 0, JSON.stringify(f));
+  const g = post('anything', undefined);
+  check('with no property set every key is refused', g.res.success === false && g.appended === 0, JSON.stringify(g));
+  check('the old public secret is gone from every .gs file', GS.every(n => !/NH_REGISTRY_2026_DPZ/.test(src[n])), GS.filter(n => /NH_REGISTRY_2026_DPZ/.test(src[n])).join());
   check('the old public secret constant is gone from the code path', !/key\s*!==\s*REGISTRY_SECRET\b/.test(src['Code.gs']));
 }
 

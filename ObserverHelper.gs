@@ -10,7 +10,7 @@ var USERS_SHEET_GID = 653814081;
 function getQAUsersFromSheet() {
   try {
     var cache    = CacheService.getScriptCache();
-    var cacheKey = 'qa_users_list_v4';
+    var cacheKey = 'qa_users_list_v5';   // v5: names only. v4 held every address and role for an hour.
     var cached   = cache.get(cacheKey);
     if (cached) { try { return JSON.parse(cached); } catch(e) {} }
 
@@ -41,11 +41,9 @@ function getQAUsersFromSheet() {
     for (var i = 1; i < data.length; i++) {
       var name = (data[i][nameCol] || '').toString().trim();
       if (!name) continue;
-      users.push({
-        name:  name,
-        email: emailCol >= 0 ? (data[i][emailCol] || '').toString().trim() : '',
-        role:  roleCol  >= 0 ? (data[i][roleCol]  || '').toString().trim() : ''
-      });
+      // Names only: any signed-in user can call this function, and the page needs just the
+      // name for the QA filter. The address and role of each person stay on the Users sheet.
+      users.push({ name: name });
     }
 
     var _qu = JSON.stringify(users);

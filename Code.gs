@@ -4215,17 +4215,21 @@ function submitTranscript(formData) {
       try {
         var tSheet = getOrCreateSheet(spreadsheet, TRANSCRIPTS_SHEET);
         ensureHeaders(tSheet, TRANSCRIPTS_HEADERS);
-        appendRow(tSheet, [
-          auditRef, now,
-          formData.sapId || '', participant,
-          formData.teamLeader || '', formData.opsManager || '',
-          formData.lineOfBusiness || '', resolvedLocale,
-          observerName,
-          startTime, customerBAN, interactionId,
-          direction, duration,
-          analysisLabel, _cellSafeTranscript_(formData.transcript),
-          formData.agentEmail || ''
-        ]);
+        // Under the script lock: a sheet repair rewrites the sheet from a snapshot and would wipe this row.
+        var tSaved = _withSheetLock_(AUDIT_SAVE_LOCK_WAIT_MS, function() {
+          appendRow(tSheet, [
+            auditRef, now,
+            formData.sapId || '', participant,
+            formData.teamLeader || '', formData.opsManager || '',
+            formData.lineOfBusiness || '', resolvedLocale,
+            observerName,
+            startTime, customerBAN, interactionId,
+            direction, duration,
+            analysisLabel, _cellSafeTranscript_(formData.transcript),
+            formData.agentEmail || ''
+          ]);
+        });
+        if (!tSaved.locked) return _saveBusyResult_(false);
       } catch(we) {
         var msg = we.toString();
         if (msg.indexOf('permission') !== -1 || msg.indexOf('document') !== -1 || msg.indexOf('access') !== -1) {
@@ -4254,12 +4258,23 @@ function submitTranscript(formData) {
     }
 
     // ── 6-8. Analysis, Dashboard_Data and Audit_Log rows ──────────────────────
-    warnings = warnings.concat(writeAuditRecords_(spreadsheet, formData, {
-      auditRef: auditRef, now: now, participant: participant, interactionId: interactionId,
-      direction: direction, duration: duration, resolvedLocale: resolvedLocale,
-      observerName: observerName, analysisLabel: analysisLabel, html: html,
-      recovering: reusedHtml !== null
-    }));
+    // Header rows are made BEFORE the lock: ensureHeaders takes the same script lock, which is not re-entrant.
+    [[ANALYSIS_SHEET, ANALYSIS_HEADERS], [DASHBOARD_DATA_SHEET, DASHBOARD_HEADERS], [AUDIT_LOG_SHEET, AUDIT_LOG_HEADERS]].forEach(function(p) {
+      try { ensureHeaders(getOrCreateSheet(spreadsheet, p[0]), p[1]); } catch (he) { Logger.log('headers of ' + p[0] + ' before the save: ' + he); }
+    });
+    // The three rows are written under the script lock, so a sheet repair (which rewrites a sheet from a snapshot)
+    // cannot wipe them. When the lock is not got, nothing is written; the report is already kept (cache and Transcripts
+    // row), so submitting again completes the records through the recovery path.
+    var saved = _withSheetLock_(AUDIT_SAVE_LOCK_WAIT_MS, function() {
+      return writeAuditRecords_(spreadsheet, formData, {
+        auditRef: auditRef, now: now, participant: participant, interactionId: interactionId,
+        direction: direction, duration: duration, resolvedLocale: resolvedLocale,
+        observerName: observerName, analysisLabel: analysisLabel, html: html,
+        recovering: reusedHtml !== null
+      });
+    });
+    if (!saved.locked) return _saveBusyResult_(true);
+    warnings = warnings.concat(saved.value);
 
     return {
       success:      true,
@@ -5702,23 +5717,21 @@ function buildFallbackHTML(rawText) {
 // ── Action Registry logging — called from append_registry.py via Web App POST ──
 //
 // The secret belongs in Script Properties (key: REGISTRY_SECRET), not in source
-// control. This constant WAS the secret and is in the git history, so treat it as
-// public. It is kept only as a TRANSITIONAL fallback so the external poster keeps
-// working until the property is set; once the property exists the constant is
-// ignored, and it can then be deleted.
-var REGISTRY_SECRET_LEGACY = 'NH_REGISTRY_2026_DPZ';
-
+// control. The old secret that was kept in the code as a fallback is in the git
+// history, so it is public and must never be accepted: with no property set,
+// NOTHING is accepted. Set the property in each project before posting.
 function getRegistrySecret_() {
   var v = PropertiesService.getScriptProperties().getProperty('REGISTRY_SECRET');
   if (v) return v;
-  Logger.log('WARNING: Script Property REGISTRY_SECRET is not set; using the legacy secret that is in source control. Set the property and rotate it.');
-  return REGISTRY_SECRET_LEGACY;
+  Logger.log('WARNING: Script Property REGISTRY_SECRET is not set; every registry POST is refused until it is.');
+  return '';
 }
 
 function doPost(e) {
   try {
     var payload = JSON.parse(e.postData.contents);
-    if (!payload.key || payload.key !== getRegistrySecret_()) {
+    var secret = getRegistrySecret_();
+    if (!secret || !payload.key || payload.key !== secret) {
       return ContentService.createTextOutput(JSON.stringify({success: false, error: 'Unauthorized'}))
         .setMimeType(ContentService.MimeType.JSON);
     }

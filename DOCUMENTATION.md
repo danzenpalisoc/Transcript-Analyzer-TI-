@@ -117,7 +117,7 @@ In Apps Script editor → Project Settings → Script Properties, add:
 | `ANTHROPIC_AUTH_TOKEN` | Your FuelIX API key |
 | `ANTHROPIC_BASE_URL` | `https://api.fuelix.ai` |
 | `ANTHROPIC_MODEL` | `claude-sonnet-4` |
-| `REGISTRY_SECRET` | Shared secret the Action Registry poster sends to the web app (`doPost`). **Set this.** Until it exists, the old secret that is committed in `Code.gs` (`REGISTRY_SECRET_LEGACY`) is still accepted, and it must be treated as public. Once it is set the old one stops working and can be deleted from the code. |
+| `REGISTRY_SECRET` | Shared secret the Action Registry poster sends to the web app (`doPost`). **Set this in each project (NH and TI).** Until it exists, every registry POST is refused. The old secret that used to be kept in `Code.gs` is in the git history, so it is public and is no longer accepted: set a NEW value. |
 
 ### Step 2 — Enable Advanced Services
 
@@ -1217,6 +1217,8 @@ The screen's TEST toggle (`getObserverInfo`) and the server's TEST decision (`se
 - **Tries:** `createScorecardDeck` and `exportAudits` count every try per person per hour *before* the lock and the sheet reads (30 and 60), on top of the finished-build limits (5 decks, 10 exports). The helper is `_hourlyTake_(prefix, who, max)` in `Config.gs`; it fails open with a log line when the cache is down.
 - **Folders:** `_ownedFolder_(name)` (`Config.gs`) returns the folder the app owner *owns*; a same-named folder that was merely shared with the owner is ignored. Used for NH Analyzer Scorecards, NH Analyzer Exports and the PDF folder.
 - **AI replies:** a 200 that is not JSON, or has empty text, is `AI_SERVICE_ERROR[invalid]` / `[empty]` and is retried inside the shared budget. The 300 s budget counts from the start of the execution (`_AI_EXEC_STARTED_AT_`). The transcript goes through `_fenceTranscript_`: cut at 150,000 characters, a forged end marker defused.
+- **Saving an audit:** the Transcripts row and the three audit rows (Analysis, Dashboard_Data, Audit_Log) are written under the script lock (`_withSheetLock_`, waits up to `AUDIT_SAVE_LOCK_WAIT_MS`), the same lock the repairs hold, so a repair cannot wipe a row saved while it runs. If the lock is not got, nothing is written and the analyst is told to submit again (the report is kept, so the second submit completes the records without the AI). The lock is per script: it does not hold back the other project.
+- **Users directory:** `getQAUsersFromSheet` returns names only (cache key `qa_users_list_v5`); the address and role of each person are not sent to the browser.
 - **Repair tools:** `repairSheetHeaders` keeps unknown columns after the standard ones and holds the script lock. `repairNextTruncated` skips an interaction shared by more than one agent and only touches rows with the same SAP ID.
 
 ### Accessibility (code review batch 4)
@@ -1232,7 +1234,7 @@ A name or an Audit Ref from the sheet is never put inside an inline handler. The
 
 ### Registry endpoint
 
-`doPost` accepts an Action Registry entry only when `payload.key` equals the Script Property `REGISTRY_SECRET`. Until that property is set it falls back to the old committed constant (logged as a warning). `appendRegistryRow` is admin-only; `doPost` calls the private `appendRegistryRow_`.
+`doPost` accepts an Action Registry entry only when `payload.key` equals the Script Property `REGISTRY_SECRET`. Until that property is set it refuses every POST (logged as a warning); there is no fallback secret in the code. `appendRegistryRow` is admin-only; `doPost` calls the private `appendRegistryRow_`.
 
 ---
 

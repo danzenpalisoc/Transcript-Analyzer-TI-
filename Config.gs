@@ -66,6 +66,9 @@ var AUDIT_LOG_SHEET      = 'Audit_Log';
 var AI_ANALYTICS_SHEET   = 'AI_Analytics';
 var ERROR_LOG_SHEET      = 'Error_Log';
 
+// How long saving an audit waits for the script lock, which the sheet repairs hold while they rewrite a sheet.
+var AUDIT_SAVE_LOCK_WAIT_MS = 30000;
+
 // Error_Log headers — every submitTranscript() failure, written directly into
 // the main spreadsheet so the admin can see raw error text without needing
 // Stackdriver/GCP log access (which requires a non-default GCP project).

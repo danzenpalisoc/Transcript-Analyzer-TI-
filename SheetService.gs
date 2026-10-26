@@ -63,6 +63,27 @@ function ensureHeaders(sheet, headers) {
   }
 }
 
+// Runs fn() holding the script lock: the same lock repairSheetHeaders and the other sheet
+// repairs take. Those read a whole sheet, clear it and write it back from that snapshot, so
+// a row appended while one runs is wiped. Returns { locked: true, value: fn() }, or
+// { locked: false } when the lock was not got within waitMs (fn is then NOT run).
+// The lock is not re-entrant: fn must not take the script lock itself (ensureHeaders does).
+// The lock is per script, so it does not hold back the OTHER project (NH and TI share the sheets).
+function _withSheetLock_(waitMs, fn) {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(waitMs); }
+  catch (e) { Logger.log('_withSheetLock_: lock not got in ' + waitMs + ' ms: ' + e); return { locked: false }; }
+  try { return { locked: true, value: fn() }; }
+  finally { try { lock.releaseLock(); } catch (re) {} }
+}
+
+// What the analyst is told when an audit could not be saved because a repair holds the sheets.
+function _saveBusyResult_(reportKept) {
+  return { success: false, error: 'The spreadsheet is being repaired by an admin right now, so this audit could not be saved. ' +
+    (reportKept ? 'The report is kept: submit the same call again in a minute and it is completed without running the AI again.'
+                : 'Nothing was saved or sent to the AI. Please submit again in a minute.') };
+}
+
 // Durations like "51:50" (51 min 50 sec) are written as plain strings, and Sheets
 // silently reinterprets them as time values. "51:50" is not a valid time of day,
 // so it becomes the duration 51 HOURS 50 minutes and displays as "51:50:00";
