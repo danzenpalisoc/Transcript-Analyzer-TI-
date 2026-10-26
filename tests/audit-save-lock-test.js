@@ -24,14 +24,18 @@ function makeEnv() {
   const sandbox = {
     Logger: { log: m => logs.push(String(m)) },
     CacheService: { getScriptCache: () => ({ get: k => (k in store ? store[k] : null), put: (k, v) => { store[k] = v; }, remove: k => { delete store[k]; } }) },
-    LockService: { getScriptLock: () => ({
-      waitLock() {
-        if (lock.busy) { lock.refused++; throw new Error('Lock timeout'); }
-        if (lock.held) { lock.nested++; throw new Error('Lock already held'); }
-        lock.held = true; lock.takes++;
-      },
-      releaseLock() { lock.held = false; },
-    }) },
+    // An execution can only release a lock it holds itself, as with the real one.
+    LockService: { getScriptLock: () => {
+      let mine = false;
+      return {
+        waitLock() {
+          if (lock.busy) { lock.refused++; throw new Error('Lock timeout'); }
+          if (lock.held) { lock.nested++; throw new Error('Lock already held'); }
+          lock.held = true; lock.takes++; mine = true;
+        },
+        releaseLock() { if (mine) { lock.held = false; mine = false; } },
+      };
+    } },
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
     Utilities: { base64Encode: s => Buffer.from(String(s)).toString('base64'), sleep() {} },
     ScriptApp: { getScriptId: () => 'x' },
