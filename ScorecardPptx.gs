@@ -63,7 +63,7 @@ function _pxShape_(s, id) {
   var adj = Math.min(50000, Math.round((s.radius || 0) / min * 100000));
   var geom = (s.type === 'ROUND_RECTANGLE' && s.radius)
     ? '<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val ' + adj + '"/></a:avLst></a:prstGeom>'
-    : '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>';
+    : (s.type === 'ELLIPSE' ? '<a:prstGeom prst="ellipse"><a:avLst/></a:prstGeom>' : '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>');
   var fill = s.fill ? _pxFill_(s.fill) : '<a:noFill/>';
   var line = s.line ? '<a:ln w="9525">' + _pxFill_(s.line) + '</a:ln>' : '<a:ln><a:noFill/></a:ln>';
   var pad = _pxEmu_(s.pad || 0);

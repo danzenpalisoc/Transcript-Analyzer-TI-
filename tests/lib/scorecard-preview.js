@@ -11,7 +11,7 @@ function shapeHtml(s, k, font) {
     'left:' + s.x * k + 'px', 'top:' + s.y * k + 'px', 'width:' + s.w * k + 'px', 'height:' + s.h * k + 'px',
     s.fill ? 'background:' + s.fill : '',
     s.line ? 'border:' + Math.max(1, k * 0.75) + 'px solid ' + s.line : '',
-    s.radius ? 'border-radius:' + s.radius * k + 'px' : '',
+    s.type === 'ELLIPSE' ? 'border-radius:50%' : (s.radius ? 'border-radius:' + s.radius * k + 'px' : ''),
     'padding:' + s.pad * k + 'px', 'overflow:visible',
     'display:flex', 'flex-direction:column',
     'justify-content:' + (s.valign === 'MIDDLE' ? 'center' : 'flex-start'),

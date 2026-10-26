@@ -1338,7 +1338,23 @@ The dashboard reads a Repeat Projection % cell as a number, or as the first `NN%
 
 ### Scorecard Slides (Action Registry #168)
 
-The **Generate Slides** button in the header of the **Team Member Trends & Repeat Offenders** section (Overview tab, beside the High / Moderate / Low legend) builds a Google Slides deck for the agents in the **current dashboard filters**: a cover slide (period, filters, a legend of the targets) and one slide per agent. It is open to every signed-in analyst. The page sends only the Audit Refs; the server reads the sheets and computes everything.
+The **Generate Slides** button in the header of the **Team Member Trends & Repeat Offenders** section (Overview tab, beside the High / Moderate / Low legend) builds a Google Slides deck for the agents in the **current dashboard filters** (Action Registry #189 gave it the group slides). It is open to every signed-in analyst. The page sends only the Audit Refs; the server reads the sheets and computes everything.
+
+The slides, in order (all of them even when only one agent is selected):
+
+| # | Slide | What it shows |
+|---|---|---|
+| 1 | Cover | Dark purple, two circles, the title, the period, the counts and the filters. |
+| 2 | Executive summary | One tile per KPI (the average of the agents, coloured by status) and three panels: What went well, What needs work, Readiness. |
+| 3 | Scorecard results | A table of each KPI with its target, the group average and how many agents are on target, a bar chart of average against target (percent KPIs only; flags are a count per audit), and how the badge is read. |
+| 4 | Where the agents landed on each KPI | One bar per KPI split into below threshold, on target and no data, and three notes. |
+| 5… | Scorecard heatmap by agent | A coloured cell per agent and KPI, 14 agents per slide (two tables of 7), more slides after 14. |
+| | Audit findings | The strengths that come up most, and a bar chart of how many agents have each gap (top 5). |
+| | Readiness | The agents in three columns by badge (On track, Needs attention, Priority support) with a line of reason; a column of more than 7 shows 6 and "+ N more". |
+| | One slide per agent | Unchanged. |
+| last | Next steps | Up to six cards: one for each KPI that has agents below its target, then the Priority support agents. Only data, no advice is written. |
+
+The group numbers are `buildGroupSummary_` (`ScorecardMetrics.gs`): averages are simple means of the agents' own numbers; an agent counts only in the KPIs it has (a Sales-only agent in Sales attempted, the others in Transfer rate); a KPI that no agent has a number for is left out. The slides are `scorecardDeckShapes_` and the `scorecard*Shapes_` functions in `ScorecardLayout.gs`; the circles are an `ELLIPSE` shape, written as an ellipse in the PowerPoint file. `node tests/make-scorecard-preview.js out.html` draws the whole sample deck for a browser.
 
 | On the slide | Where it comes from |
 |---|---|
@@ -1354,7 +1370,7 @@ The targets are in `SCORECARD_THRESHOLDS` in `Config.gs`. The look (positions, c
 
 **Limits:** up to 40 agents per deck, 2,000 audits, 5 decks per person per hour, one deck built at a time. The deck is filed in the folder **NH Analyzer Scorecards** in the app owner's Drive and shared, as editor, only with the person who asked.
 
-**Admin tools** (Apps Script editor): `previewScorecards(refs)` logs the numbers without creating anything, and `testSlidesAccess()` builds a one-slide sample deck.
+**Admin tools** (Apps Script editor): `previewScorecards(refs)` logs the numbers without creating anything, and `testSlidesAccess()` builds a one-agent sample deck (all the slides above).
 
 **No Google setting or new permission is needed.** The deck is a PowerPoint file that Drive converts to Google Slides, the same Drive conversion the PDF export uses. After a deploy, the app owner can run `testSlidesAccess` once to see a sample deck.
 

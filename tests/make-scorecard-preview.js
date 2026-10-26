@@ -45,16 +45,18 @@ rows.forEach(r => {
   if (r['Team Member'] === 'Carlos Mendoza') extras.whatsWorking[r['Audit Ref']] = ['Clear explanation of the plan benefits'];
 });
 const built = ctx.buildAgentCards_(rows, extras);
-const slides = [], titles = [];
-const total = built.cards.length + 1;
-slides.push(ctx.scorecardCoverShapes_({ label: 'MOB CLS Sample Deck', range: built.range, agents: built.cards.length, audits: built.total, filters: 'Team Leader: Taylor Brooks; Locale: TI Philippines',
-  thresholds: [
-    { label: 'Avg Repeat Risk', target: '30% or lower' }, { label: 'Resolution rate', target: '80% or higher' }, { label: 'Critical flags', target: '0 per audit' },
-    { label: 'Transfer rate', target: '20% or lower' }, { label: 'Sales attempted', target: '80% or higher' }] }, total));
-titles.push('Cover');
-built.cards.forEach((c, i) => { slides.push(ctx.scorecardSlideShapes_(c, i + 2, total)); titles.push(c.name + ' (' + c.badge.text + ')'); });
+// the whole deck, exactly as the real builder assembles it (cover, group slides, one slide per agent, next steps)
+const slides = ctx.scorecardDeckShapes_(built, 'MOB CLS Sample Deck', 'Team Leader: Taylor Brooks; Locale: TI Philippines', built.total, []);
+const titles = slides.map((shapes, i) => {
+  const t = shapes.find(s => s.id === 'title') || shapes.find(s => s.id === 'name');
+  return (i + 1) + '. ' + (t ? t.paras[0].runs.map(r => r.t).join('') : 'Slide');
+});
 
-const out = process.argv[2];
-if (!out) { console.error('Usage: node tests/make-scorecard-preview.js <output.html>'); process.exit(1); }
-fs.writeFileSync(out, renderDeckHtml(slides, ctx.SCORECARD_THEME, ctx.SCORECARD_PAGE, 1.6, titles));
-console.log('wrote ' + out + ' (' + slides.length + ' slides)');
+module.exports = { slides, titles, ctx };   // other scripts (for example one that takes a picture of each slide) can reuse the sample deck
+
+if (require.main === module) {
+  const out = process.argv[2];
+  if (!out) { console.error('Usage: node tests/make-scorecard-preview.js <output.html>'); process.exit(1); }
+  fs.writeFileSync(out, renderDeckHtml(slides, ctx.SCORECARD_THEME, ctx.SCORECARD_PAGE, 1.6, titles));
+  console.log('wrote ' + out + ' (' + slides.length + ' slides)');
+}

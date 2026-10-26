@@ -319,3 +319,88 @@ function _scBuildCard_(agent, TH, ww) {
     strengths: strengths, gaps: gaps, alsoNoted: noted, coaching: coaching
   };
 }
+
+// ── The slides about the whole group ──────────────────────────────────────────
+
+var _SC_KPI_ORDER_ = ['repeatRisk', 'resolution', 'flags', 'transfer', 'salesAttempt'];
+var _SC_KPI_SHORT_ = { repeatRisk: 'Repeat', resolution: 'Resolve', flags: 'Flags', transfer: 'Transfer', salesAttempt: 'Sales' };
+
+// Target as a short phrase for a table cell: "<= 30%", ">= 80%", "<= 0 / audit".
+function _scTargetShort_(th, key) {
+  return (th.direction === 'max' ? '<= ' : '>= ') + th.target + (key === 'flags' ? ' / audit' : '%');
+}
+
+// The numbers and sentences of the group slides, from the agent cards (buildAgentCards_). Pure: no Sheets, no Slides.
+// Averages are simple means of the agents' own numbers. A KPI that no agent has a number for is left out; an agent
+// that has no tile for a KPI (Transfer for a Sales-only agent, Sales attempted for the others) is not counted in it.
+//   { label, range, agents, audits, filters, kpis: [{ key, label, avg, display, status, statusText, target, targetShort,
+//     onTarget, below, none, applicable, measured, short }], strengths: [text], gaps: [{ label, count }],
+//     levels: { ontrack|attention|priority|nodata: [{ name, reason }] }, counts: { ... }, nextSteps: [{ title, body }] }
+function buildGroupSummary_(built, label, filtersText, audits) {
+  var TH = SCORECARD_THRESHOLDS, cards = built.cards || [], N = cards.length;
+
+  var kpis = [];
+  _SC_KPI_ORDER_.forEach(function(key) {
+    var th = TH[key], vals = [], on = 0, below = 0, none = 0;
+    cards.forEach(function(c) {
+      var t = c.tiles.filter(function(x) { return x.key === key; })[0];
+      if (!t) return;
+      if (t.status === 'target') on++; else if (t.status === 'below') below++; else none++;
+      if (t.value !== null && t.value !== undefined) vals.push(t.value);
+    });
+    if (!vals.length) return;
+    var sum = 0; vals.forEach(function(v) { sum += v; });
+    var avg = sum / vals.length, isFlags = key === 'flags', rounded = _scRound1_(avg);
+    var shown = isFlags ? (avg > 0 && rounded === 0 ? '<0.1' : rounded.toFixed(1)) : Math.round(avg) + '%';
+    var status = _scStatus_(isFlags ? avg : Math.round(avg), th);
+    kpis.push({ key: key, label: th.label, avg: isFlags ? avg : Math.round(avg), display: shown, status: status,
+      statusText: status === 'target' ? 'On target' : 'Below threshold', target: _scTargetText_(th, isFlags ? ' per audit' : '%'),
+      targetShort: _scTargetShort_(th, key), onTarget: on, below: below, none: none, applicable: on + below + none, measured: on + below,
+      short: _SC_KPI_SHORT_[key], isPercent: !isFlags });
+  });
+
+  var levels = { ontrack: [], attention: [], priority: [], nodata: [] };
+  cards.forEach(function(c) {
+    var lvl = levels[c.badge.level] ? c.badge.level : 'nodata';
+    var belowNames = c.tiles.filter(function(t) { return t.status === 'below'; }).map(function(t) { return _SC_KPI_SHORT_[t.key] || t.label; });
+    var reason = lvl === 'ontrack' ? 'All measured KPIs on target' : (lvl === 'nodata' ? 'No KPI could be measured' : 'Below: ' + belowNames.join(', '));
+    levels[lvl].push({ name: c.name, reason: reason });
+  });
+  var counts = { ontrack: levels.ontrack.length, attention: levels.attention.length, priority: levels.priority.length, nodata: levels.nodata.length };
+
+  var allStrengths = [];
+  cards.forEach(function(c) { (c.strengths || []).forEach(function(s) { allStrengths.push(s); }); });
+  var strengths = _scTopLabels_(allStrengths, 4, 90);
+
+  var gapCount = {}, gapLabel = {}, gapOrder = [];
+  cards.forEach(function(c) {
+    var seen = {};
+    (c.gaps || []).forEach(function(g) {
+      var k = _scKey_(g); if (!k || seen[k]) return;
+      seen[k] = true;
+      if (!gapLabel[k]) { gapLabel[k] = g; gapOrder.push(k); }
+      gapCount[k] = (gapCount[k] || 0) + 1;
+    });
+  });
+  var gaps = gapOrder.map(function(k, i) { return { k: k, i: i }; })
+    .sort(function(a, b) { return (gapCount[b.k] - gapCount[a.k]) || (a.i - b.i); })
+    .slice(0, 5).map(function(o) { return { label: gapLabel[o.k], count: gapCount[o.k] }; });
+
+  // Next steps: one card for each KPI with agents below its target (the most agents first), then the agents that need priority support.
+  var steps = kpis.filter(function(k) { return k.below > 0; })
+    .sort(function(a, b) { return b.below - a.below; })
+    .map(function(k) {
+      var th = TH[k.key], isMax = th.direction === 'max';
+      return { title: k.label, body: k.below + ' of ' + k.measured + ' agent' + (k.measured === 1 ? ' is ' : 's are ') + (isMax ? 'above the ' : 'below the ') +
+        th.target + (k.key === 'flags' ? ' per audit' : '%') + (isMax ? ' limit.' : ' target.') };
+    });
+  if (steps.length > 5) steps = steps.slice(0, 5);
+  if (levels.priority.length) {
+    var names = levels.priority.map(function(p) { return p.name; }), shownNames = names.slice(0, 6);
+    steps.push({ title: 'Priority support', body: shownNames.join(', ') + (names.length > shownNames.length ? ' and ' + (names.length - shownNames.length) + ' more.' : '.') });
+  }
+  if (!steps.length) steps.push({ title: 'All on target', body: kpis.length ? 'Every measured KPI is on target for every agent.' : 'No KPI could be measured for these audits.' });
+
+  return { label: label || '', range: built.range || '', agents: N, audits: audits, filters: filtersText || '',
+    kpis: kpis, strengths: strengths, gaps: gaps, levels: levels, counts: counts, nextSteps: steps };
+}

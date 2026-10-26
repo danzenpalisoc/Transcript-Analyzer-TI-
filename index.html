@@ -6290,8 +6290,8 @@ function dbOpenScorecardDialog() {
     document.getElementById('sc-cancel').focus();
     return;
   }
-  summary.textContent = 'One slide for each of ' + sel.agents + ' agent' + (sel.agents === 1 ? '' : 's') + ' (' + sel.refs.length + ' audit' + (sel.refs.length === 1 ? '' : 's') +
-    ') that match the current dashboard filters, plus a cover slide. The deck is shared with you in Google Slides.';
+  summary.textContent = 'A deck for ' + sel.agents + ' agent' + (sel.agents === 1 ? '' : 's') + ' (' + sel.refs.length + ' audit' + (sel.refs.length === 1 ? '' : 's') +
+    ') that match the current dashboard filters: a summary of the group, one slide for each agent, and next steps. The deck is shared with you in Google Slides.';
   _scShow('sc-form', true); _scShow('sc-create', true, 'inline-flex');
   document.getElementById('sc-cancel').textContent = 'Cancel';
   document.getElementById('sc-label').focus();

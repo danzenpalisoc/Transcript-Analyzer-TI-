@@ -2121,6 +2121,17 @@ function createActionRegistry() {
       'Code.gs, SheetService.gs, ObserverHelper.gs, Config.gs, CreateActionRegistry.gs, DOCUMENTATION.md, tests/audit-save-lock-test.js (new), tests/qa-users-directory-test.js (new), tests/access-control-test.js',
       'Danzen',
       'Partly done'
+    ],
+    [
+      '189',
+      '2026-10-27',
+      'Feature',
+      'NH + TI',
+      'The admin asked that Generate Slides use a new template, from a sample deck (a class "Nesting Report", 26 slides, shown as screenshots), keeping only what fits the app and its data.',
+      'DONE IN THE CODE, step by step with the admin (one question and a picture of each slide). The deck is now: a dark purple cover with two circles; Executive summary (a tile per KPI and three panels); Scorecard results (a table of targets and averages and a bar chart); Where the agents landed (a stacked bar per KPI and notes); Scorecard heatmap by agent (14 agents per slide); Audit findings (strengths and a bar chart of gaps); Readiness (agents in three columns by badge); one slide per agent, UNCHANGED; Next steps (cards from the data) at the end. All slides are built even for one agent. The TELUS purple of the app is kept (the sample purple is a little darker). The legend of the targets moved from the cover to the Scorecard results slide. NOT taken from the sample, because they are about a training class and not about audits: Nesting at a glance, Week 1 and Week 2, Trainee progress, Recognition and thanks. The group numbers are buildGroupSummary_ (ScorecardMetrics.gs); the layout is scorecardDeckShapes_ and the scorecard*Shapes_ functions (ScorecardLayout.gs); ScorecardPptx.gs writes the new ELLIPSE shape; _ssBuildSlides_ now calls scorecardDeckShapes_. Averages are simple means of the agents; an agent counts only in the KPIs it has; Critical flags are not in the percent chart; next steps are one card per KPI with an agent below its target plus the priority-support agents, with no advice written. CHECKED. tests/scorecard-group-slides-test.js (new, 74 checks: the numbers on a worked example, the order and page numbers for 1 to 40 agents, inside the page, unique ids, no font under 11 pt, contrast 4.5:1, nothing overflowing on typical, one-agent, 40-agent with very long names and no-data decks, the heatmap colours, the bars to scale, the ellipses in the package) and 4 mutation checks, all caught; tests/scorecard-slides-test.js changed (9 slides for one agent, the order, the page numbers); the whole suite passes; a picture of every slide was looked at (4-agent and 14-agent samples). NOT done: the deck was not built in Google Slides, so how Drive converts the new ellipses and the table-like boxes was not seen; the real numbers were not seen; the Version is made by the admin. Fonts and colours are approximate where the sample was a screenshot.',
+      'ScorecardLayout.gs, ScorecardMetrics.gs, ScorecardPptx.gs, ScorecardSlides.gs, index.html (one sentence in the Generate Slides dialog, which said "one slide for each agent plus a cover slide"), tests/scorecard-group-slides-test.js (new), tests/scorecard-slides-test.js, tests/make-scorecard-preview.js, tests/lib/scorecard-preview.js, DOCUMENTATION.md, CreateActionRegistry.gs',
+      'Danzen',
+      'Partly done'
     ]
   ];
 

@@ -164,10 +164,7 @@ function _ssClean_(v, max) { return String(v === null || v === undefined ? '' : 
 
 // The slides (layout shapes) for a set of cards.
 function _ssBuildSlides_(built, label, filtersText, audits) {
-  var total = built.cards.length + 1;
-  var slides = [scorecardCoverShapes_({ label: label, range: built.range, agents: built.cards.length, audits: audits, filters: filtersText, thresholds: _ssLegend_() }, total)];
-  built.cards.forEach(function(c, i) { slides.push(scorecardSlideShapes_(c, i + 2, total)); });
-  return slides;
+  return scorecardDeckShapes_(built, label, filtersText, audits, _ssLegend_());
 }
 
 // ── Who is asking, how often, one deck at a time ──────────────────────────────

@@ -139,10 +139,16 @@ console.log('\nTest 3 — the deck is a PowerPoint package converted by Drive (n
   const rows = e.ctx._ssMergeRows_(e.data.log, e.data.dash, refSet);
   const built = e.ctx.buildAgentCards_(rows, { whatsWorking: { [refs[0]]: ['Warm greeting', 'Clear billing explanation'], [refs[1]]: ['Warm greeting'] } });
   const slides = e.ctx._ssBuildSlides_(built, 'Batch 15', 'Team Leader: TL One', rows.length);
-  check('a cover and one slide per agent', slides.length === 2);
+  // cover, summary, results, landed, heatmap (1), findings, readiness, the agent, next steps. Even for one agent all of them are built.
+  check('a cover, the group slides, one slide per agent and next steps (9 for one agent)', slides.length === 9, 'slides: ' + slides.length);
+  const title = i => { const t = slides[i].find(s => s.id === 'title') || slides[i].find(s => s.id === 'name'); return t ? t.paras[0].runs.map(r => r.t).join('') : ''; };
+  check('in the order: cover, summary, results, landed, heatmap, findings, readiness, agent, next steps',
+        [0, 1, 2, 3, 4, 5, 6, 7, 8].map(title).join(' | ') === 'Audit Scorecards | Executive summary | Scorecard results | Where the agents landed on each KPI | Scorecard heatmap by agent | Audit findings: strengths and gaps | Readiness | Agent A | Next steps',
+        [0, 1, 2, 3, 4, 5, 6, 7, 8].map(title).join(' | '));
+  check('the page numbers run 1 to 9 in order, "n / 9"', slides.every((sl, i) => JSON.stringify(sl.find(s => s.id === 'page')).indexOf((i + 1) + ' / 9') !== -1));
   const parts = e.ctx.buildPptxParts_(slides);
   const xml = JSON.stringify(parts.map(p => p.xml));
-  check('the package has the cover and the agent slide', parts.some(p => p.path === 'ppt/slides/slide1.xml') && parts.some(p => p.path === 'ppt/slides/slide2.xml') && !parts.some(p => p.path === 'ppt/slides/slide3.xml'));
+  check('the package has all 9 slides and no 10th', parts.some(p => p.path === 'ppt/slides/slide1.xml') && parts.some(p => p.path === 'ppt/slides/slide9.xml') && !parts.some(p => p.path === 'ppt/slides/slide10.xml'));
   check('the text of the slides is in the package (name, flags, strengths, label, filters)', xml.indexOf('Agent A') !== -1 && xml.indexOf('Warm greeting') !== -1 && xml.indexOf('Batch 15') !== -1 && xml.indexOf('Team Leader: TL One') !== -1);
   const blob = e.ctx._ssPptxBlob_(parts);
   check('the parts are zipped under their own paths, [Content_Types].xml first, and the file is typed as PowerPoint', blob.zipOf.length === parts.length && blob.zipOf[0].name === '[Content_Types].xml' &&
@@ -187,7 +193,7 @@ console.log('\nTest 5 — any analyst can build a deck; limits and sharing');
   addAudit(e, 'Agent B', { type: 'Sales Analyzer', sales: 'Yes' }, REPORT(['Clear plan explanation']));
   const refs = refsOf(e);
   const r = e.ctx.createScorecardDeck(refs, '  MOB CLS\nBatch 15 ', 'Team Leader: TL One');
-  check('an ordinary analyst (not an admin) gets a deck', r.success === true && r.agents === 2 && r.audits === 3 && r.slides === 3 && /docs\.google\.com\/presentation\/d\/PRES1/.test(r.url), JSON.stringify(r));
+  check('an ordinary analyst (not an admin) gets a deck', r.success === true && r.agents === 2 && r.audits === 3 && r.slides === 10 && /docs\.google\.com\/presentation\/d\/PRES1/.test(r.url), JSON.stringify(r));
   check('the deck goes into the "NH Analyzer Scorecards" folder', e.inserts.length === 1 && e.inserts[0].resource.parents[0].id === 'FOLDER1');
   check('it is shared, as editor, with the person who asked and nobody else', e.drive.editors.length === 1 && e.drive.editors[0].email === 'analyst.one@telus.com' && e.drive.editors[0].id === 'PRES1');
   check('the title carries the label (cleaned of line breaks)', e.inserts[0].resource.title.indexOf('MOB CLS Batch 15') !== -1, e.inserts[0].resource.title);
@@ -284,7 +290,7 @@ console.log('\nTest 8 — the admin tools');
   check('a bad list gets an error, not a crash', e.ctx.previewScorecards(['bad ref']).success === false);
   const t = e.ctx.testSlidesAccess();
   check('testSlidesAccess builds a small deck, files it and shares it with the admin', t.success && /PRES1/.test(t.url) && e.drive.editors[0].email === 'danzen.palisoc@telus.com' && e.inserts.length === 1, JSON.stringify(t));
-  check('the test deck has a cover and one sample slide', e.inserts[0].blob.zipOf.filter(z => /^ppt\/slides\/slide\d+\.xml$/.test(z.name)).length === 2);
+  check('the test deck has all the slides of a one-agent deck (9)', e.inserts[0].blob.zipOf.filter(z => /^ppt\/slides\/slide\d+\.xml$/.test(z.name)).length === 9);
 }
 
 console.log('\nTest — every try counts, before the lock and the reads');
