@@ -45,7 +45,7 @@ console.log('\nTest 1 — the group numbers, on an example worked out by hand');
   check('resolution: the mean of 100, 100, 0 is 67%, below the 80% target', k('resolution').display === '67%' && k('resolution').status === 'below');
   check('flags: the mean of 0, 0, 2 is 0.7 per audit, below target (the target is 0)', k('flags').display === '0.7' && k('flags').status === 'below');
   check('transfer: the mean of 0, 0, 100 is 33%, below the 20% limit', k('transfer').display === '33%' && k('transfer').status === 'below');
-  check('the target is said in words and in short', k('resolution').target === 'Target >= 80%' && k('resolution').targetShort === '>= 80%' && k('flags').targetShort === '<= 0 / audit');
+  check('the target is said in words and in short', k('resolution').target === 'Target >= 80%' && k('resolution').targetShort === '>= 80%' && k('flags').targetShort === '<= 0/audit');
   check('readiness: Ana and Ben are On track, Cy needs Priority support', g.counts.ontrack === 2 && g.counts.priority === 1 && g.counts.attention === 0 && g.levels.priority[0].name === 'Cy', JSON.stringify(g.counts));
   check('the reason names the KPIs that are below, in short', /^Below: /.test(g.levels.priority[0].reason) && /Resolve/.test(g.levels.priority[0].reason) && g.levels.ontrack[0].reason === 'All measured KPIs on target', g.levels.priority[0].reason);
   check('gaps: each flag is counted once per agent', g.gaps.length === 2 && g.gaps.every(x => x.count === 1), JSON.stringify(g.gaps));

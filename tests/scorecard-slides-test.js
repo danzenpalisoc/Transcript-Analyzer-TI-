@@ -50,7 +50,7 @@ function makeEnv(opts) {
     },
   };
   const ctx = vm.createContext(sandbox);
-  ['Config.gs', 'DataRepair.gs', 'ScorecardMetrics.gs', 'ScorecardLayout.gs', 'ScorecardPptx.gs', 'ScorecardSlides.gs'].forEach(f => vm.runInContext(read(f), ctx, { filename: f }));
+  ['Config.gs', 'DataRepair.gs', 'ScorecardMetrics.gs', 'ScorecardTargets.gs', 'ScorecardLayout.gs', 'ScorecardPptx.gs', 'ScorecardSlides.gs'].forEach(f => vm.runInContext(read(f), ctx, { filename: f }));
   vm.runInContext(extractFunction(read('Code.gs'), 'isValidAuditRef_'), ctx);
 
   const data = { log: [], dash: [] };

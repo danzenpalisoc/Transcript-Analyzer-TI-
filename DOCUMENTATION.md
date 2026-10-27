@@ -1354,7 +1354,19 @@ The slides, in order (all of them even when only one agent is selected):
 | | One slide per agent | Unchanged. |
 | last | Next steps | Up to six cards: one for each KPI that has agents below its target, then the Priority support agents. Only data, no advice is written. |
 
-The group numbers are `buildGroupSummary_` (`ScorecardMetrics.gs`): averages are simple means of the agents' own numbers; an agent counts only in the KPIs it has (a Sales-only agent in Sales attempted, the others in Transfer rate); a KPI that no agent has a number for is left out. The slides are `scorecardDeckShapes_` and the `scorecard*Shapes_` functions in `ScorecardLayout.gs`; the circles are an `ELLIPSE` shape, written as an ellipse in the PowerPoint file. `node tests/make-scorecard-preview.js out.html` draws the whole sample deck for a browser.
+**LOB scorecards and sections (Action Registry #190).** The deck has one **section for each LOB scorecard** (cover first; then for each LOB its group slides, the slides of its agents and its next steps; the LOB is in a purple tag at the top right of its group slides, and the cover lists the LOBs). The scorecards are in `ScorecardTargets.gs`: PF CxSS, PF CLS, PF TS, SHS CxSS, SHS CLS, SHS TS, MOB CLS, MOB CxSS and One CAM, read from the admin's Agent Scorecards (FCR threshold, target and stretch for each quarter of 2026; the MOB CxSS Transfers for Q1 to Q3). Only two of their KPIs have a counterpart in an audit, so only those use them:
+
+| LOB scorecard KPI | Used for | How |
+|---|---|---|
+| **FCR** | **Resolution (audit)** | Four levels: below threshold, at threshold, on target, stretch. The slide says "(audit)" and "(LOB)": it is the QA verdict of the audit, not the production FCR. |
+| **Transfers** (MOB CxSS, Q1 to Q3; lower is better) | **Transfer rate (audit)** | The same four levels, the other way round. In Q4 the KPI is gone and the app's 20% is used. |
+| RCT, RGU, Save Rate, Repeats, VTR, EWT, T2B, LCR | nothing | They come from call production data, which the app does not have. |
+
+Repeat Risk, Critical flags, Transfer rate (outside MOB CxSS Q1 to Q3) and Sales attempted keep the app's own target and say "(audit)". The badge counts only "below threshold", so an agent at threshold or on stretch is not penalised.
+
+*Which scorecard an agent uses:* the LOB they were audited in most (`scorecardLobKey_`: capitals and spaces do not matter). The 28 spellings found in the live data are mapped: MOB TS, Koodo, Koodo TS and KDO CxSS use MOB CxSS; MOB ONE CLS, MOB ONR CLS and CLS2 Access + Mob use MOB CLS; ONE CLS (any capitals) uses PF CLS; ONE TS, OHE TS, FFH_FBR_TS_TIIN, FFH_FBR_TS_TIP and Copper / PF TS use PF TS; SHS / Vivint TS uses SHS TS; CxSS, OHE CxSS and FFH Sales use PF CxSS. Anything else (and a blank LOB) goes to a section called **Other LOB** with the app's targets. *Which quarter:* the quarter of the NEWEST audit of the whole section (every agent of a section is judged by the same quarter, so the slides agree); when the scorecard has none (One CAM Q1, or a date after 2026) the closest quarter is used and the slides say "(closest quarter)". `TBD` cells of the scorecards are not used (they are for KPIs the app cannot measure).
+
+The group numbers are `buildGroupSummary_` (`ScorecardMetrics.gs`), one section at a time: averages are simple means of the agents' own numbers; an agent counts only in the KPIs it has (a Sales-only agent in Sales attempted, the others in Transfer rate); a KPI that no agent has a number for is left out. The slides are `scorecardDeckShapes_` and the `scorecard*Shapes_` functions in `ScorecardLayout.gs`; the circles are an `ELLIPSE` shape, written as an ellipse in the PowerPoint file. `node tests/make-scorecard-preview.js out.html` draws the whole sample deck for a browser.
 
 | On the slide | Where it comes from |
 |---|---|

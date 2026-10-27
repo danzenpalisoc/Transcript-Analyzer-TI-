@@ -166,6 +166,8 @@ function _scDateRange_(minMs, maxMs) {
 }
 
 function _scRound1_(x) { return Math.round(x * 10) / 10; }
+// A number for a target on the slide: 78 for 78.0, 79.5 for 79.5.
+function _scF1_(n) { return String(Math.round(n * 10) / 10); }
 
 // status of one tile against its threshold, comparing the number as it is displayed
 function _scStatus_(value, th) {
@@ -178,8 +180,16 @@ function _scTargetText_(th, unit) {
   return 'Target ' + (th.direction === 'max' ? '<= ' : '>= ') + th.target + unit;
 }
 
+// The words for a status. 'threshold' and 'stretch' only exist for the KPIs that use a LOB scorecard (four levels).
+function _scStatusText_(status) {
+  return status === 'target' ? 'On target' : (status === 'below' ? 'Below threshold' : (status === 'threshold' ? 'At threshold' : (status === 'stretch' ? 'Stretch' : 'No data')));
+}
+
 // One card per agent. rows: merged audits. extras.whatsWorking: { auditRef: [text, ...] } (optional).
-// Returns { cards: [...], skipped: [{ ref, reason }], range: 'Oct 1 - Oct 13, 2026', total }.
+// Returns { cards: [...], skipped: [{ ref, reason }], range: 'Oct 1 - Oct 13, 2026', total, sections: [...] }.
+// sections: the cards grouped by LOB scorecard, in alphabetical order with "Other LOB" last: { name, key, scorecard, cards }.
+// With ScorecardTargets.gs loaded an agent is judged against the scorecard of the LOB they were audited in most (the FCR and Transfers
+// targets of the quarter of the newest audit of the whole section); without it there is one section and the app's own targets.
 function buildAgentCards_(rows, extras) {
   var TH = (typeof SCORECARD_THRESHOLDS !== 'undefined') ? SCORECARD_THRESHOLDS : null;
   if (!TH) throw new Error('SCORECARD_THRESHOLDS is not defined');
@@ -198,14 +208,44 @@ function buildAgentCards_(rows, extras) {
     if (!isNaN(t)) { if (minMs === null || t < minMs) minMs = t; if (maxMs === null || t > maxMs) maxMs = t; }
   });
 
-  var cards = order.map(function(k) { return _scBuildCard_(byAgent[k], TH, ww); });
+  // Which scorecard each agent is judged by, and the quarter of each section (the newest audit in it)
+  var haveLob = (typeof scorecardLobKey_ === 'function' && typeof scorecardLobTargets_ === 'function');
+  var agentSection = {}, sectionKey = {}, sectionMs = {};
+  order.forEach(function(k) {
+    var a = byAgent[k], lobKey = haveLob ? scorecardLobKey_(_scMostCommon_(a.rows.map(function(r) { return r['Line of Business']; }))) : '';
+    var sec = haveLob ? (lobKey || 'Other LOB') : '';
+    agentSection[k] = sec; sectionKey[sec] = lobKey;
+    a.rows.forEach(function(r) {
+      var t = Date.parse(String(r['Timestamp'] === undefined ? '' : r['Timestamp']));
+      if (!isNaN(t) && (sectionMs[sec] === undefined || t > sectionMs[sec])) sectionMs[sec] = t;
+    });
+  });
+  var ctxOf = {};
+  Object.keys(sectionKey).forEach(function(sec) { ctxOf[sec] = sectionKey[sec] ? scorecardLobTargets_(sectionKey[sec], sectionMs[sec] === undefined ? null : sectionMs[sec]) : null; });
+
+  var cards = order.map(function(k) {
+    var card = _scBuildCard_(byAgent[k], TH, ww, ctxOf[agentSection[k]]);
+    card.section = agentSection[k];
+    return card;
+  });
   cards.sort(function(a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : (a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0); });
-  return { cards: cards, skipped: skipped, range: _scDateRange_(minMs, maxMs), total: (rows || []).length };
+
+  var names = Object.keys(sectionKey).sort(function(a, b) {
+    if (a === 'Other LOB') return b === 'Other LOB' ? 0 : 1;
+    if (b === 'Other LOB') return -1;
+    return a.toLowerCase() < b.toLowerCase() ? -1 : (a.toLowerCase() > b.toLowerCase() ? 1 : 0);
+  });
+  if (!names.length) names = [''];
+  var sections = names.map(function(name) {
+    return { name: name, key: sectionKey[name] || '', scorecard: ctxOf[name] || null, cards: cards.filter(function(c) { return c.section === name; }) };
+  });
+  return { cards: cards, skipped: skipped, range: _scDateRange_(minMs, maxMs), total: (rows || []).length, sections: sections };
 }
 
 function _scMostCommon_(values) { var t = _scTopLabels_(values, 1, 200); return t.length ? t[0] : ''; }
 
-function _scBuildCard_(agent, TH, ww) {
+// lob: the scorecard targets this agent is judged by (scorecardLobTargets_), or null for the app's own targets.
+function _scBuildCard_(agent, TH, ww, lob) {
   var rows = agent.rows, n = rows.length;
   var isRepeats = function(r) { return String(r['Analysis Type'] || '').indexOf('Repeats') !== -1; };
   var isSales = function(r) { return String(r['Analysis Type'] || '').indexOf('Sales') !== -1; };
@@ -255,7 +295,21 @@ function _scBuildCard_(agent, TH, ww) {
           status: _scStatus_(transfer, TH.transfer), target: _scTargetText_(TH.transfer, '%'),
           sub: (tc.yes + tc.no) + ' of ' + repeatsRows.length + ' Repeats audits' }
   ];
-  tiles.forEach(function(t) { t.statusText = t.status === 'target' ? 'On target' : (t.status === 'below' ? 'Below threshold' : 'No data'); });
+  if (lob) {
+    // The KPIs that have a counterpart on the LOB scorecard use its four levels; the others keep the app's target and say so.
+    tiles.forEach(function(t) {
+      if (t.key === 'resolution') {
+        t.label = 'Resolution (audit)'; t.status = scorecardLevel_(t.value, lob.fcr, true);
+        t.target = 'Target >= ' + _scF1_(lob.fcr.target) + '% (LOB)'; t.lobKpi = 'FCR';
+      } else if (t.key === 'transfer' && lob.transfers) {
+        t.label = 'Transfer rate (audit)'; t.status = scorecardLevel_(t.value, lob.transfers, false);
+        t.target = 'Target <= ' + _scF1_(lob.transfers.target) + '% (LOB)'; t.lobKpi = 'Transfers';
+      } else if (t.key !== 'flags') {
+        t.target += ' (audit)';
+      }
+    });
+  }
+  tiles.forEach(function(t) { t.statusText = _scStatusText_(t.status); });
 
   var emailed = rows.filter(function(r) { return r['Email Status'] === 'Sent'; }).length;
   var supporting = [
@@ -293,7 +347,8 @@ function _scBuildCard_(agent, TH, ww) {
 
   // Also noted: the areas below target, in one or two sentences
   var noted = below.slice(0, 2).map(function(t) {
-    return t.label + ': ' + t.display + (t.key === 'flags' ? ' per audit' : '') + ' (' + t.target.charAt(0).toLowerCase() + t.target.slice(1) + ').';
+    var tgt = t.target.replace(/ \((LOB|audit)\)$/, '');   // the "(LOB)" and "(audit)" marks are on the tile, not in the sentence
+    return t.label + ': ' + t.display + (t.key === 'flags' ? ' per audit' : '') + ' (' + tgt.charAt(0).toLowerCase() + tgt.slice(1) + ').';
   }).join(' ');
   if (!noted) noted = measured.length ? 'All measured areas are within target.' : '';
   if (!salesOnly && salesAttempt !== null) {
@@ -316,7 +371,8 @@ function _scBuildCard_(agent, TH, ww) {
     vtid: vtid,
     range: times.length ? _scDateRange_(Math.min.apply(null, times), Math.max.apply(null, times)) : '',
     tiles: tiles, supporting: supporting, badge: badge, belowCount: below.length,
-    strengths: strengths, gaps: gaps, alsoNoted: noted, coaching: coaching
+    strengths: strengths, gaps: gaps, alsoNoted: noted, coaching: coaching,
+    scorecard: lob ? { key: lob.key, label: lob.label, exact: lob.exact } : null
   };
 }
 
@@ -327,36 +383,50 @@ var _SC_KPI_SHORT_ = { repeatRisk: 'Repeat', resolution: 'Resolve', flags: 'Flag
 
 // Target as a short phrase for a table cell: "<= 30%", ">= 80%", "<= 0 / audit".
 function _scTargetShort_(th, key) {
-  return (th.direction === 'max' ? '<= ' : '>= ') + th.target + (key === 'flags' ? ' / audit' : '%');
+  return (th.direction === 'max' ? '<= ' : '>= ') + th.target + (key === 'flags' ? '/audit' : '%');
 }
 
-// The numbers and sentences of the group slides, from the agent cards (buildAgentCards_). Pure: no Sheets, no Slides.
-// Averages are simple means of the agents' own numbers. A KPI that no agent has a number for is left out; an agent
-// that has no tile for a KPI (Transfer for a Sales-only agent, Sales attempted for the others) is not counted in it.
-//   { label, range, agents, audits, filters, kpis: [{ key, label, avg, display, status, statusText, target, targetShort,
-//     onTarget, below, none, applicable, measured, short }], strengths: [text], gaps: [{ label, count }],
-//     levels: { ontrack|attention|priority|nodata: [{ name, reason }] }, counts: { ... }, nextSteps: [{ title, body }] }
-function buildGroupSummary_(built, label, filtersText, audits) {
-  var TH = SCORECARD_THRESHOLDS, cards = built.cards || [], N = cards.length;
+// The numbers and sentences of the group slides of ONE section (the agents of one LOB scorecard), from the agent cards
+// (buildAgentCards_). Pure: no Sheets, no Slides.
+// Averages are simple means of the agents' own numbers. A KPI that no agent has a number for is left out; an agent that has no tile for a
+// KPI (Transfer for a Sales-only agent, Sales attempted for the others) is not counted in it. In a section with a LOB scorecard the
+// Resolution (FCR) and, for MOB CxSS in Q1 to Q3, the Transfer KPI have four levels (below, threshold, target, stretch); the others two.
+//   { label, range, agents, audits, filters, section: { name, quarterLabel, exact, hasLob, key, fcr, transfers },
+//     kpis: [{ key, label, avg, display, status, statusText, target, targetShort, targetValue, onTarget, below, threshold, stretch,
+//              none, applicable, measured, short, isPercent, lobLevels }],
+//     strengths: [text], gaps: [{ label, count }], levels: { ontrack|attention|priority|nodata: [{ name, reason }] }, counts: { ... },
+//     nextSteps: [{ title, body }] }
+// section: one of built.sections (optional: without it all the cards of `built` are one section without a name).
+function buildGroupSummary_(built, label, filtersText, audits, section) {
+  var TH = SCORECARD_THRESHOLDS, cards = (section ? section.cards : built.cards) || [], N = cards.length, sc = section && section.scorecard ? section.scorecard : null;
 
   var kpis = [];
   _SC_KPI_ORDER_.forEach(function(key) {
-    var th = TH[key], vals = [], on = 0, below = 0, none = 0;
+    var th = TH[key], vals = [], counts = { below: 0, threshold: 0, target: 0, stretch: 0, none: 0 };
     cards.forEach(function(c) {
       var t = c.tiles.filter(function(x) { return x.key === key; })[0];
       if (!t) return;
-      if (t.status === 'target') on++; else if (t.status === 'below') below++; else none++;
+      counts[counts.hasOwnProperty(t.status) ? t.status : 'none']++;
       if (t.value !== null && t.value !== undefined) vals.push(t.value);
     });
     if (!vals.length) return;
     var sum = 0; vals.forEach(function(v) { sum += v; });
-    var avg = sum / vals.length, isFlags = key === 'flags', rounded = _scRound1_(avg);
+    var avg = sum / vals.length, isFlags = key === 'flags', rounded = _scRound1_(avg), avgNum = isFlags ? avg : Math.round(avg);
     var shown = isFlags ? (avg > 0 && rounded === 0 ? '<0.1' : rounded.toFixed(1)) : Math.round(avg) + '%';
-    var status = _scStatus_(isFlags ? avg : Math.round(avg), th);
-    kpis.push({ key: key, label: th.label, avg: isFlags ? avg : Math.round(avg), display: shown, status: status,
-      statusText: status === 'target' ? 'On target' : 'Below threshold', target: _scTargetText_(th, isFlags ? ' per audit' : '%'),
-      targetShort: _scTargetShort_(th, key), onTarget: on, below: below, none: none, applicable: on + below + none, measured: on + below,
-      short: _SC_KPI_SHORT_[key], isPercent: !isFlags });
+
+    // the LOB scorecard that applies to this KPI in this section, if any
+    var lobT = null, lobName = '';
+    if (sc && key === 'resolution') { lobT = sc.fcr; lobName = 'Resolution (audit)'; }
+    else if (sc && key === 'transfer' && sc.transfers) { lobT = sc.transfers; lobName = 'Transfer rate (audit)'; }
+    var higher = key !== 'transfer';
+    var status = lobT ? scorecardLevel_(avgNum, lobT, higher) : _scStatus_(avgNum, th);
+    var onTarget = counts.target + counts.stretch, measured = counts.below + counts.threshold + counts.target + counts.stretch;
+    kpis.push({ key: key, label: lobT ? lobName : th.label, avg: avgNum, display: shown, status: status, statusText: _scStatusText_(status),
+      target: lobT ? 'Target ' + (higher ? '>= ' : '<= ') + _scF1_(lobT.target) + '% (LOB)' : _scTargetText_(th, isFlags ? ' per audit' : '%') + (sc && !isFlags ? ' (audit)' : ''),
+      targetShort: lobT ? (higher ? '>= ' : '<= ') + _scF1_(lobT.target) + '%' : _scTargetShort_(th, key),
+      targetValue: lobT ? lobT.target : th.target, threshValue: lobT ? lobT.thresh : th.target,
+      onTarget: onTarget, below: counts.below, threshold: counts.threshold, stretch: counts.stretch, none: counts.none,
+      applicable: measured + counts.none, measured: measured, short: _SC_KPI_SHORT_[key], isPercent: !isFlags, lobLevels: !!lobT });
   });
 
   var levels = { ontrack: [], attention: [], priority: [], nodata: [] };
@@ -386,21 +456,24 @@ function buildGroupSummary_(built, label, filtersText, audits) {
     .sort(function(a, b) { return (gapCount[b.k] - gapCount[a.k]) || (a.i - b.i); })
     .slice(0, 5).map(function(o) { return { label: gapLabel[o.k], count: gapCount[o.k] }; });
 
-  // Next steps: one card for each KPI with agents below its target (the most agents first), then the agents that need priority support.
+  // Next steps: one card for each KPI with agents below its threshold or target (the most agents first), then the priority-support agents.
   var steps = kpis.filter(function(k) { return k.below > 0; })
     .sort(function(a, b) { return b.below - a.below; })
     .map(function(k) {
-      var th = TH[k.key], isMax = th.direction === 'max';
+      var isMax = k.key !== 'resolution' && k.key !== 'salesAttempt', unit = k.key === 'flags' ? ' per audit' : '%';
+      var word = k.lobLevels ? 'threshold' : (isMax ? 'limit' : 'target');
       return { title: k.label, body: k.below + ' of ' + k.measured + ' agent' + (k.measured === 1 ? ' is ' : 's are ') + (isMax ? 'above the ' : 'below the ') +
-        th.target + (k.key === 'flags' ? ' per audit' : '%') + (isMax ? ' limit.' : ' target.') };
+        _scF1_(k.threshValue) + unit + ' ' + word + '.' };
     });
   if (steps.length > 5) steps = steps.slice(0, 5);
   if (levels.priority.length) {
-    var names = levels.priority.map(function(p) { return p.name; }), shownNames = names.slice(0, 6);
+    var names = levels.priority.map(function(p) { return p.name; }), shownNames = names.slice(0, 4);
     steps.push({ title: 'Priority support', body: shownNames.join(', ') + (names.length > shownNames.length ? ' and ' + (names.length - shownNames.length) + ' more.' : '.') });
   }
   if (!steps.length) steps.push({ title: 'All on target', body: kpis.length ? 'Every measured KPI is on target for every agent.' : 'No KPI could be measured for these audits.' });
 
   return { label: label || '', range: built.range || '', agents: N, audits: audits, filters: filtersText || '',
+    section: section ? { name: section.name, key: section.key, hasLob: !!sc, quarterLabel: sc ? sc.label : '', exact: sc ? sc.exact : true,
+                         fcr: sc ? sc.fcr : null, transfers: sc ? sc.transfers : null } : null,
     kpis: kpis, strengths: strengths, gaps: gaps, levels: levels, counts: counts, nextSteps: steps };
 }

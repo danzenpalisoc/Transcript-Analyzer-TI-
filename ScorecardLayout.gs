@@ -70,9 +70,10 @@ function _slFitWithLabel_(label, body, widthPt, size, maxLines) {
   return fitted.substring(label.length);
 }
 
+// The four levels of a LOB KPI have their own colours: stretch purple, target green, threshold amber, below red; no data grey.
 function _slStatusColor_(status) {
   var T = SCORECARD_THEME;
-  return status === 'target' ? T.green : (status === 'below' ? T.red : T.grey);
+  return status === 'target' ? T.green : (status === 'below' ? T.red : (status === 'threshold' ? T.amber : (status === 'stretch' ? T.purple : T.grey)));
 }
 function _slBadgeColor_(level) {
   var T = SCORECARD_THEME;
@@ -100,7 +101,8 @@ function scorecardSlideShapes_(card, pageNo, totalPages) {
     paras: [_slPara_([_slRun_(card.badge.text, 12, true, T.white)], { align: 'CENTER' })] }));
   var sub = ['SAP ID ' + (card.sap || '—'), card.audits + ' audited interaction' + (card.audits === 1 ? '' : 's')];
   if (card.range) sub.push(card.range);
-  S.push(_slShape_('sub', 'TEXT_BOX', 36, 68, 648, 20, { valign: 'MIDDLE', paras: [_slPara_([_slRun_(sub.join('  |  '), 12, false, T.grey)])] }));
+  if (card.scorecard) sub.push(card.scorecard.key + ' ' + card.scorecard.label + ' targets' + (card.scorecard.exact ? '' : ' (closest)'));
+  S.push(_slShape_('sub', 'TEXT_BOX', 36, 68, 648, 20, { valign: 'MIDDLE', paras: [_slPara_([_slRun_(_slFitText_(sub.join('  |  '), 648, 12, 1), 12, false, T.grey)])] }));
 
   // left card: scorecard
   S.push(_slShape_('card-score', 'ROUND_RECTANGLE', 36, 100, 330, 268, { fill: T.lilac, radius: 10 }));
@@ -167,6 +169,7 @@ function scorecardCoverShapes_(summary, totalPages) {
   S.push(_slShape_('subtitle', 'TEXT_BOX', 48, 184, 380, 44, { paras: [_slPara_([_slRun_(_slFitText_(line2, 380, 16, 2), 16, false, T.onDark)])] }));
   S.push(_slShape_('counts', 'TEXT_BOX', 48, 234, 380, 24, { valign: 'MIDDLE', paras: [_slPara_([_slRun_(summary.agents + ' agent' + (summary.agents === 1 ? '' : 's') + '  |  ' + summary.audits + ' audit' + (summary.audits === 1 ? '' : 's'), 14, true, T.white)])] }));
   if (summary.filters) S.push(_slShape_('filters', 'TEXT_BOX', 48, 264, 380, 36, { paras: [_slPara_([_slRun_('Filters: ', 12, true, T.white), _slRun_(_slFitText_(summary.filters, 320, 12, 2), 12, false, T.onDark)])] }));
+  if (summary.lobs) S.push(_slShape_('lobs', 'TEXT_BOX', 48, 304, 380, 36, { paras: [_slPara_([_slRun_('LOBs: ', 12, true, T.white), _slRun_(_slFitText_(summary.lobs, 330, 12, 2), 12, false, T.onDark)])] }));
   S.push(_slShape_('footer', 'TEXT_BOX', 36, 378, 560, 18, { valign: 'MIDDLE', paras: [_slPara_([_slRun_('Audit Scorecard', SCORECARD_FOOTER_FONT, false, T.onDark)])] }));
   S.push(_slShape_('page', 'TEXT_BOX', 620, 378, 64, 18, { valign: 'MIDDLE', paras: [_slPara_([_slRun_('1 / ' + totalPages, SCORECARD_FOOTER_FONT, false, T.onDark)], { align: 'END' })] }));
   return S;
@@ -174,14 +177,24 @@ function scorecardCoverShapes_(summary, totalPages) {
 
 // ── The slides about the whole group (the numbers come from buildGroupSummary_ in ScorecardMetrics.gs) ──
 
-function _slFoot_(g) { return [g.label, g.range, 'Audit Scorecard'].filter(function(x) { return x; }).join('  |  '); }
+function _slFoot_(g) {
+  var s = g.section, q = s && s.hasLob ? s.quarterLabel + ' targets' + (s.exact ? '' : ' (closest quarter)') : '';
+  return [g.label, g.range, q, 'Audit Scorecard'].filter(function(x) { return x; }).join('  |  ');
+}
 
-// Every group slide starts the same way: white page, purple strip, a title, the footer and the page number.
+// Every group slide starts the same way: white page, purple strip, a title, the footer and the page number. A deck with LOB
+// sections also puts the name of the LOB in a purple tag at the right of the title (so the title is a little smaller and narrower).
 function _slGroupBase_(title, pageNo, totalPages, g) {
-  var T = SCORECARD_THEME, P = SCORECARD_PAGE, S = [];
+  var T = SCORECARD_THEME, P = SCORECARD_PAGE, S = [], tag = g.section && g.section.name ? g.section.name : '';
   S.push(_slShape_('bg', 'RECTANGLE', 0, 0, P.w, P.h, { fill: T.white }));
   S.push(_slShape_('accent', 'RECTANGLE', 0, 0, P.w, 8, { fill: T.purple }));
-  S.push(_slShape_('title', 'TEXT_BOX', 36, 22, 648, 44, { valign: 'MIDDLE', paras: [_slPara_([_slRun_(_slFitText_(title, 648, 28, 1), 28, true, T.purple)])] }));
+  if (tag) {
+    S.push(_slShape_('title', 'TEXT_BOX', 36, 22, 470, 44, { valign: 'MIDDLE', paras: [_slPara_([_slRun_(_slFitText_(title, 470, 24, 1), 24, true, T.purple)])] }));
+    S.push(_slShape_('lob-tag', 'ROUND_RECTANGLE', 520, 28, 164, 30, { fill: T.purple, radius: 15, pad: 6, valign: 'MIDDLE',
+      paras: [_slPara_([_slRun_(_slFitText_(tag, 152, 12, 1), 12, true, T.white)], { align: 'CENTER' })] }));
+  } else {
+    S.push(_slShape_('title', 'TEXT_BOX', 36, 22, 648, 44, { valign: 'MIDDLE', paras: [_slPara_([_slRun_(_slFitText_(title, 648, 28, 1), 28, true, T.purple)])] }));
+  }
   S.push(_slShape_('footer', 'TEXT_BOX', 36, 378, 560, 18, { valign: 'MIDDLE', paras: [_slPara_([_slRun_(_slFitText_(_slFoot_(g), 560, SCORECARD_FOOTER_FONT, 1), SCORECARD_FOOTER_FONT, false, T.grey)])] }));
   S.push(_slShape_('page', 'TEXT_BOX', 620, 378, 64, 18, { valign: 'MIDDLE', paras: [_slPara_([_slRun_(pageNo + ' / ' + totalPages, SCORECARD_FOOTER_FONT, false, T.grey)], { align: 'END' })] }));
   return S;
@@ -201,17 +214,17 @@ function scorecardSummaryShapes_(g, pageNo, totalPages) {
   if (n) {
     var gap = 10, w = (648 - (n - 1) * gap) / n, inner = w - 20;
     k.forEach(function(t, i) {
-      S.push(_slShape_('kpi-' + i, 'ROUND_RECTANGLE', 36 + i * (w + gap), 76, w, 100, { fill: T.lilac, radius: 10, pad: 10, paras: [
+      S.push(_slShape_('kpi-' + i, 'ROUND_RECTANGLE', 36 + i * (w + gap), 76, w, 108, { fill: T.lilac, radius: 10, pad: 10, paras: [
         _slPara_([_slRun_(_slFitText_(t.display, inner, 28, 1), 28, true, _slStatusColor_(t.status))]),
-        _slPara_([_slRun_(_slFitText_(t.label, inner, 11, 1), 11, false, T.ink)]),
+        _slPara_([_slRun_(_slFitText_(t.label, inner, 11, 2), 11, false, T.ink)]),
         _slPara_([_slRun_(_slFitText_(t.target, inner, 11, 2), 11, false, T.grey)])
       ] }));
     });
   } else {
-    S.push(_slShape_('kpi-none', 'ROUND_RECTANGLE', 36, 76, 648, 100, { fill: T.lilac, radius: 10, pad: 14, valign: 'MIDDLE',
+    S.push(_slShape_('kpi-none', 'ROUND_RECTANGLE', 36, 76, 648, 108, { fill: T.lilac, radius: 10, pad: 14, valign: 'MIDDLE',
       paras: [_slPara_([_slRun_('No KPI could be measured for these audits.', 14, true, T.grey)])] }));
   }
-  S.push(_slText_('averages-note', 36, 179, 648, 16, [_slRun_('Averages are simple means of the ' + g.agents + ' agent' + (g.agents === 1 ? '' : 's') + '.', 11, false, T.grey)], { valign: 'MIDDLE' }));
+  S.push(_slText_('averages-note', 36, 187, 648, 16, [_slRun_('Averages are simple means of the ' + g.agents + ' agent' + (g.agents === 1 ? '' : 's') + '.', 11, false, T.grey)], { valign: 'MIDDLE' }));
 
   var ready = [];
   [['ontrack', 'On track', T.green], ['attention', 'Needs attention', T.amber], ['priority', 'Priority support', T.red]].forEach(function(l) {
@@ -224,10 +237,10 @@ function scorecardSummaryShapes_(g, pageNo, totalPages) {
     .map(function(s) { return _slPara_([_slRun_(_slFitText_(s, bulletW, 12, 2), 12, false, T.ink)], { bullet: true, spacing: 1.1 }); });
   var panels = [['well', 'What went well', T.green, well], ['work', 'What needs work', T.amber, work], ['ready', 'Readiness', T.purple, ready]], px = [36, 256, 476];
   panels.forEach(function(p, i) {
-    S.push(_slShape_('panel-' + p[0], 'ROUND_RECTANGLE', px[i], 200, 208, 170, { fill: T.lilac, radius: 10 }));
-    S.push(_slShape_('panel-' + p[0] + '-dot', 'ELLIPSE', px[i] + 12, 210, 22, 22, { fill: p[2] }));
-    S.push(_slText_('panel-' + p[0] + '-title', px[i] + 42, 208, 154, 26, [_slRun_(p[1], 14, true, T.purple)], { valign: 'MIDDLE' }));
-    S.push(_slShape_('panel-' + p[0] + '-list', 'TEXT_BOX', px[i] + 12, 242, 184, 122, { paras: p[3] }));
+    S.push(_slShape_('panel-' + p[0], 'ROUND_RECTANGLE', px[i], 208, 208, 162, { fill: T.lilac, radius: 10 }));
+    S.push(_slShape_('panel-' + p[0] + '-dot', 'ELLIPSE', px[i] + 12, 218, 22, 22, { fill: p[2] }));
+    S.push(_slText_('panel-' + p[0] + '-title', px[i] + 42, 216, 154, 26, [_slRun_(p[1], 14, true, T.purple)], { valign: 'MIDDLE' }));
+    S.push(_slShape_('panel-' + p[0] + '-list', 'TEXT_BOX', px[i] + 12, 250, 184, 114, { paras: p[3] }));
   });
   return S;
 }
@@ -235,25 +248,29 @@ function scorecardSummaryShapes_(g, pageNo, totalPages) {
 // 2. Scorecard results: the targets and the group average in a table, a bar chart of the percent KPIs, and how the badge is read.
 function scorecardResultsShapes_(g, pageNo, totalPages) {
   var T = SCORECARD_THEME, S = _slGroupBase_('Scorecard results', pageNo, totalPages, g);
-  var cols = [['KPI', 112], ['Target', 84], ['Average', 60], ['On target', 68]], x0 = 36;
+  var cols = [['KPI', 132], ['Target', 72], ['Average', 56], ['On target', 64]], x0 = 36;
   var xs = []; cols.reduce(function(x, c) { xs.push(x); return x + c[1]; }, x0);
   cols.forEach(function(c, i) {
     S.push(_slShape_('th-' + i, 'RECTANGLE', xs[i], 76, c[1], 26, { fill: T.purple, pad: 4, valign: 'MIDDLE', paras: [_slPara_([_slRun_(c[0], 11, true, T.white)])] }));
   });
   g.kpis.slice(0, 5).forEach(function(k, r) {
     var y = 102 + r * 28, cells = [
-      [_slFitText_(k.label, 104, 12, 1), true, T.ink], [_slFitText_(k.targetShort, 76, 12, 1), false, T.ink],
-      [k.display, true, _slStatusColor_(k.status)], [k.onTarget + ' of ' + k.measured, false, T.ink]];
+      [_slFitText_(k.label, 124, 11, 1), true, T.ink, 11], [_slFitText_(k.targetShort, 64, 11, 1), false, T.ink, 11],
+      [k.display, true, _slStatusColor_(k.status), 12], [k.onTarget + ' of ' + k.measured, false, T.ink, 11]];
     cells.forEach(function(c, i) {
-      S.push(_slShape_('td-' + r + '-' + i, 'RECTANGLE', xs[i], y, cols[i][1], 28, { fill: T.white, line: T.line, pad: 4, valign: 'MIDDLE', paras: [_slPara_([_slRun_(c[0], 12, c[1], c[2])])] }));
+      S.push(_slShape_('td-' + r + '-' + i, 'RECTANGLE', xs[i], y, cols[i][1], 28, { fill: T.white, line: T.line, pad: 4, valign: 'MIDDLE', paras: [_slPara_([_slRun_(c[0], c[3], c[1], c[2])])] }));
     });
   });
   if (!g.kpis.length) S.push(_slText_('no-kpi', 36, 110, 324, 40, [_slRun_('No KPI could be measured for these audits.', 12, false, T.grey)]));
-  S.push(_slShape_('note', 'ROUND_RECTANGLE', 36, 252, 324, 116, { fill: T.lilac, radius: 10, pad: 12, paras: [
+  var s = g.section, noteParas = [
     _slPara_([_slRun_('Badge: no KPI below threshold = On track, one = Needs attention, two or more = Priority support.', 11, false, T.ink)], { bullet: true, spacing: 1.1 }),
-    _slPara_([_slRun_('Averages are simple means of the ' + g.agents + ' agent' + (g.agents === 1 ? '' : 's') + '.', 11, false, T.ink)], { bullet: true, spacing: 1.1 }),
-    _slPara_([_slRun_('Critical flags is a count per audit, so it is not in the chart.', 11, false, T.ink)], { bullet: true, spacing: 1.1 })
-  ] }));
+    _slPara_([_slRun_('Averages are simple means of the ' + g.agents + ' agent' + (g.agents === 1 ? '' : 's') + '. Critical flags are not in the chart.', 11, false, T.ink)], { bullet: true, spacing: 1.1 })
+  ];
+  if (s && s.hasLob) {
+    var f = s.fcr, lobNote = 'Resolution (audit) vs the FCR scorecard of ' + s.key + ' ' + s.quarterLabel + ': Threshold ' + _scF1_(f.thresh) + '%, Target ' + _scF1_(f.target) + '%, Stretch ' + _scF1_(f.stretch) + '%.';
+    noteParas.push(_slPara_([_slRun_(lobNote, 11, false, T.ink)], { bullet: true, spacing: 1.1 }));
+  }
+  S.push(_slShape_('note', 'ROUND_RECTANGLE', 36, 250, 324, 122, { fill: T.lilac, radius: 10, pad: 10, paras: noteParas }));
 
   // bar chart: the percent KPIs, the average beside the target
   var pk = g.kpis.filter(function(k) { return k.isPercent; }), cx0 = 400, cw = 272, base = 282, scale = 1.7;
@@ -265,7 +282,7 @@ function scorecardResultsShapes_(g, pageNo, totalPages) {
     });
     var gw = cw / pk.length, bw = Math.min(26, gw / 2 - 6);
     pk.forEach(function(k, i) {
-      var cx = cx0 + i * gw + gw / 2, bars = [['avg', k.avg, T.purple, cx - bw - 2], ['target', SCORECARD_THRESHOLDS[k.key].target, T.green, cx + 2]];
+      var cx = cx0 + i * gw + gw / 2, bars = [['avg', k.avg, T.purple, cx - bw - 2], ['target', k.targetValue, T.green, cx + 2]];
       bars.forEach(function(b) {
         var v = Math.max(0, Math.min(100, b[1])), h = Math.max(1, v * scale);
         S.push(_slShape_('bar-' + i + '-' + b[0], 'RECTANGLE', b[3], base - h, bw, h, { fill: b[2] }));
@@ -288,7 +305,9 @@ function scorecardLandedShapes_(g, pageNo, totalPages) {
   g.kpis.slice(0, 5).forEach(function(k, i) {
     var y = 84 + i * 48, x = bx;
     S.push(_slText_('lk-' + i, 36, y, 122, 34, [_slRun_(_slFitText_(k.label, 122, 12, 1), 12, true, T.ink)], { valign: 'MIDDLE' }));
-    [['below', k.below, T.red], ['on', k.onTarget, T.green], ['none', k.none, T.grey]].forEach(function(seg) {
+    // the parts: below threshold, at threshold, on target, stretch, no data (the two middle levels exist only for a LOB KPI)
+    var target = k.lobLevels ? k.onTarget - k.stretch : k.onTarget;
+    [['below', k.below, T.red], ['thr', k.threshold, T.amber], ['on', target, T.green], ['str', k.stretch, T.purple], ['none', k.none, T.grey]].forEach(function(seg) {
       if (!seg[1] || !k.applicable) return;
       var w = bwTotal * seg[1] / k.applicable;
       S.push(_slShape_('lb-' + i + '-' + seg[0], 'RECTANGLE', x, y, w, 34, { fill: seg[2], valign: 'MIDDLE', paras: w >= 24 ? [_slPara_([_slRun_(String(seg[1]), 12, true, T.white)], { align: 'CENTER' })] : [] }));
@@ -296,9 +315,17 @@ function scorecardLandedShapes_(g, pageNo, totalPages) {
     });
   });
   if (!g.kpis.length) S.push(_slText_('no-kpi', 36, 90, 420, 30, [_slRun_('No KPI could be measured for these audits.', 12, false, T.grey)]));
-  _slLegendItem_(S, 'legend-below', bx, 330, T.red, 'Below threshold', 100);
-  _slLegendItem_(S, 'legend-on', bx + 130, 330, T.green, 'On target', 70);
-  _slLegendItem_(S, 'legend-none', bx + 230, 330, T.grey, 'No data', 60);
+  if (g.section && g.section.hasLob) {
+    _slLegendItem_(S, 'legend-below', bx, 330, T.red, 'Below threshold', 100);
+    _slLegendItem_(S, 'legend-thr', bx + 132, 330, T.amber, 'At threshold', 80);
+    _slLegendItem_(S, 'legend-on', bx + 230, 330, T.green, 'On target', 62);
+    _slLegendItem_(S, 'legend-str', bx + 324, 330, T.purple, 'Stretch', 50);
+    _slLegendItem_(S, 'legend-none', bx + 408, 330, T.grey, 'No data', 50);
+  } else {
+    _slLegendItem_(S, 'legend-below', bx, 330, T.red, 'Below threshold', 100);
+    _slLegendItem_(S, 'legend-on', bx + 130, 330, T.green, 'On target', 70);
+    _slLegendItem_(S, 'legend-none', bx + 230, 330, T.grey, 'No data', 60);
+  }
   g.kpis.slice().sort(function(a, b) { return b.below - a.below; }).slice(0, 3).forEach(function(k, i) {
     var body = _slFitWithLabel_(k.label + ': ', k.onTarget + ' of ' + k.measured + ' on target; ' + k.below + ' below threshold.', 188, 12, 3);
     S.push(_slShape_('lnote-' + i, 'ROUND_RECTANGLE', 476, 84 + i * 82, 208, 72, { fill: T.lilac, radius: 10, pad: 10, valign: 'MIDDLE',
@@ -330,10 +357,21 @@ function scorecardHeatmapShapes_(cards, pageIdx, pageCount, pageNo, totalPages, 
       });
     });
   });
-  _slLegendItem_(S, 'legend-on', 36, 326, T.green, 'On target', 70);
-  _slLegendItem_(S, 'legend-below', 140, 326, T.red, 'Below threshold', 100);
-  _slLegendItem_(S, 'legend-none', 276, 326, T.grey, 'No data', 60);
-  S.push(_slText_('heat-note', 36, 348, 648, 28, [_slRun_('Xfer / Sales: Transfer rate for Repeats agents, Sales attempted for Sales agents. Agents are listed in alphabetical order.', 11, false, T.grey)]));
+  var sec = g.section, note;
+  if (sec && sec.hasLob) {
+    _slLegendItem_(S, 'legend-below', 36, 326, T.red, 'Below threshold', 100);
+    _slLegendItem_(S, 'legend-thr', 168, 326, T.amber, 'At threshold', 80);
+    _slLegendItem_(S, 'legend-on', 280, 326, T.green, 'On target', 62);
+    _slLegendItem_(S, 'legend-str', 374, 326, T.purple, 'Stretch', 50);
+    _slLegendItem_(S, 'legend-none', 456, 326, T.grey, 'No data', 50);
+    note = 'Resolve rate: the audit Resolution against the FCR scorecard of ' + sec.key + ' ' + sec.quarterLabel + '. Xfer / Sales: Transfer rate (Repeats agents) or Sales attempted (Sales agents). Alphabetical order.';
+  } else {
+    _slLegendItem_(S, 'legend-on', 36, 326, T.green, 'On target', 70);
+    _slLegendItem_(S, 'legend-below', 140, 326, T.red, 'Below threshold', 100);
+    _slLegendItem_(S, 'legend-none', 276, 326, T.grey, 'No data', 60);
+    note = 'Xfer / Sales: Transfer rate for Repeats agents, Sales attempted for Sales agents. Agents are listed in alphabetical order.';
+  }
+  S.push(_slText_('heat-note', 36, 348, 648, 28, [_slRun_(note, 11, false, T.grey)]));
   return S;
 }
 
@@ -395,21 +433,28 @@ function scorecardNextStepsShapes_(g, pageNo, totalPages) {
   return S;
 }
 
-// The whole deck as layout shapes, in order: cover, the group slides, one slide per agent, next steps.
-// built: buildAgentCards_ result. Returns an array of slides (each an array of shapes); page numbers are 1-based.
+// The whole deck as layout shapes, in order: the cover, then one section for each LOB scorecard (its group slides, the slide of each of its
+// agents, its next steps). built: buildAgentCards_ result (built.sections). Returns an array of slides (each an array of shapes);
+// page numbers are 1-based. Without sections (no LOB scorecards) the whole deck is one section without a tag.
 function scorecardDeckShapes_(built, label, filtersText, audits, thresholds) {
-  var cards = built.cards, g = buildGroupSummary_(built, label, filtersText, audits);
-  var heatPages = Math.max(1, Math.ceil(cards.length / SCORECARD_HEATMAP_PER_SLIDE));
-  var total = 4 + heatPages + 2 + cards.length + 1, p = 1, slides = [];
-  slides.push(scorecardCoverShapes_({ label: label, range: built.range, agents: cards.length, audits: audits, filters: filtersText, thresholds: thresholds }, total));
-  slides.push(scorecardSummaryShapes_(g, ++p, total));
-  slides.push(scorecardResultsShapes_(g, ++p, total));
-  slides.push(scorecardLandedShapes_(g, ++p, total));
-  for (var h = 0; h < heatPages; h++) slides.push(scorecardHeatmapShapes_(cards, h, heatPages, ++p, total, g));
-  slides.push(scorecardFindingsShapes_(g, ++p, total));
-  slides.push(scorecardReadinessShapes_(g, ++p, total));
-  cards.forEach(function(c) { slides.push(scorecardSlideShapes_(c, ++p, total)); });
-  slides.push(scorecardNextStepsShapes_(g, ++p, total));
+  var sections = (built.sections && built.sections.length) ? built.sections : [{ name: '', key: '', scorecard: null, cards: built.cards }];
+  sections = sections.filter(function(s) { return s.cards.length; });
+  var heatOf = function(s) { return Math.max(1, Math.ceil(s.cards.length / SCORECARD_HEATMAP_PER_SLIDE)); };
+  var total = 1, p = 1, slides = [];
+  sections.forEach(function(s) { total += 6 + heatOf(s) + s.cards.length; });
+  var lobs = sections.length > 1 || (sections[0] && sections[0].name) ? sections.map(function(s) { return s.name + ' (' + s.cards.length + ')'; }).join(', ') : '';
+  slides.push(scorecardCoverShapes_({ label: label, range: built.range, agents: built.cards.length, audits: audits, filters: filtersText, lobs: lobs, thresholds: thresholds }, total));
+  sections.forEach(function(s) {
+    var g = buildGroupSummary_(built, label, filtersText, audits, s), heatPages = heatOf(s);
+    slides.push(scorecardSummaryShapes_(g, ++p, total));
+    slides.push(scorecardResultsShapes_(g, ++p, total));
+    slides.push(scorecardLandedShapes_(g, ++p, total));
+    for (var h = 0; h < heatPages; h++) slides.push(scorecardHeatmapShapes_(s.cards, h, heatPages, ++p, total, g));
+    slides.push(scorecardFindingsShapes_(g, ++p, total));
+    slides.push(scorecardReadinessShapes_(g, ++p, total));
+    s.cards.forEach(function(c) { slides.push(scorecardSlideShapes_(c, ++p, total)); });
+    slides.push(scorecardNextStepsShapes_(g, ++p, total));
+  });
   return slides;
 }
 

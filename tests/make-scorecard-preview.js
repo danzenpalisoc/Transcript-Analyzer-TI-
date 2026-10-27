@@ -11,12 +11,12 @@ const { renderDeckHtml } = require('./lib/scorecard-preview');
 
 const ctx = vm.createContext({ Logger: { log() {} }, JSON, Array, Object, String, Number, Math, Date, RegExp, isFinite, isNaN, Error,
   PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) } });
-['Config.gs', 'ScorecardMetrics.gs', 'ScorecardLayout.gs'].forEach(f => vm.runInContext(read(f), ctx, { filename: f }));
+['Config.gs', 'ScorecardMetrics.gs', 'ScorecardTargets.gs', 'ScorecardLayout.gs'].forEach(f => vm.runInContext(read(f), ctx, { filename: f }));
 
 let n = 0;
 const row = o => Object.assign({ 'Audit Ref': 'S' + (++n), 'Timestamp': '2026-10-0' + (1 + n % 9) + 'T10:00:00Z', 'Team Member': 'Sample Agent', 'SAP ID': '100001',
   'Analysis Type': 'Repeats & Transfer Analyzer', 'Repeat Projection %': '20%', 'Issue Resolved': 'Yes', 'Critical Flags': '', 'Transfer Occurred': 'No',
-  'Sales Attempted': '', 'Email Status': 'Sent', 'Team Leader': 'Taylor Brooks', 'Line of Business': 'MOB CLS', 'Locale': 'TI Philippines', 'VTID': 'VTI2026000101',
+  'Sales Attempted': '', 'Email Status': 'Sent', 'Team Leader': 'Taylor Brooks', 'Line of Business': 'PF CxSS', 'Locale': 'TI Philippines', 'VTID': 'VTI2026000101',
   'Top SMART Opportunity': '', 'RCA Sub-Parameter': '' }, o);
 
 const rows = [];
@@ -27,14 +27,14 @@ for (let i = 0; i < 5; i++) rows.push(row({ 'Team Member': 'Aisha Khan', 'SAP ID
   'Critical Flags': i === 2 ? 'No expectation set for the callback' : '', 'Top SMART Opportunity': i === 2 ? 'Confirm the callback time and channel before closing the call' : '' }));
 // 3. priority support, with the longest realistic text
 const long = 'Agent did not confirm the customer\'s understanding before closing and moved to the next step without a summary of what was agreed';
-for (let i = 0; i < 6; i++) rows.push(row({ 'Team Member': 'Jonathan Reyes-Villanueva', 'SAP ID': '100003', 'Repeat Projection %': ['85% repeat risk. The call ended without a confirmed fix', '0.72', '65', '90%', '55%', '78'][i],
+for (let i = 0; i < 6; i++) rows.push(row({ 'Team Member': 'Jonathan Reyes-Villanueva', 'SAP ID': '100003', 'Line of Business': 'MOB CLS', 'Repeat Projection %': ['85% repeat risk. The call ended without a confirmed fix', '0.72', '65', '90%', '55%', '78'][i],
   'Issue Resolved': ['No', 'Partially resolved - callback promised', 'No', 'No', 'Yes', 'Issue was NOT resolved. The credit was never applied'][i],
   'Critical Flags': ['No needs discovery before offer | Generic pricing explanation | Transfer without warm handoff', 'No needs discovery before offer | Missed callback policy', 'Transfer without warm handoff', 'No needs discovery before offer', 'Generic pricing explanation', 'No expectation set after the appointment'][i],
   'Transfer Occurred': ['Yes', 'Yes', 'No', 'Yes', 'No', 'Yes'][i],
   'Top SMART Opportunity': [long, 'Use customer cues to personalize the offer before presenting any price', long, 'Set a clear expectation for the next step and confirm the customer agrees', long, 'Ask one open-ended discovery question at the start of every call'][i] }));
 // 4. a Sales agent
 for (let i = 0; i < 5; i++) rows.push(row({ 'Team Member': 'Carlos Mendoza', 'SAP ID': '100004', 'Analysis Type': 'Sales Analyzer', 'Repeat Projection %': '', 'Issue Resolved': 'Yes',
-  'Sales Attempted': ['Yes', 'No', 'Yes', 'Yes', 'N/A'][i], 'Critical Flags': i % 2 ? 'No retention save attempt after the customer asked to cancel' : 'Offer made before needs discovery', 'Line of Business': 'MOB CxSS',
+  'Sales Attempted': ['Yes', 'No', 'Yes', 'Yes', 'N/A'][i], 'Critical Flags': i % 2 ? 'No retention save attempt after the customer asked to cancel' : 'Offer made before needs discovery', 'Line of Business': 'Koodo',
   'Top SMART Opportunity': 'Ask a needs-based question before presenting any offer or price' }));
 
 const extras = { whatsWorking: {} };

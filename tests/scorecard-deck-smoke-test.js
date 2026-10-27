@@ -60,7 +60,7 @@ function makeEnv() {
     },
   };
   const ctx = vm.createContext(sandbox);
-  ['Config.gs', 'DataRepair.gs', 'ScorecardMetrics.gs', 'ScorecardLayout.gs', 'ScorecardPptx.gs', 'ScorecardSlides.gs'].forEach(f => vm.runInContext(read(f), ctx, { filename: f }));
+  ['Config.gs', 'DataRepair.gs', 'ScorecardMetrics.gs', 'ScorecardTargets.gs', 'ScorecardLayout.gs', 'ScorecardPptx.gs', 'ScorecardSlides.gs'].forEach(f => vm.runInContext(read(f), ctx, { filename: f }));
   vm.runInContext(extractFunction(read('Code.gs'), 'isValidAuditRef_'), ctx);
   const data = { log: [], dash: [] };
   ctx.readAuditLog_ = () => data.log;
@@ -75,7 +75,7 @@ let counter = 0;
 const REPORT = items => '<div class="report-col report-col-working"><div class="report-col-head">What\'s Working</div><ul>' + items.map(i => '<li>' + i + '</li>').join('') + '</ul></div><div class="report-col report-col-needs"><ul><li>needs</li></ul></div>';
 function addAudit(env, agent, o) {
   const ref = 'NHA-2026101' + String(++counter).padStart(4, '0');
-  env.data.log.push({ 'Audit Ref': ref, 'Submitted At': 'Thu Oct 08 2026 10:00:00 GMT-0400 (Eastern Daylight Time)', 'SAP ID': o.sap, 'Team Member': agent, 'Team Leader': 'TL One', 'Line of Business': 'MOB CLS',
+  env.data.log.push({ 'Audit Ref': ref, 'Submitted At': 'Thu Oct 08 2026 10:00:00 GMT-0400 (Eastern Daylight Time)', 'SAP ID': o.sap, 'Team Member': agent, 'Team Leader': 'TL One', 'Line of Business': o.lob || 'MOB CLS',
     'Locale': 'TI Philippines', 'VTID': 'V1', 'Analysis Type': o.type || 'Repeats & Transfer Analyzer', 'Repeat Projection %': o.repeat, 'Issue Resolved': o.resolved || 'Yes',
     'Transfer Occurred': o.transfer || 'No', 'Email Status': 'Sent' });
   env.data.dash.push({ 'Audit Ref': ref, 'Critical Flags': o.flags || '', 'RCA Sub-Parameter': '', 'Top SMART Opportunity': o.coach || 'Ask one discovery question', 'Sales Attempted': o.sales || '' });
@@ -85,10 +85,10 @@ function addAudit(env, agent, o) {
 const refsOf = env => env.data.log.map(r => r['Audit Ref']);
 const LONG = 'Customer was transferred without a warm handoff and the agent did not set any expectation for the next step on the call, then closed the call without a recap';
 
-function fill(env, count) {
+function fill(env, count, lobs) {
   for (let i = 0; i < count; i++) {
     const name = i === 0 ? 'Zoë O\'Brien & <Sons> "Jr"' : (i % 4 === 0 ? 'Maria Guadalupe Hernandez-Villanueva de la Cruz ' + i : 'Agent ' + String.fromCharCode(65 + (i % 26)) + i);
-    for (let a = 0; a < 3; a++) addAudit(env, name, { sap: String(3000 + i), repeat: [10, 30, 55, 80][(i + a) % 4] + '%', resolved: (i + a) % 5 === 0 ? 'No' : 'Yes',
+    for (let a = 0; a < 3; a++) addAudit(env, name, { lob: lobs ? lobs[i % lobs.length] : undefined, sap: String(3000 + i), repeat: [10, 30, 55, 80][(i + a) % 4] + '%', resolved: (i + a) % 5 === 0 ? 'No' : 'Yes',
       flags: (i + a) % 3 === 0 ? 'Dead air | ' + LONG : '', transfer: i % 7 === 0 ? 'Yes' : 'No', type: i % 9 === 8 ? 'Sales Analyzer' : undefined, sales: i % 9 === 8 ? (a ? 'Yes' : 'No') : '',
       coach: LONG, report: REPORT(['Probing & investigation <skills> are "solid"', LONG]) });
   }
@@ -136,6 +136,23 @@ const slideText = (parts, i) => [...slideXml(parts, i).matchAll(/<a:t>([\s\S]*?)
   check('the package is small (' + Math.round(size / 1024) + ' KB of XML, far below the Drive limit)', size < 3 * 1024 * 1024, size + ' chars');
   check('it was built in under 3 seconds here (' + ms + ' ms)', ms < 3000, ms + ' ms');
 });
+
+console.log('\nSmoke mixed LOBs — 20 agents in 5 LOBs, a section for each');
+{
+  const e = makeEnv(); fill(e, 20, ['PF CxSS', 'MOB CLS', 'one cls', 'Koodo', 'Brand New LOB']);
+  const r = e.ctx.createScorecardDeck(refsOf(e), 'Mixed', 'x');
+  const want = 1 + 5 * (6 + 1 + 4);
+  check('the deck is created with the cover and five sections of 4 agents (' + want + ' slides)', r.success === true && r.agents === 20 && r.slides === want, JSON.stringify(r).slice(0, 200));
+  const parts = partsOf(e), bad = parts.map(p => [p.name, xmlError(p.data)]).filter(x => x[1]);
+  check('every part of the file is well-formed XML', bad.length === 0, JSON.stringify(bad.slice(0, 3)));
+  const count = parts.filter(p => /^ppt\/slides\/slide\d+\.xml$/.test(p.name)).length;
+  check('the file has ' + want + ' slides', count === want, 'slides in file: ' + count);
+  check('the cover lists the five LOBs', /LOBs:\s+MOB CLS \(4\), MOB CxSS \(4\), PF CLS \(4\), PF CxSS \(4\), Other LOB \(4\)/.test(slideText(parts, 1)), slideText(parts, 1).slice(-160));
+  check('the first section is MOB CLS and its slides name the quarter of the targets', /^Executive summary/.test(slideText(parts, 2)) && /MOB CLS/.test(slideText(parts, 2)) && /Q\d 2026 targets/.test(slideText(parts, 2)), slideText(parts, 2).slice(-90));
+  const lastSection = 1 + 4 * 11 + 1;
+  check('the last section is Other LOB, with no targets named', /Other LOB/.test(slideText(parts, lastSection)) && !/targets/.test(slideText(parts, lastSection)), slideText(parts, lastSection).slice(-70));
+  check('the page numbers are "n / ' + want + '"', parts.filter(p => /^ppt\/slides\/slide\d+\.xml$/.test(p.name)).every((p, i) => slideText(parts, i + 1).indexOf((i + 1) + ' / ' + want) !== -1));
+}
 
 console.log('\nSmoke 41 agents — refused, nothing is created');
 {

@@ -2132,6 +2132,17 @@ function createActionRegistry() {
       'ScorecardLayout.gs, ScorecardMetrics.gs, ScorecardPptx.gs, ScorecardSlides.gs, index.html (one sentence in the Generate Slides dialog, which said "one slide for each agent plus a cover slide"), tests/scorecard-group-slides-test.js (new), tests/scorecard-slides-test.js, tests/make-scorecard-preview.js, tests/lib/scorecard-preview.js, DOCUMENTATION.md, CreateActionRegistry.gs',
       'Danzen',
       'Partly done'
+    ],
+    [
+      '190',
+      '2026-10-28',
+      'Feature',
+      'NH + TI',
+      'The admin sent the Agent Scorecards of every LOB (2026, Q1 to Q4) as screenshots and asked that Generate Slides use the data the app has. Decided one question at a time with pictures.',
+      'DONE IN THE CODE. New ScorecardTargets.gs: the FCR threshold, target and stretch of PF CxSS, PF CLS, PF TS, SHS CxSS, SHS CLS, SHS TS, MOB CLS, MOB CxSS and One CAM for each quarter, and the MOB CxSS Transfers (Q1 to Q3, lower is better). Only FCR (as the audit Resolution) and Transfers (as the audit Transfer rate) have a counterpart in an audit; the slide says "Resolution (audit)" and "(LOB)", because the QA verdict of an audit is not the production FCR. Those tiles, the heatmap, the landed bars and the group numbers have four levels (below threshold, at threshold, on target, stretch; amber and purple were added); the other KPIs keep the app target and say "(audit)"; the badge counts only "below threshold". The deck is one SECTION for each LOB scorecard (its group slides, its agents, its next steps; a purple LOB tag; the cover lists the LOBs; "Other LOB" last). An agent uses the LOB they were audited in most. The 28 spellings of Line of Business found in the live data (read from the LOB filter) are mapped: MOB TS, Koodo, Koodo TS and KDO CxSS to MOB CxSS (chosen by the admin); MOB ONE CLS, MOB ONR CLS and CLS2 Access + Mob to MOB CLS; ONE CLS in any capitals to PF CLS; ONE TS, OHE TS, FFH_FBR_TS_TIIN, FFH_FBR_TS_TIP and Copper / PF TS to PF TS; SHS / Vivint TS to SHS TS; CxSS, OHE CxSS and FFH Sales to PF CxSS; anything else to Other LOB with the app targets. The quarter is the one of the newest audit of the section; when the scorecard has none the closest quarter is used and the slides say so. FOUND. The live app generated a deck for 19 agents and the converted Google Slides deck was looked at slide by slide (the agent chose a Team Leader filter): the cover, summary, results, heatmap, readiness, an agent slide and next steps all converted as designed. That smoke test also showed that old audits have LOBs that are not in the popup (28 spellings), which is why the mapping above exists. NOT done / to know: the numbers were read from screenshots (the sums of the weights agree for every quarter); the One CAM scorecard has no Q1 and a TBD in Q2; TBD cells and the KPIs that need production data (RCT, RGU, Save Rate, Repeats, VTR, EWT, T2B, LCR) are not used; MOB TS, Koodo and Koodo TS have no scorecard of their own and use MOB CxSS; SHS CxSS has no audit in the data yet; the Version and the real deck of this change were not seen by the author.',
+      'ScorecardTargets.gs (new), ScorecardMetrics.gs, ScorecardLayout.gs, index.html (two sentences of the Generate Slides button and dialog), tests/scorecard-lob-test.js (new), tests/scorecard-deck-smoke-test.js, tests/scorecard-slides-test.js, tests/scorecard-group-slides-test.js, tests/make-scorecard-preview.js, DOCUMENTATION.md, CreateActionRegistry.gs',
+      'Danzen',
+      'Partly done'
     ]
   ];
 

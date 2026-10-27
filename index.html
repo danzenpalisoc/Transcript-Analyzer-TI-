@@ -2256,7 +2256,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
         <span>&#128100; Team Member Trends &amp; Repeat Offenders</span>
         <span style="display:flex;align-items:center;justify-content:flex-end;gap:20px;flex-wrap:wrap">
           <button id="db-scorecard-btn" class="sc-trigger" type="button" onclick="dbOpenScorecardDialog()"
-            title="Create a Google Slides deck with one scorecard slide for each agent in the current filters">
+            title="Create a Google Slides deck for the agents in the current filters: a section for each line of business with its summary, a slide for each agent, and next steps">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/></svg>
             Generate Slides
           </button>
@@ -6291,7 +6291,7 @@ function dbOpenScorecardDialog() {
     return;
   }
   summary.textContent = 'A deck for ' + sel.agents + ' agent' + (sel.agents === 1 ? '' : 's') + ' (' + sel.refs.length + ' audit' + (sel.refs.length === 1 ? '' : 's') +
-    ') that match the current dashboard filters: a summary of the group, one slide for each agent, and next steps. The deck is shared with you in Google Slides.';
+    ') that match the current dashboard filters: for each line of business, a summary of the group, one slide for each agent, and next steps. The deck is shared with you in Google Slides.';
   _scShow('sc-form', true); _scShow('sc-create', true, 'inline-flex');
   document.getElementById('sc-cancel').textContent = 'Cancel';
   document.getElementById('sc-label').focus();
