@@ -6375,10 +6375,16 @@ function handleSubmitEmail() {
         return;
       }
       var modeLabel = _emailMode === 'test' ? ' [TEST MODE]' : '';
+      // An address that is not on a company domain is never mailed (EmailGuard). Say so here, so the analyst knows that person did not get it.
+      var dropped = result.droppedRecipients || [];
+      var droppedMsg = dropped.length
+        ? '⚠️ NOT emailed, because it is not a company address: ' + dropped.join(', ') + '. That person did not receive this audit. Tell the QA and LS admin team so the address on the roster can be corrected.'
+        : '';
       if (result.emailWarning) {
-        showWarning('⚠️ ' + result.emailWarning);
+        showWarning('⚠️ ' + result.emailWarning + (droppedMsg ? ' ' + droppedMsg : ''));
       } else {
         showSuccess('&#10003; Audit emailed successfully to: ' + result.recipients.join(', ') + modeLabel);
+        if (droppedMsg) showWarning(droppedMsg);
       }
       lockFormAfterSubmit(result.auditRef || _currentAuditRef);
     })

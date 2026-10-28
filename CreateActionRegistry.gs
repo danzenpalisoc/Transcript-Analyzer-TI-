@@ -2143,6 +2143,17 @@ function createActionRegistry() {
       'ScorecardTargets.gs (new), ScorecardMetrics.gs, ScorecardLayout.gs, index.html (two sentences of the Generate Slides button and dialog), tests/scorecard-lob-test.js (new), tests/scorecard-deck-smoke-test.js, tests/scorecard-slides-test.js, tests/scorecard-group-slides-test.js, tests/make-scorecard-preview.js, DOCUMENTATION.md, CreateActionRegistry.gs',
       'Danzen',
       'Partly done'
+    ],
+    [
+      '191',
+      '2026-10-28',
+      'Bug Fix',
+      'NH',
+      'Several analysts reported that team members do not receive their audit email. The admin asked for a careful investigation of what really happens.',
+      'INVESTIGATED (nothing was changed in the sheets, the mailbox or the sending code). The sending works: the sent folder of the script owner holds the audit email with the team member in To, there was no bounce (mailer-daemon) in 14 days, a team member replied to one, and the daily recipients (at most 912) are far under the Google limit. What was found: (1) In October 118 audits were never emailed to the agent (Email Status "Not Sent" and no Sent audit for that interaction); 26 of them have no Team Leader and no Operations Manager, which handleSubmitEmail refuses; 92 have both, and the reason is NOT known: they come in runs from a few analysts (Wiam Aherchach 26, Cindy Belmonte 8, Yasmin Hernandez 8, Francisco Rivera Campos 8, Meka Jane Gojol 7). Several refusals in sendAuditEmail are not written to Error_Log (the 30 per hour limit, "Could not resolve recipient email addresses", the TEST mode refusal), so the sheet cannot say why. (2) sendAuditEmail drops an address that is not on telus.com or telusinternational.com (EmailGuard) and returns it as droppedRecipients, but the page ignored the field, so the analyst saw "Audit emailed successfully" while the person did not get it (16 audits have an agent on gapps.telus.com). (3) In 61 audits the Agent Email column differs from the address that was mailed (for example kim.barril@ and kimashley.barril@), and in October 7 of 634 Sent audits have no team member in Recipients (a name with a double space, two names in one audit). (4) The address of some Team Leaders and Operations Managers is not found by name (Jude Ngah, Kim Robert Osian, Koleen Nungay), so they are left out of the email. FIXED, the one change the admin chose: handleSubmitEmail (index.html) now shows the analyst the addresses that were NOT emailed ("That person did not receive this audit. Tell the QA and LS admin team so the address on the roster can be corrected"), next to the success line, and together with the quota warning when both apply. CHECKED. tests/submit-email-dropped-test.js is new (it runs the real handleSubmitEmail with a fake page and server reply; 9 checks) and 1 mutation check (the warning removed, 3 checks fail), caught; the whole suite passes (58 files). NOT done, the admin did not choose them: letting Send go ahead when the Team Leader and Operations Manager are blank (26 audits); writing every refusal to Error_Log, which is what would show why the 92 audits were not sent; finding the Team Leader and Operations Manager addresses. The cause of the 92 is still open.',
+      'index.html, tests/submit-email-dropped-test.js (new), CreateActionRegistry.gs',
+      'Danzen',
+      'Partly done'
     ]
   ];
 
